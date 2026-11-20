@@ -1,3 +1,4 @@
+pub mod about;
 pub mod config;
 pub mod filter;
 pub mod flow;

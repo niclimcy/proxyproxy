@@ -1,4 +1,5 @@
 pub mod api;
+pub mod app_menu;
 pub mod config_store;
 pub mod decode;
 pub mod decoders;

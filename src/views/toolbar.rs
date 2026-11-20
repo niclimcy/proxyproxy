@@ -13,11 +13,12 @@ pub struct Props<'a> {
     pub status: &'a str,
     pub api_port: u16,
     pub paused_breakpoints: usize,
+    pub show_help: bool,
 }
 
 pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props) -> Vec<ToolbarIntent> {
     let mut out = vec![];
-    let Props { port, cert, show_rules, active_rules, status, api_port, paused_breakpoints } = p;
+    let Props { port, cert, show_rules, active_rules, status, api_port, paused_breakpoints, show_help } = p;
     egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
         ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
@@ -56,6 +57,14 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
                 }
                 capsule(ui, |ui| {
                     // right_to_left parent: add in reverse visual order
+                    if show_help {
+                        toolbar_menu(ui, ph::QUESTION, "Help", |ui| {
+                            if ui.button("About proxyproxy").clicked() {
+                                out.push(ToolbarIntent::About);
+                                ui.close();
+                            }
+                        });
+                    }
                     devices_menu(ui, ctx, port, api_port, cert, &mut out);
                     session_menu(ui, &mut out);
                     if icon_button(ui, ph::PLUS, "Compose").clicked() {

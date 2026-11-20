@@ -1,3 +1,4 @@
+pub mod about_window;
 pub mod body;
 pub mod breakpoint_window;
 pub mod detail;

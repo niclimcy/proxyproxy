@@ -4,6 +4,7 @@ use crate::domain::repaint::Repaint;
 use crate::proxy;
 use crate::services::{self, flow_store::FlowStore};
 use crate::viewmodels::{
+    about_vm::AboutVm,
     capture_vm::CaptureVm,
     detail_vm::DetailVm,
     intent::{Effect, ToolbarIntent},
@@ -27,6 +28,20 @@ impl Repaint for EguiRepaint {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn win32_hwnd(cc: &eframe::CreationContext<'_>) -> Option<isize> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match cc.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get()),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn win32_hwnd(_cc: &eframe::CreationContext<'_>) -> Option<isize> {
+    None
+}
+
 struct App {
     rx: Receiver<Event>,
     store: FlowStore,
@@ -41,10 +56,15 @@ struct App {
     port: u16,
     api_port: u16,
     cert: String,
+    menu: services::app_menu::AppMenu,
+    about: AboutVm,
 }
 
 impl App {
-    fn new(ctx: &egui::Context, port: u16, rx: Receiver<Event>, cfg: Shared, store: FlowStore, api_port: u16) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, port: u16, rx: Receiver<Event>, cfg: Shared, store: FlowStore, api_port: u16) -> Self {
+        let ctx = &cc.egui_ctx;
+        let icon = views::icon::data();
+        let menu = services::app_menu::AppMenu::install(win32_hwnd(cc), icon.rgba, icon.width);
         let repaint: Arc<dyn Repaint> = Arc::new(EguiRepaint(ctx.clone()));
         let cert = proxy::tls::cert_path().display().to_string();
         let session = SessionVm::new(store.clone(), cfg.clone());
@@ -63,6 +83,8 @@ impl App {
             port,
             api_port,
             cert,
+            menu,
+            about: AboutVm::default(),
         }
     }
 
@@ -96,12 +118,14 @@ impl App {
             status: &self.status.text,
             api_port: self.api_port,
             paused_breakpoints: self.rules.paused.len(),
+            show_help: !self.menu.is_native(),
         };
         for i in views::toolbar::show(ui, ctx, &mut self.capture, props) {
             match i {
                 ToolbarIntent::Session(s) => self.session.handle(s, &mut self.capture, &mut self.rules, &mut self.status),
                 ToolbarIntent::Device(a) => self.session.run_device(a, self.port, self.cert.clone(), &self.status),
                 ToolbarIntent::Compose => self.replay.open_compose(),
+                ToolbarIntent::About => self.about.open(),
                 other => self.capture.handle_toolbar(other),
             }
         }
@@ -133,6 +157,7 @@ impl App {
             self.replay.send(id);
         }
         self.replay.prune_closed();
+        views::about_window::show(ctx, &mut self.about);
     }
 }
 
@@ -196,6 +221,7 @@ pub fn run(port: u16) -> eframe::Result {
         eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 840.0]).with_icon(views::icon::data()), ..Default::default() },
         Box::new(move |cc| {
             apply_theme(&cc.egui_ctx);
+            cc.egui_ctx.set_embed_viewports(false);
             let sink: Arc<dyn proxy::sink::FlowSink> = Arc::new(proxy::sink::ChannelSink::new(tx, Arc::new(EguiRepaint(cc.egui_ctx.clone()))));
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
@@ -203,7 +229,7 @@ pub fn run(port: u16) -> eframe::Result {
                     eprintln!("proxy error: {e}");
                 }
             });
-            Ok(Box::new(App::new(&cc.egui_ctx, port, rx, cfg, store, api_port)))
+            Ok(Box::new(App::new(cc, port, rx, cfg, store, api_port)))
         }),
     )
 }

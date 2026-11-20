@@ -69,6 +69,7 @@ pub enum ToolbarIntent {
     Session(SessionIntent),
     Device(DeviceAction),
     Compose,
+    About,
     ClearUnpinned,
     ClearAll,
     ToggleCapture,

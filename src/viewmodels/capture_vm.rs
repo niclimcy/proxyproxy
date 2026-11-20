@@ -167,7 +167,7 @@ impl CaptureVm {
                     cfg.hidden_cols.push(c.to_string());
                 }
             }
-            ToolbarIntent::Compose | ToolbarIntent::Session(_) | ToolbarIntent::Device(_) => {}
+            ToolbarIntent::Compose | ToolbarIntent::About | ToolbarIntent::Session(_) | ToolbarIntent::Device(_) => {}
         }
     }
 
