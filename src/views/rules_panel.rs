@@ -291,10 +291,17 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                             if f.map_file_loaded_path == f.file.trim()
                                 && !f.map_file_loaded_path.is_empty()
                             {
+                                ui.label(muted("JSON file"));
+                                let mut layouter = |ui: &egui::Ui,
+                                                     text: &dyn egui::TextBuffer,
+                                                     wrap_width: f32| {
+                                    code_layouter(ui, text, wrap_width, "json")
+                                };
                                 let editor = TextEdit::multiline(&mut f.map_file_content)
                                     .code_editor()
                                     .desired_rows(10)
-                                    .desired_width(w);
+                                    .desired_width(w)
+                                    .layouter(&mut layouter);
                                 if ui.add(editor).changed() {
                                     f.map_file_dirty = true;
                                     f.map_file_status = None;
@@ -394,11 +401,17 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                     });
                 }
                 RuleKind::Script => field(ui, "Code", |ui| {
+                    let mut layouter = |ui: &egui::Ui,
+                                         text: &dyn egui::TextBuffer,
+                                         wrap_width: f32| {
+                        code_layouter(ui, text, wrap_width, "javascript")
+                    };
                     ui.add(
                         TextEdit::multiline(&mut f.code)
                             .code_editor()
                             .desired_rows(12)
-                            .desired_width(w),
+                            .desired_width(w)
+                            .layouter(&mut layouter),
                     );
                 }),
             }

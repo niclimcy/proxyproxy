@@ -5,6 +5,7 @@
 
 use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, Stroke};
 use std::sync::atomic::{AtomicBool, Ordering};
+use egui_extras::syntax_highlighting::{CodeTheme, highlight};
 
 pub struct Palette {
     pub dark: bool,
@@ -426,6 +427,18 @@ pub fn fmt_size(n: usize) -> String {
         1024..=1048575 => format!("{:.1} KB", n as f64 / 1024.0),
         _ => format!("{:.1} MB", n as f64 / 1048576.0),
     }
+}
+
+pub fn code_layouter(
+    ui: &egui::Ui,
+    text: &dyn egui::TextBuffer,
+    wrap_width: f32,
+    language: &str,
+) -> std::sync::Arc<egui::text::Galley> {
+    let theme = CodeTheme::from_style(ui.style());
+    let mut job = highlight(ui.ctx(), ui.style(), &theme, text.as_str(), language);
+    job.wrap.max_width = wrap_width;
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
 }
 
 #[cfg(test)]
