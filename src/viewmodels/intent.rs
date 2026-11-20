@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub enum RowIntent {
     Select(u64),
     Sort(usize),
+    ClearFilter,
     Pin(u64),
     Color(u64, Option<u8>),
     Comment(u64),

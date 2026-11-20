@@ -20,7 +20,11 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
     let mut out = vec![];
     let Props { port, cert, show_rules, active_rules, status, api_port, paused_breakpoints, show_help } = p;
     egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
-        ui.horizontal(|ui| {
+        let compact = ui.available_width() < 900.0;
+        if compact {
+            compact_primary_rows(ui, ctx, vm, port, cert, show_rules, active_rules, status, api_port, paused_breakpoints, show_help, &mut out);
+        } else {
+            ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
                 vm.show_sidebar = !vm.show_sidebar;
             }
@@ -39,7 +43,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
                 TextEdit::singleline(&mut vm.filter)
                     .id(egui::Id::unique("search"))
                     .hint_text(ico(ph::MAGNIFYING_GLASS, &format!("Search or filter  ({}F)", cmd())))
-                    .desired_width(420.0)
+                .desired_width(420.0)
                     .margin(Margin::symmetric(12, 7))
                     .background_color(canvas()),
             );
@@ -65,8 +69,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
                             }
                         });
                     }
-                    devices_menu(ui, ctx, port, api_port, cert, &mut out);
-                    session_menu(ui, &mut out);
+                    devices_menu(ui, ctx, port, api_port, cert, &mut out, false);
+                    session_menu(ui, &mut out, false);
                     if icon_button(ui, ph::PLUS, "Compose").clicked() {
                         out.push(ToolbarIntent::Compose);
                     }
@@ -86,7 +90,11 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
                 });
             });
         });
-        ui.horizontal(|ui| {
+        }
+        if compact {
+            compact_filter_rows(ui, vm, &mut out);
+        } else {
+            ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for (label, tok, c) in [("Errors", "is:error", danger()), ("Pinned", "is:pinned", warning()), ("JSON", "is:json", success()), ("WebSocket", "is:ws", violet()), ("Modified", "is:modified", info()), ("Pending", "is:pending", fg_muted())] {
                 if chip(ui, label, vm.token_on(tok), c).clicked() {
@@ -110,9 +118,117 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
                 });
                 ui.label(muted(format!("{} of {}", vm.visible.len(), vm.flow_count())));
             });
-        });
+            });
+        }
     });
     out
+}
+
+fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<ToolbarIntent>) {
+    ui.horizontal(|ui| {
+        let controls_width = 250.0;
+        let filters_width = (ui.available_width() - controls_width).max(180.0);
+        egui::ScrollArea::horizontal().auto_shrink([false, true]).max_width(filters_width).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (label, tok, c) in [("Errors", "is:error", danger()), ("Pinned", "is:pinned", warning()), ("JSON", "is:json", success()), ("WebSocket", "is:ws", violet()), ("Modified", "is:modified", info()), ("Pending", "is:pending", fg_muted())] {
+                if chip(ui, label, vm.token_on(tok), c).clicked() {
+                    out.push(ToolbarIntent::ToggleToken(tok));
+                }
+            }
+            if let Some(e) = &vm.query.error {
+                ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()).size(FS_CAPTION));
+            }
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.checkbox(&mut vm.follow, "Follow");
+            toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
+                for c in ALL_COLS.iter().skip(1) {
+                    let mut on = !vm.hidden_cols().iter().any(|h| h == c);
+                    if ui.checkbox(&mut on, *c).changed() {
+                        out.push(ToolbarIntent::SetColumn(c, on));
+                    }
+                }
+            });
+            ui.label(muted(format!("{} of {}", vm.visible.len(), vm.flow_count())));
+        });
+    });
+}
+
+fn compact_primary_rows(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &mut CaptureVm,
+    port: u16,
+    cert: &str,
+    show_rules: &mut bool,
+    active_rules: usize,
+    status: &str,
+    api_port: u16,
+    paused_breakpoints: usize,
+    show_help: bool,
+    out: &mut Vec<ToolbarIntent>,
+) {
+    ui.horizontal(|ui| {
+        if sidebar_toggle(ui, vm.show_sidebar).clicked() {
+            vm.show_sidebar = !vm.show_sidebar;
+        }
+        let paused = vm.capture_paused();
+        let (icon, label, state, tip) = if paused {
+            (ph::PAUSE_CIRCLE, "Paused".to_string(), warning(), format!("Capture paused. Click to resume (proxy on 127.0.0.1:{port})"))
+        } else {
+            (ph::RECORD, format!("Capturing · :{port}"), success(), format!("Capturing on 127.0.0.1:{port}. Click to pause"))
+        };
+        let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).corner_radius(RADIUS_PILL)));
+        if pill_resp.on_hover_text(tip).clicked() {
+            out.push(ToolbarIntent::ToggleCapture);
+        }
+        let search_width = (ui.available_width() - 8.0).max(180.0);
+        let search = ui.add(
+            TextEdit::singleline(&mut vm.filter)
+                .id(egui::Id::unique("search-compact"))
+                .hint_text(ico(ph::MAGNIFYING_GLASS, &format!("Search or filter  ({}F)", cmd())))
+                .desired_width(search_width)
+                .margin(Margin::symmetric(12, 7))
+                .background_color(canvas()),
+        );
+        if vm.focus_search {
+            search.request_focus();
+            vm.focus_search = false;
+        }
+        search.on_hover_text(format!("Example: host:api.* status:>=400 method:POST body:\"userId\"\nFields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error modified pending json", filter::FIELDS.join(" ")));
+    });
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        saved_menu(ui, vm, out);
+        if icon_button(ui, ph::TRASH, "Clear").on_hover_text("Remove all requests (including pinned)").clicked() {
+            out.push(ToolbarIntent::ClearAll);
+        }
+        if icon_button(ui, ph::PLUS, "Compose").clicked() {
+            out.push(ToolbarIntent::Compose);
+        }
+        session_menu(ui, out, true);
+        devices_menu(ui, ctx, port, api_port, cert, out, true);
+        if show_help {
+            toolbar_menu(ui, ph::QUESTION, "", |ui| {
+                if ui.button("About proxyproxy").clicked() {
+                    out.push(ToolbarIntent::About);
+                    ui.close();
+                }
+            });
+        }
+        if paused_breakpoints > 0 {
+            pill(ui, &format!("{paused_breakpoints} paused"), warning());
+        }
+        if !status.is_empty() {
+            ui.add(egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate()).on_hover_text(status);
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
+            if right_panel_toggle(ui, *show_rules, &label, format!("{} rules panel", if *show_rules { "Hide" } else { "Show" })).clicked() {
+                *show_rules = !*show_rules;
+            }
+        });
+    });
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
@@ -141,8 +257,8 @@ fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
     menu.response.on_hover_text("Saved queries");
 }
 
-fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>) {
-    toolbar_menu(ui, ph::FOLDER_OPEN, "Session", |ui| {
+fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) {
+    toolbar_menu(ui, ph::FOLDER_OPEN, if compact { "" } else { "Session" }, |ui| {
         let mut act = None::<u8>;
         for (i, l) in ["New session", "Open session…", "Save session as…", "-", "Import HAR / Charles JSON…", "-", "Export HAR (visible)", "Export CSV (visible)", "Export rules…", "Import rules…", "-", "Clear unpinned requests"].iter().enumerate() {
             if *l == "-" {
@@ -175,8 +291,8 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>) {
     });
 }
 
-fn devices_menu(ui: &mut egui::Ui, ctx: &egui::Context, port: u16, api_port: u16, cert: &str, out: &mut Vec<ToolbarIntent>) {
-    toolbar_menu(ui, ph::DEVICE_MOBILE, "Capture", |ui| {
+fn devices_menu(ui: &mut egui::Ui, ctx: &egui::Context, port: u16, api_port: u16, cert: &str, out: &mut Vec<ToolbarIntent>, compact: bool) {
+    toolbar_menu(ui, ph::DEVICE_MOBILE, if compact { "" } else { "Capture" }, |ui| {
         let item = |ui: &mut egui::Ui, label: &str| {
             let c = ui.button(label).clicked();
             if c {

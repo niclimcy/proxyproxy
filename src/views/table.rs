@@ -17,20 +17,47 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
     egui::CentralPanel::default().frame(Frame::new().fill(canvas()).inner_margin(Margin::same(PAD))).show(ui, |ui| {
         if !has_flows {
             ui.vertical_centered(|ui| {
-                const BLOCK_H: f32 = 140.0; // approx height of the message block
-                ui.add_space(((ui.available_height() - BLOCK_H) / 2.0).max(0.0));
-                ui.label(RichText::new("Waiting for traffic…").size(FS_TITLE).strong());
-                ui.add_space(6.0);
-                ui.label(RichText::new(format!("Proxy is listening on 127.0.0.1:{port}")).color(fg_muted()));
-                ui.add_space(10.0);
-                ui.label(muted("1. Capture menu → Trust CA, then Set system proxy"));
-                ui.label(muted("2. Or point any client at the proxy address"));
-                ui.label(muted("3. Or run:  proxyproxy run -- curl https://example.com"));
+                ui.add_space((ui.available_height() - 280.0).max(24.0) / 2.0);
+                let card_width = ui.clip_rect().width().min(500.0);
+                card().show(ui, |ui| {
+                    ui.set_width((card_width - 2.0 * PAD as f32).max(0.0));
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.label(overline("GET STARTED"));
+                        ui.add_space(5.0);
+                        ui.label(RichText::new("Start capturing traffic").size(FS_TITLE).strong());
+                        ui.add_space(6.0);
+                        ui.label(muted(format!("Proxy is ready on 127.0.0.1:{port}.")));
+                        ui.add_space(16.0);
+                        ui.horizontal(|ui| {
+                            let copied = ui.add(action_button(ico(ph::COPY, "Copy test command"), accent())).clicked();
+                            if copied {
+                                ctx.copy_text(format!("proxyproxy run --port {port} -- curl https://example.com"));
+                            }
+                            ui.label(muted("or use Capture → Set system proxy"));
+                        });
+                        ui.add_space(12.0);
+                        ui.label(muted("The first request will appear here. Select it to inspect the request and response."));
+                    });
+                });
             });
             return;
         }
         if vm.visible.is_empty() {
-            ui.centered_and_justified(|ui| ui.label(RichText::new("No requests match the filter").color(fg_muted()).size(FS_BODY)));
+            ui.vertical_centered(|ui| {
+                ui.add_space((ui.available_height() - 190.0).max(24.0) / 2.0);
+                card().show(ui, |ui| {
+                    ui.set_min_width(520.0);
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.label(RichText::new("No requests match this search").size(FS_TITLE).strong());
+                        ui.add_space(6.0);
+                        ui.label(muted(format!("Nothing matches “{}”. Clear the search to see all captured traffic.", vm.filter.trim())));
+                        ui.add_space(12.0);
+                        if ui.add(action_button(ico(ph::X, "Clear search"), accent())).clicked() {
+                            out.push(RowIntent::ClearFilter);
+                        }
+                    });
+                });
+            });
             return;
         }
         ui.style_mut().interaction.selectable_labels = false;

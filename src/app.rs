@@ -194,7 +194,7 @@ impl eframe::App for App {
             self.capture.handle_sidebar(i);
         }
         self.rules_panel(ui);
-        for i in views::detail::show(ui, &ctx, &mut self.detail, self.capture.selected) {
+        for i in views::detail::show(ui, &ctx, &mut self.detail, self.capture.selected, self.capture.has_flows()) {
             let e = self.detail.handle(i);
             self.apply(e);
         }
@@ -222,7 +222,7 @@ pub fn run(port: u16) -> eframe::Result {
 
     eframe::run_native(
         "proxyproxy",
-        eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 840.0]).with_icon(views::icon::data()), ..Default::default() },
+        eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 840.0]).with_min_inner_size([560.0, 400.0]).with_icon(views::icon::data()), ..Default::default() },
         Box::new(move |cc| {
             apply_theme(&cc.egui_ctx);
             cc.egui_ctx.set_embed_viewports(false);

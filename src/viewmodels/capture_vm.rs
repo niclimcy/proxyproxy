@@ -175,6 +175,7 @@ impl CaptureVm {
         match intent {
             RowIntent::Select(id) => self.selected = Some(id),
             RowIntent::Sort(c) => self.cycle_sort(c),
+            RowIntent::ClearFilter => self.filter.clear(),
             RowIntent::Pin(id) => {
                 let mut st = self.store.lock();
                 if let Some(f) = st.find_mut(id) {
@@ -311,6 +312,18 @@ mod tests {
         vm.filter = "status:>=500".into();
         vm.refresh_visible();
         assert_eq!(ids(&vm), vec![2, 4]);
+    }
+
+    #[test]
+    fn clear_filter_intent_restores_all_requests() {
+        let (mut vm, mut status) = setup(4);
+        vm.filter = "status:>=500".into();
+        vm.refresh_visible();
+        assert_eq!(ids(&vm), vec![2, 4]);
+        vm.handle_row(RowIntent::ClearFilter, &mut status);
+        vm.refresh_visible();
+        assert_eq!(vm.filter, "");
+        assert_eq!(ids(&vm), vec![1, 2, 3, 4]);
     }
 
     #[test]

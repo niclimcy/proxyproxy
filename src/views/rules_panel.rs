@@ -17,7 +17,7 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm, tab_body: impl FnOnce(&mut egui
     let mut open = vm.show;
     let mut close = false;
     egui::Panel::right("rules")
-        .resizable(true)
+        .resizable(open)
         .default_size(440.0)
         .size_range(360.0..=900.0)
         .frame(panel_frame().inner_margin(egui::Margin::same(PAD)))

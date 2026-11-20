@@ -39,9 +39,12 @@ fn timing_bar(ui: &mut egui::Ui, ms: u128, max: u128) {
     ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(w * frac, 8.0)), 4.0, color);
 }
 
-pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected: Option<u64>) -> Vec<DetailIntent> {
+pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected: Option<u64>, has_flows: bool) -> Vec<DetailIntent> {
     let mut out = vec![];
     if selected.and_then(|id| vm.flow(id)).is_none() {
+        if !has_flows {
+            return out;
+        }
         egui::Panel::bottom("detail-empty").exact_size(40.0).frame(panel_frame().inner_margin(Margin::same(PAD))).show(ui, |ui| {
             ui.centered_and_justified(|ui| ui.label(muted(format!("Select a request to inspect it  ·  ↑/↓ navigate  ·  {0}R replay  ·  {0}F search", cmd()))));
         });

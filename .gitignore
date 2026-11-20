@@ -3,3 +3,5 @@
 
 # AI coding tools
 .claude
+.agents
+skills-lock.json
