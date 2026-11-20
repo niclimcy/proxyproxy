@@ -131,11 +131,11 @@ impl App {
         }
     }
 
-    fn windows(&mut self, ctx: &egui::Context) {
+    fn rules_panel(&mut self, ui: &mut egui::Ui) {
         let (network, schemas, status) = (&self.network, &self.schemas, &mut self.status);
         let mut net_intents = vec![];
         let mut schema_intents = vec![];
-        let rule_intents = views::rules_window::show(ctx, &mut self.rules, |ui, tab| match tab {
+        let rule_intents = views::rules_panel::show(ui, &mut self.rules, |ui, tab| match tab {
             RulesTab::Network => net_intents = views::network_tab::show(ui, network),
             RulesTab::Schemas => schema_intents = views::schemas_tab::show(ui, schemas),
             _ => {}
@@ -150,6 +150,9 @@ impl App {
             let e = self.rules.handle(i);
             self.apply(e);
         }
+    }
+
+    fn windows(&mut self, ctx: &egui::Context) {
         if let Some(i) = views::breakpoint_window::show(ctx, &mut self.rules) {
             self.rules.handle(i);
         }
@@ -190,6 +193,7 @@ impl eframe::App for App {
         for i in views::sidebar::show(ui, &mut self.capture) {
             self.capture.handle_sidebar(i);
         }
+        self.rules_panel(ui);
         for i in views::detail::show(ui, &ctx, &mut self.detail, self.capture.selected) {
             let e = self.detail.handle(i);
             self.apply(e);
@@ -222,6 +226,11 @@ pub fn run(port: u16) -> eframe::Result {
         Box::new(move |cc| {
             apply_theme(&cc.egui_ctx);
             cc.egui_ctx.set_embed_viewports(false);
+            #[cfg(target_os = "macos")]
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                // macOS would otherwise merge child viewports into tabs
+                objc2_app_kit::NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
+            }
             let sink: Arc<dyn proxy::sink::FlowSink> = Arc::new(proxy::sink::ChannelSink::new(tx, Arc::new(EguiRepaint(cc.egui_ctx.clone()))));
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();

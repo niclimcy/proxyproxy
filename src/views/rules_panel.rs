@@ -12,20 +12,34 @@ fn field(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 // `tab_body` draws the Schemas / Network tabs, which belong to other ViewModels
-pub fn show(ctx: &egui::Context, vm: &mut RulesVm, tab_body: impl FnOnce(&mut egui::Ui, RulesTab)) -> Vec<RuleIntent> {
+pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm, tab_body: impl FnOnce(&mut egui::Ui, RulesTab)) -> Vec<RuleIntent> {
     let mut out = vec![];
     let mut open = vm.show;
-    egui::Window::new("Rules & scope").open(&mut open).default_width(620.0).default_height(640.0).collapsible(false).show(ctx, |ui| {
-        segmented(ui, &mut vm.tab, &[(RulesTab::Rules, "Rules"), (RulesTab::Scope, "Scope & mute"), (RulesTab::Console, "Script console"), (RulesTab::Schemas, "Schemas"), (RulesTab::Network, "Network")]);
-        ui.add_space(6.0);
-        match vm.tab {
-            RulesTab::Rules => rules_tab(ui, vm, &mut out),
-            RulesTab::Scope => scope_tab(ui, vm, &mut out),
-            RulesTab::Console => console_tab(ui, vm, &mut out),
-            t @ (RulesTab::Schemas | RulesTab::Network) => tab_body(ui, t),
-        }
-    });
-    vm.show = open;
+    let mut close = false;
+    egui::Panel::right("rules")
+        .resizable(true)
+        .default_size(440.0)
+        .size_range(360.0..=900.0)
+        .frame(panel_frame().inner_margin(egui::Margin::same(PAD)))
+        .show_collapsible(ui, &mut open, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(overline("RULES & SCOPE"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(egui::Button::new(ph::X).fill(Color32::TRANSPARENT).stroke(Stroke::NONE)).on_hover_text("Close").clicked() {
+                        close = true;
+                    }
+                });
+            });
+            segmented(ui, &mut vm.tab, &[(RulesTab::Rules, "Rules"), (RulesTab::Scope, "Scope"), (RulesTab::Console, "Console"), (RulesTab::Schemas, "Schemas"), (RulesTab::Network, "Network")]);
+            ui.add_space(6.0);
+            ScrollArea::vertical().id_salt("rules-body").auto_shrink([false, false]).show(ui, |ui| match vm.tab {
+                RulesTab::Rules => rules_tab(ui, vm, &mut out),
+                RulesTab::Scope => scope_tab(ui, vm, &mut out),
+                RulesTab::Console => console_tab(ui, vm, &mut out),
+                t @ (RulesTab::Schemas | RulesTab::Network) => tab_body(ui, t),
+            });
+        });
+    vm.show = open && !close;
     out
 }
 
@@ -104,6 +118,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
 }
 
 fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
+    let w = (ui.available_width() - 100.0).max(120.0);
     ui.horizontal_wrapped(|ui| {
         for (k, l) in KINDS {
             if ui.selectable_label(f.kind == k, l).clicked() {
@@ -125,10 +140,10 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
     ui.label(muted(hint));
     egui::Grid::new("rule-form").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
         field(ui, "Name", |ui| {
-            ui.add(TextEdit::singleline(&mut f.name).desired_width(380.0).hint_text("optional"));
+            ui.add(TextEdit::singleline(&mut f.name).desired_width(w).hint_text("optional"));
         });
         field(ui, "URL pattern", |ui| {
-            ui.add(TextEdit::singleline(&mut f.pattern).desired_width(380.0).hint_text("api.example.com/users*"));
+            ui.add(TextEdit::singleline(&mut f.pattern).desired_width(w).hint_text("api.example.com/users*"));
         });
         field(ui, "Method", |ui| {
             ui.add(TextEdit::singleline(&mut f.method).desired_width(100.0).hint_text("any"));
@@ -143,7 +158,7 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
             RuleKind::MapLocal => {
                 field(ui, "Local file", |ui| {
                     ui.horizontal(|ui| {
-                        ui.add(TextEdit::singleline(&mut f.file).desired_width(300.0).hint_text("/path/to/response.json"));
+                        ui.add(TextEdit::singleline(&mut f.file).desired_width((w - 80.0).max(80.0)).hint_text("/path/to/response.json"));
                         if ui.button("Browse…").clicked() {
                             if let Some(p) = rfd::FileDialog::new().pick_file() {
                                 f.file = p.display().to_string();
@@ -156,7 +171,7 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
                 });
             }
             RuleKind::Redirect => field(ui, "Target", |ui| {
-                ui.add(TextEdit::singleline(&mut f.target).desired_width(380.0).hint_text("http://localhost:3000"));
+                ui.add(TextEdit::singleline(&mut f.target).desired_width(w).hint_text("http://localhost:3000"));
             }),
             RuleKind::Block => field(ui, "Status", |ui| {
                 ui.add(TextEdit::singleline(&mut f.status).desired_width(60.0));
@@ -181,7 +196,7 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
                 });
                 field(ui, "Value", |ui| {
                     ui.horizontal(|ui| {
-                        ui.add_enabled(!f.hremove, TextEdit::singleline(&mut f.hvalue).desired_width(240.0));
+                        ui.add_enabled(!f.hremove, TextEdit::singleline(&mut f.hvalue).desired_width((w - 90.0).max(80.0)));
                         ui.checkbox(&mut f.hremove, "Remove");
                     });
                 });
@@ -195,10 +210,10 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
                     });
                 });
                 field(ui, "Find", |ui| {
-                    ui.add(TextEdit::singleline(&mut f.find).desired_width(380.0));
+                    ui.add(TextEdit::singleline(&mut f.find).desired_width(w));
                 });
                 field(ui, "Replace", |ui| {
-                    ui.add(TextEdit::singleline(&mut f.replace).desired_width(380.0));
+                    ui.add(TextEdit::singleline(&mut f.replace).desired_width(w));
                 });
             }
             RuleKind::Mock => {
@@ -206,15 +221,15 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm) {
                     ui.horizontal(|ui| {
                         ui.add(TextEdit::singleline(&mut f.status).desired_width(60.0));
                         ui.label("Content-Type");
-                        ui.add(TextEdit::singleline(&mut f.ctype).desired_width(200.0));
+                        ui.add(TextEdit::singleline(&mut f.ctype).desired_width((w - 150.0).max(80.0)));
                     });
                 });
                 field(ui, "Body", |ui| {
-                    ui.add(TextEdit::multiline(&mut f.body).code_editor().desired_rows(6).desired_width(380.0));
+                    ui.add(TextEdit::multiline(&mut f.body).code_editor().desired_rows(6).desired_width(w));
                 });
             }
             RuleKind::Script => field(ui, "Code", |ui| {
-                ui.add(TextEdit::multiline(&mut f.code).code_editor().desired_rows(12).desired_width(420.0));
+                ui.add(TextEdit::multiline(&mut f.code).code_editor().desired_rows(12).desired_width(w));
             }),
         }
     });

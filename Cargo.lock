@@ -3918,6 +3918,8 @@ dependencies = [
  "hudsucker",
  "hyper-rustls",
  "muda",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
  "prost",
  "prost-reflect",
  "prost-types",

@@ -5,7 +5,7 @@ pub mod detail;
 pub mod icon;
 pub mod network_tab;
 pub mod replay_window;
-pub mod rules_window;
+pub mod rules_panel;
 pub mod schemas_tab;
 pub mod shortcuts;
 pub mod sidebar;

@@ -2,7 +2,7 @@ use crate::domain::filter;
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::viewmodels::intent::{DeviceAction, SessionIntent, ToolbarIntent};
 use crate::views::theme::*;
-use eframe::egui::{self, Color32, Margin, RichText, TextEdit};
+use eframe::egui::{self, Margin, RichText, TextEdit};
 use egui_phosphor::regular as ph;
 
 pub struct Props<'a> {
@@ -51,8 +51,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
             saved_menu(ui, vm, &mut out);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
-                let b = egui::Button::new(RichText::new(ico(ph::SLIDERS_HORIZONTAL, &label)).size(FS_SMALL)).fill(if *show_rules { tint(accent(), Tint::Normal) } else { Color32::TRANSPARENT });
-                if flat(ui, |ui| ui.add(b)).clicked() {
+                let tip = format!("{} rules panel", if *show_rules { "Hide" } else { "Show" });
+                if right_panel_toggle(ui, *show_rules, &label, tip).clicked() {
                     *show_rules = !*show_rules;
                 }
                 capsule(ui, |ui| {

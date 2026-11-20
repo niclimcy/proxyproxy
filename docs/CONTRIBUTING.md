@@ -65,7 +65,7 @@ Only `main.rs` should print, for the `eframe::Result` return type.
 1. `domain/rule.rs`: add the `Action` variant, with `label` and `describe`.
 2. `proxy/actions/<name>.rs`: implement `RuleAction`, overriding only the hooks you need, and add tests. Add a line to `resolve` in `proxy/actions/mod.rs`. Add the variant to `every_action_variant_resolves_with_expected_tag`.
 3. `viewmodels/rules_vm.rs`: `RuleKind`, `KINDS`, the `RuleForm` fields, `from_rule`, `valid`, `action`. Add the variant to `form_roundtrips_every_action_kind`.
-4. `views/rules_window.rs`: the hint text and form fields.
+4. `views/rules_panel.rs`: the hint text and form fields.
 
 ## Adding a body view
 

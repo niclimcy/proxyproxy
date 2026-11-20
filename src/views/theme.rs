@@ -269,9 +269,22 @@ pub fn capsule<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R 
 /// Sidebar toggle. State is shown by shape (filled left panel = open), not colour alone.
 pub fn sidebar_toggle(ui: &mut egui::Ui, open: bool) -> egui::Response {
     let tip = format!("{} sidebar ({}B)", if open { "Hide" } else { "Show" }, cmd());
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click());
+    panel_toggle(ui, open, false, "Capture", tip)
+}
+
+/// Mirror of `sidebar_toggle` for the right edge: label first, then icon.
+pub fn right_panel_toggle(ui: &mut egui::Ui, open: bool, label: &str, tip: String) -> egui::Response {
+    panel_toggle(ui, open, true, label, tip)
+}
+
+fn panel_toggle(ui: &mut egui::Ui, open: bool, right: bool, label: &str, tip: String) -> egui::Response {
+    let ink = if open { fg() } else { fg_muted() };
+    let g = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(FS_SMALL), ink);
+    let icon_size = egui::vec2(18.0, 14.0);
+    let size = egui::vec2(10.0 + icon_size.x + 6.0 + g.size().x + 10.0, 32.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let resp = resp.on_hover_text(tip);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, open, "Sidebar"));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, open, label));
     let fill = if resp.is_pointer_button_down_on() {
         ui.visuals().widgets.active.weak_bg_fill
     } else if resp.hovered() {
@@ -281,15 +294,29 @@ pub fn sidebar_toggle(ui: &mut egui::Ui, open: bool) -> egui::Response {
     };
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(RADIUS), fill);
-    let ink = if open { fg() } else { fg_muted() };
-    let icon = egui::Rect::from_center_size(rect.center(), egui::vec2(18.0, 14.0));
+    let (icon_x, text_x) = if right {
+        (rect.max.x - 10.0 - icon_size.x / 2.0, rect.min.x + 10.0)
+    } else {
+        (rect.min.x + 10.0 + icon_size.x / 2.0, rect.min.x + 10.0 + icon_size.x + 6.0)
+    };
+    let icon = egui::Rect::from_center_size(egui::pos2(icon_x, rect.center().y), icon_size);
+    p.galley(egui::pos2(text_x, rect.center().y - g.size().y / 2.0), g, ink);
     let stroke = Stroke::new(1.5, ink);
     p.rect_stroke(icon, 3.0, stroke, egui::StrokeKind::Inside);
-    let panel = egui::Rect::from_min_max(icon.min, egui::pos2(icon.min.x + 6.0, icon.max.y));
-    if open {
-        p.rect_filled(panel.shrink(1.0), CornerRadius { nw: 2, sw: 2, ne: 0, se: 0 }, ink);
+    if right {
+        let panel = egui::Rect::from_min_max(egui::pos2(icon.max.x - 6.0, icon.min.y), icon.max);
+        if open {
+            p.rect_filled(panel.shrink(1.0), CornerRadius { nw: 0, sw: 0, ne: 2, se: 2 }, ink);
+        } else {
+            p.line_segment([panel.left_top(), panel.left_bottom()], stroke);
+        }
     } else {
-        p.line_segment([panel.right_top(), panel.right_bottom()], stroke);
+        let panel = egui::Rect::from_min_max(icon.min, egui::pos2(icon.min.x + 6.0, icon.max.y));
+        if open {
+            p.rect_filled(panel.shrink(1.0), CornerRadius { nw: 2, sw: 2, ne: 0, se: 0 }, ink);
+        } else {
+            p.line_segment([panel.right_top(), panel.right_bottom()], stroke);
+        }
     }
     if resp.has_focus() {
         p.rect_stroke(rect, CornerRadius::same(RADIUS), Stroke::new(2.0, accent()), egui::StrokeKind::Inside);
