@@ -109,6 +109,8 @@ pub enum RuleIntent {
     RemoveHost(ListKind, usize),
     ClearConsole,
     Resolve(bool),
+    LoadMapLocalFile,
+    SaveMapLocalFile,
 }
 
 pub enum NetworkIntent {

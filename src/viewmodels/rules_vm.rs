@@ -55,6 +55,11 @@ pub struct RuleForm {
     pub ctype: String,
     pub body: String,
     pub code: String,
+    pub map_file_content: String,
+    pub map_file_loaded_path: String,
+    pub map_file_dirty: bool,
+    pub map_file_status: Option<String>,
+    pub map_file_error: Option<String>,
 }
 
 impl Default for RuleForm {
@@ -81,17 +86,30 @@ impl Default for RuleForm {
             ctype: "application/json".into(),
             body: String::new(),
             code: SCRIPT_TEMPLATE.into(),
+            map_file_content: String::new(),
+            map_file_loaded_path: String::new(),
+            map_file_dirty: false,
+            map_file_status: None,
+            map_file_error: None,
         }
     }
 }
 
 impl RuleForm {
     pub fn from_flow(f: &Flow, kind: RuleKind) -> Self {
-        let mut s = Self { kind, pattern: format!("{}{}", f.host, f.path_only()), method: f.method.clone(), ..Default::default() };
+        let mut s = Self {
+            kind,
+            pattern: format!("{}{}", f.host, f.path_only()),
+            method: f.method.clone(),
+            ..Default::default()
+        };
         if let Some(r) = &f.response {
             s.status = f.status.unwrap_or(200).to_string();
             s.body = crate::services::decode::pretty_text(r);
-            s.ctype = r.header("content-type").unwrap_or("application/json").to_string();
+            s.ctype = r
+                .header("content-type")
+                .unwrap_or("application/json")
+                .to_string();
         }
         if kind == RuleKind::Breakpoint {
             s.bp_request = true;
@@ -104,7 +122,12 @@ impl RuleForm {
     }
 
     pub fn from_rule(r: &Rule) -> Self {
-        let mut s = Self { name: r.name.clone(), pattern: r.pattern.clone(), method: r.method.clone(), ..Default::default() };
+        let mut s = Self {
+            name: r.name.clone(),
+            pattern: r.pattern.clone(),
+            method: r.method.clone(),
+            ..Default::default()
+        };
         match &r.action {
             Action::Breakpoint { request, response } => {
                 s.kind = RuleKind::Breakpoint;
@@ -129,21 +152,35 @@ impl RuleForm {
                 s.ms = ms.to_string();
                 s.kbps = kbps.to_string();
             }
-            Action::SetHeader { response, name, value, remove } => {
+            Action::SetHeader {
+                response,
+                name,
+                value,
+                remove,
+            } => {
                 s.kind = RuleKind::Header;
                 s.resp = *response;
                 s.hname = name.clone();
                 s.hvalue = value.clone();
                 s.hremove = *remove;
             }
-            Action::ReplaceBody { response, find, replace, regex } => {
+            Action::ReplaceBody {
+                response,
+                find,
+                replace,
+                regex,
+            } => {
                 s.kind = RuleKind::Body;
                 s.resp = *response;
                 s.find = find.clone();
                 s.replace = replace.clone();
                 s.regex = *regex;
             }
-            Action::Mock { status, content_type, body } => {
+            Action::Mock {
+                status,
+                content_type,
+                body,
+            } => {
                 s.kind = RuleKind::Mock;
                 s.status = status.to_string();
                 s.ctype = content_type.clone();
@@ -165,7 +202,9 @@ impl RuleForm {
                 RuleKind::Redirect => !self.target.trim().is_empty(),
                 RuleKind::Header => !self.hname.trim().is_empty(),
                 RuleKind::Body => !self.find.is_empty(),
-                RuleKind::Script => self.code.contains("onRequest") || self.code.contains("onResponse"),
+                RuleKind::Script => {
+                    self.code.contains("onRequest") || self.code.contains("onResponse")
+                }
                 _ => true,
             }
     }
@@ -173,15 +212,42 @@ impl RuleForm {
     pub fn action(&self) -> Action {
         let status = self.status.trim().parse().unwrap_or(200);
         match self.kind {
-            RuleKind::Breakpoint => Action::Breakpoint { request: self.bp_request, response: self.bp_response },
-            RuleKind::MapLocal => Action::MapLocal { path: self.file.trim().into(), status },
-            RuleKind::Redirect => Action::MapRemote { target: self.target.trim().into() },
+            RuleKind::Breakpoint => Action::Breakpoint {
+                request: self.bp_request,
+                response: self.bp_response,
+            },
+            RuleKind::MapLocal => Action::MapLocal {
+                path: self.file.trim().into(),
+                status,
+            },
+            RuleKind::Redirect => Action::MapRemote {
+                target: self.target.trim().into(),
+            },
             RuleKind::Block => Action::Block { status },
-            RuleKind::Throttle => Action::Delay { ms: self.ms.trim().parse().unwrap_or(0), kbps: self.kbps.trim().parse().unwrap_or(0) },
-            RuleKind::Header => Action::SetHeader { response: self.resp, name: self.hname.trim().into(), value: self.hvalue.clone(), remove: self.hremove },
-            RuleKind::Body => Action::ReplaceBody { response: self.resp, find: self.find.clone(), replace: self.replace.clone(), regex: self.regex },
-            RuleKind::Mock => Action::Mock { status, content_type: self.ctype.trim().into(), body: self.body.clone() },
-            RuleKind::Script => Action::Script { code: self.code.clone() },
+            RuleKind::Throttle => Action::Delay {
+                ms: self.ms.trim().parse().unwrap_or(0),
+                kbps: self.kbps.trim().parse().unwrap_or(0),
+            },
+            RuleKind::Header => Action::SetHeader {
+                response: self.resp,
+                name: self.hname.trim().into(),
+                value: self.hvalue.clone(),
+                remove: self.hremove,
+            },
+            RuleKind::Body => Action::ReplaceBody {
+                response: self.resp,
+                find: self.find.clone(),
+                replace: self.replace.clone(),
+                regex: self.regex,
+            },
+            RuleKind::Mock => Action::Mock {
+                status,
+                content_type: self.ctype.trim().into(),
+                body: self.body.clone(),
+            },
+            RuleKind::Script => Action::Script {
+                code: self.code.clone(),
+            },
         }
     }
 }
@@ -208,7 +274,13 @@ impl BpDraft {
             method: p.edit.method,
             url: p.edit.url,
             status: p.edit.status.to_string(),
-            headers: p.edit.headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n"),
+            headers: p
+                .edit
+                .headers
+                .iter()
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
             orig_body: p.edit.body,
             orig_body_text: body.clone(),
             body,
@@ -217,14 +289,25 @@ impl BpDraft {
     }
 
     pub fn finish(&mut self, resume: bool) {
-        let Some(reply) = self.reply.take() else { return };
+        let Some(reply) = self.reply.take() else {
+            return;
+        };
         let _ = reply.send(if resume {
             Decision::Resume(BpEdit {
                 method: self.method.clone(),
                 url: self.url.clone(),
                 status: self.status.trim().parse().unwrap_or(200),
-                headers: self.headers.lines().filter_map(|l| l.split_once(':')).map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).collect(),
-                body: if self.body == self.orig_body_text { self.orig_body.clone() } else { self.body.clone().into_bytes() },
+                headers: self
+                    .headers
+                    .lines()
+                    .filter_map(|l| l.split_once(':'))
+                    .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+                    .collect(),
+                body: if self.body == self.orig_body_text {
+                    self.orig_body.clone()
+                } else {
+                    self.body.clone().into_bytes()
+                },
             })
         } else {
             Decision::Abort
@@ -271,7 +354,17 @@ const CONSOLE_DROP: usize = 500;
 
 impl RulesVm {
     pub fn new(cfg: Shared, store: FlowStore) -> Self {
-        Self { cfg, store, show: false, tab: RulesTab::Rules, form: RuleForm::default(), editing: None, list_inputs: Default::default(), console: vec![], paused: vec![] }
+        Self {
+            cfg,
+            store,
+            show: false,
+            tab: RulesTab::Rules,
+            form: RuleForm::default(),
+            editing: None,
+            list_inputs: Default::default(),
+            console: vec![],
+            paused: vec![],
+        }
     }
 
     pub fn log(&mut self, l: String) {
@@ -286,7 +379,11 @@ impl RulesVm {
     }
 
     pub fn open_from_flow(&mut self, id: u64, kind: RuleKind) {
-        let form = self.store.lock().find(id).map(|f| RuleForm::from_flow(f, kind));
+        let form = self
+            .store
+            .lock()
+            .find(id)
+            .map(|f| RuleForm::from_flow(f, kind));
         if let Some(form) = form {
             self.form = form;
             self.editing = None;
@@ -301,7 +398,11 @@ impl RulesVm {
             .lock()
             .flows
             .iter()
-            .filter(|fl| url_matches(&f.pattern, &fl.url()) && (f.method.trim().is_empty() || f.method.trim().eq_ignore_ascii_case(&fl.method)))
+            .filter(|fl| {
+                url_matches(&f.pattern, &fl.url())
+                    && (f.method.trim().is_empty()
+                        || f.method.trim().eq_ignore_ascii_case(&fl.method))
+            })
             .count()
     }
 
@@ -311,17 +412,35 @@ impl RulesVm {
 
     pub fn scope_view(&self) -> ScopeView {
         let c = self.cfg.lock().unwrap();
-        ScopeView { scope_only: c.scope_only, scope: c.scope.clone(), muted: c.muted.clone(), bypass_tls: c.bypass_tls.clone() }
+        ScopeView {
+            scope_only: c.scope_only,
+            scope: c.scope.clone(),
+            muted: c.muted.clone(),
+            bypass_tls: c.bypass_tls.clone(),
+        }
     }
 
     pub fn active_rule_count(&self) -> usize {
-        self.cfg.lock().unwrap().rules.iter().filter(|r| r.enabled).count()
+        self.cfg
+            .lock()
+            .unwrap()
+            .rules
+            .iter()
+            .filter(|r| r.enabled)
+            .count()
     }
 
     pub fn handle(&mut self, intent: RuleIntent) -> Option<Effect> {
         match intent {
             RuleIntent::SetEnabled(id, on) => {
-                if let Some(r) = self.cfg.lock().unwrap().rules.iter_mut().find(|r| r.id == id) {
+                if let Some(r) = self
+                    .cfg
+                    .lock()
+                    .unwrap()
+                    .rules
+                    .iter_mut()
+                    .find(|r| r.id == id)
+                {
                     r.enabled = on;
                 }
             }
@@ -334,10 +453,20 @@ impl RulesVm {
                 }
             }
             RuleIntent::Edit(id) => {
-                let r = self.cfg.lock().unwrap().rules.iter().find(|r| r.id == id).cloned();
+                let r = self
+                    .cfg
+                    .lock()
+                    .unwrap()
+                    .rules
+                    .iter()
+                    .find(|r| r.id == id)
+                    .cloned();
                 if let Some(r) = r {
                     self.form = RuleForm::from_rule(&r);
                     self.editing = Some(id);
+                    if matches!(&r.action, Action::MapLocal { .. }) {
+                        self.load_map_local_file();
+                    }
                 }
             }
             RuleIntent::CancelEdit => {
@@ -380,8 +509,59 @@ impl RulesVm {
                     self.paused.remove(0).finish(resume);
                 }
             }
+            RuleIntent::LoadMapLocalFile => self.load_map_local_file(),
+            RuleIntent::SaveMapLocalFile => self.save_map_local_file(),
         }
         None
+    }
+
+    fn load_map_local_file(&mut self) {
+        let path = self.form.file.trim().to_string();
+        if path.is_empty() {
+            self.form.map_file_status = None;
+            self.form.map_file_error = Some("Choose a local file first".into());
+            return;
+        }
+        match std::fs::read(&path) {
+            Ok(data) => match String::from_utf8(data) {
+                Ok(text) => {
+                    self.form.map_file_content = text;
+                    self.form.map_file_loaded_path = path;
+                    self.form.map_file_dirty = false;
+                    self.form.map_file_status = Some("File loaded from disk".into());
+                    self.form.map_file_error = None;
+                }
+                Err(_) => {
+                    self.form.map_file_status = None;
+                    self.form.map_file_error = Some("This file is not valid UTF-8 text".into());
+                }
+            },
+            Err(e) => {
+                self.form.map_file_status = None;
+                self.form.map_file_error = Some(format!("Cannot read file: {e}"));
+            }
+        }
+    }
+
+    fn save_map_local_file(&mut self) {
+        let path = self.form.file.trim().to_string();
+        if path.is_empty() {
+            self.form.map_file_status = None;
+            self.form.map_file_error = Some("Choose a local file first".into());
+            return;
+        }
+        match std::fs::write(&path, &self.form.map_file_content) {
+            Ok(_) => {
+                self.form.map_file_loaded_path = path;
+                self.form.map_file_dirty = false;
+                self.form.map_file_status = Some("Saved directly to disk".into());
+                self.form.map_file_error = None;
+            }
+            Err(e) => {
+                self.form.map_file_status = None;
+                self.form.map_file_error = Some(format!("Cannot save file: {e}"));
+            }
+        }
     }
 
     fn submit(&mut self) {
@@ -390,9 +570,17 @@ impl RulesVm {
         }
         let f = &self.form;
         let action = f.action();
-        let (name, pattern, method) = (f.name.trim().to_string(), f.pattern.trim().to_string(), f.method.trim().to_string());
+        let (name, pattern, method) = (
+            f.name.trim().to_string(),
+            f.pattern.trim().to_string(),
+            f.method.trim().to_string(),
+        );
         let mut cfg = self.cfg.lock().unwrap();
-        match self.editing.take().and_then(|id| cfg.rules.iter_mut().find(|r| r.id == id)) {
+        match self
+            .editing
+            .take()
+            .and_then(|id| cfg.rules.iter_mut().find(|r| r.id == id))
+        {
             Some(r) => {
                 r.name = name;
                 r.pattern = pattern;
@@ -401,7 +589,15 @@ impl RulesVm {
             }
             None => {
                 let id = cfg.next_rule_id();
-                cfg.rules.push(Rule { id, enabled: true, name, pattern, method, action, hits: 0 });
+                cfg.rules.push(Rule {
+                    id,
+                    enabled: true,
+                    name,
+                    pattern,
+                    method,
+                    action,
+                    hits: 0,
+                });
             }
         }
         drop(cfg);
@@ -438,7 +634,10 @@ mod tests {
     use tokio::sync::oneshot;
 
     fn vm() -> RulesVm {
-        RulesVm::new(Arc::new(Mutex::new(Config::default())), FlowStore::default())
+        RulesVm::new(
+            Arc::new(Mutex::new(Config::default())),
+            FlowStore::default(),
+        )
     }
 
     fn add_block(vm: &mut RulesVm, pattern: &str) {
@@ -451,7 +650,14 @@ mod tests {
     fn submit_adds_rule_resets_form_and_applies_immediately() {
         let mut vm = vm();
         add_block(&mut vm, "a.com");
-        assert_eq!(vm.cfg.lock().unwrap().matching("GET", "https://a.com/x").len(), 1);
+        assert_eq!(
+            vm.cfg
+                .lock()
+                .unwrap()
+                .matching("GET", "https://a.com/x")
+                .len(),
+            1
+        );
         assert!(vm.form.pattern.is_empty());
     }
 
@@ -466,6 +672,28 @@ mod tests {
     }
 
     #[test]
+    fn map_local_file_load_edit_and_save_are_explicit() {
+        let mut vm = vm();
+        let path = std::env::temp_dir().join(format!("pxp-map-edit-{}.txt", std::process::id()));
+        std::fs::write(&path, "before").unwrap();
+        vm.form.file = path.display().to_string();
+        vm.handle(RuleIntent::LoadMapLocalFile);
+        assert_eq!(vm.form.map_file_content, "before");
+        assert!(!vm.form.map_file_dirty);
+
+        vm.form.map_file_content = "after".into();
+        vm.form.map_file_dirty = true;
+        vm.handle(RuleIntent::SaveMapLocalFile);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
+        assert_eq!(
+            vm.form.map_file_status.as_deref(),
+            Some("Saved directly to disk")
+        );
+        assert!(!vm.form.map_file_dirty);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
     fn edit_then_submit_updates_in_place() {
         let mut vm = vm();
         add_block(&mut vm, "a.com");
@@ -477,7 +705,10 @@ mod tests {
         vm.handle(RuleIntent::Submit);
         let cfg = vm.cfg.lock().unwrap();
         assert_eq!(cfg.rules.len(), 1);
-        assert_eq!((cfg.rules[0].pattern.as_str(), cfg.rules[0].id), ("b.com", id));
+        assert_eq!(
+            (cfg.rules[0].pattern.as_str(), cfg.rules[0].id),
+            ("b.com", id)
+        );
         assert_eq!(cfg.rules[0].action, Action::Block { status: 418 });
     }
 
@@ -503,7 +734,16 @@ mod tests {
         vm.handle(RuleIntent::Move(0, 1));
         vm.handle(RuleIntent::Move(1, 1));
         vm.handle(RuleIntent::Move(0, -1));
-        assert_eq!(vm.cfg.lock().unwrap().rules.iter().map(|r| r.id).collect::<Vec<_>>(), vec![b, a]);
+        assert_eq!(
+            vm.cfg
+                .lock()
+                .unwrap()
+                .rules
+                .iter()
+                .map(|r| r.id)
+                .collect::<Vec<_>>(),
+            vec![b, a]
+        );
         vm.handle(RuleIntent::SetEnabled(a, false));
         assert_eq!(vm.active_rule_count(), 1);
         vm.handle(RuleIntent::Delete(b));
@@ -515,7 +755,10 @@ mod tests {
         let mut vm = vm();
         vm.list_inputs[1] = "  tracker.com ".into();
         vm.handle(RuleIntent::AddHost(ListKind::Muted));
-        assert_eq!(vm.cfg.lock().unwrap().muted, vec!["tracker.com".to_string()]);
+        assert_eq!(
+            vm.cfg.lock().unwrap().muted,
+            vec!["tracker.com".to_string()]
+        );
         assert!(vm.list_inputs[1].is_empty());
         vm.handle(RuleIntent::AddHost(ListKind::Muted));
         assert_eq!(vm.cfg.lock().unwrap().muted.len(), 1);
@@ -543,14 +786,34 @@ mod tests {
         let mut vm = vm();
         let paused = |body: &[u8]| {
             let (tx, rx) = oneshot::channel();
-            (Paused { id: 1, stage: Stage::Request, edit: BpEdit { method: "GET".into(), url: "http://a/".into(), status: 0, headers: vec![("a".into(), "1".into())], body: body.to_vec() }, reply: tx }, rx)
+            (
+                Paused {
+                    id: 1,
+                    stage: Stage::Request,
+                    edit: BpEdit {
+                        method: "GET".into(),
+                        url: "http://a/".into(),
+                        status: 0,
+                        headers: vec![("a".into(), "1".into())],
+                        body: body.to_vec(),
+                    },
+                    reply: tx,
+                },
+                rx,
+            )
         };
         let (p, mut rx) = paused(b"orig");
         vm.pause(p);
         vm.paused[0].body = "changed".into();
         vm.handle(RuleIntent::Resolve(true));
         match rx.try_recv().unwrap() {
-            Decision::Resume(e) => assert_eq!((e.body, e.headers), (b"changed".to_vec(), vec![("a".to_string(), "1".to_string())])),
+            Decision::Resume(e) => assert_eq!(
+                (e.body, e.headers),
+                (
+                    b"changed".to_vec(),
+                    vec![("a".to_string(), "1".to_string())]
+                )
+            ),
             Decision::Abort => panic!("expected resume"),
         }
         let (p, mut rx) = paused(b"orig");
@@ -564,7 +827,18 @@ mod tests {
     fn untouched_breakpoint_body_is_sent_byte_exact() {
         let mut vm = vm();
         let (tx, mut rx) = oneshot::channel();
-        vm.pause(Paused { id: 1, stage: Stage::Response, edit: BpEdit { method: String::new(), url: String::new(), status: 200, headers: vec![], body: vec![0xff, 0xfe] }, reply: tx });
+        vm.pause(Paused {
+            id: 1,
+            stage: Stage::Response,
+            edit: BpEdit {
+                method: String::new(),
+                url: String::new(),
+                status: 200,
+                headers: vec![],
+                body: vec![0xff, 0xfe],
+            },
+            reply: tx,
+        });
         vm.handle(RuleIntent::Resolve(true));
         match rx.try_recv().unwrap() {
             Decision::Resume(e) => assert_eq!(e.body, vec![0xff, 0xfe]),
@@ -576,7 +850,18 @@ mod tests {
     fn dropping_a_pending_breakpoint_resumes_it() {
         let mut vm = vm();
         let (tx, mut rx) = oneshot::channel();
-        vm.pause(Paused { id: 1, stage: Stage::Request, edit: BpEdit { method: "GET".into(), url: "u".into(), status: 0, headers: vec![], body: vec![] }, reply: tx });
+        vm.pause(Paused {
+            id: 1,
+            stage: Stage::Request,
+            edit: BpEdit {
+                method: "GET".into(),
+                url: "u".into(),
+                status: 0,
+                headers: vec![],
+                body: vec![],
+            },
+            reply: tx,
+        });
         drop(vm);
         assert!(matches!(rx.try_recv().unwrap(), Decision::Resume(_)));
     }
@@ -591,7 +876,14 @@ mod tests {
         vm.store.lock().push(f);
         vm.open_from_flow(1, RuleKind::Block);
         assert!(vm.show);
-        assert_eq!((vm.form.pattern.as_str(), vm.form.method.as_str(), vm.form.status.as_str()), ("api.x.com/v1/u", "POST", "503"));
+        assert_eq!(
+            (
+                vm.form.pattern.as_str(),
+                vm.form.method.as_str(),
+                vm.form.status.as_str()
+            ),
+            ("api.x.com/v1/u", "POST", "503")
+        );
         vm.open_from_flow(99, RuleKind::Block);
         assert_eq!(vm.form.pattern, "api.x.com/v1/u");
     }
@@ -628,7 +920,11 @@ mod tests {
 
     #[test]
     fn script_rule_needs_a_hook() {
-        let mut f = RuleForm { kind: RuleKind::Script, pattern: "a".into(), ..Default::default() };
+        let mut f = RuleForm {
+            kind: RuleKind::Script,
+            pattern: "a".into(),
+            ..Default::default()
+        };
         assert!(f.valid());
         f.code = "console.log(1)".into();
         assert!(!f.valid());
@@ -637,18 +933,50 @@ mod tests {
     #[test]
     fn form_roundtrips_every_action_kind() {
         let actions = vec![
-            Action::Breakpoint { request: true, response: true },
-            Action::MapLocal { path: "/x".into(), status: 201 },
-            Action::MapRemote { target: "http://l:3000".into() },
+            Action::Breakpoint {
+                request: true,
+                response: true,
+            },
+            Action::MapLocal {
+                path: "/x".into(),
+                status: 201,
+            },
+            Action::MapRemote {
+                target: "http://l:3000".into(),
+            },
             Action::Block { status: 503 },
             Action::Delay { ms: 5, kbps: 2 },
-            Action::SetHeader { response: true, name: "x".into(), value: "y".into(), remove: false },
-            Action::ReplaceBody { response: false, find: "a".into(), replace: "b".into(), regex: true },
-            Action::Mock { status: 200, content_type: "text/plain".into(), body: "hi".into() },
-            Action::Script { code: "function onRequest(c){return c}".into() },
+            Action::SetHeader {
+                response: true,
+                name: "x".into(),
+                value: "y".into(),
+                remove: false,
+            },
+            Action::ReplaceBody {
+                response: false,
+                find: "a".into(),
+                replace: "b".into(),
+                regex: true,
+            },
+            Action::Mock {
+                status: 200,
+                content_type: "text/plain".into(),
+                body: "hi".into(),
+            },
+            Action::Script {
+                code: "function onRequest(c){return c}".into(),
+            },
         ];
         for a in actions {
-            let r = Rule { id: 1, enabled: true, name: String::new(), pattern: "p".into(), method: String::new(), action: a.clone(), hits: 0 };
+            let r = Rule {
+                id: 1,
+                enabled: true,
+                name: String::new(),
+                pattern: "p".into(),
+                method: String::new(),
+                action: a.clone(),
+                hits: 0,
+            };
             assert_eq!(RuleForm::from_rule(&r).action(), a);
         }
     }
