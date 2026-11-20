@@ -97,7 +97,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `intent.rs` | intent and effect enums |
 
 ### `views/`
-One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_window`, `breakpoint_window`, `replay_window`, `network_tab`, `schemas_tab`, `status_bar`, `shortcuts`, `body`. Also `theme` and `icon`.
+One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_window`, `breakpoint_window`, `replay_window`, `network_tab`, `schemas_tab`, `shortcuts`, `body`. Also `theme` and `icon`.
 
 ## Extending
 

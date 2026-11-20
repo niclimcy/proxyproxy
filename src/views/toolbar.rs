@@ -2,82 +2,93 @@ use crate::domain::filter;
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::viewmodels::intent::{DeviceAction, SessionIntent, ToolbarIntent};
 use crate::views::theme::*;
-use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, TextEdit};
+use eframe::egui::{self, Color32, Margin, RichText, TextEdit};
 use egui_phosphor::regular as ph;
 
 pub struct Props<'a> {
     pub port: u16,
     pub cert: &'a str,
-    pub logo: &'a egui::TextureHandle,
     pub show_rules: &'a mut bool,
     pub active_rules: usize,
+    pub status: &'a str,
+    pub api_port: u16,
+    pub paused_breakpoints: usize,
 }
 
 pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props) -> Vec<ToolbarIntent> {
     let mut out = vec![];
-    let Props { port, cert, logo, show_rules, active_rules } = p;
-    egui::Panel::top("top").frame(Frame::new().fill(PANEL).inner_margin(Margin::symmetric(14, 8)).stroke(Stroke::new(1.0, BORDER))).show(ui, |ui| {
+    let Props { port, cert, show_rules, active_rules, status, api_port, paused_breakpoints } = p;
+    egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let on = vm.show_sidebar;
-            let toggle = egui::Button::new(RichText::new(ph::SIDEBAR).size(17.0).color(if on { ACCENT } else { MUTED }))
-                .min_size(egui::vec2(32.0, 32.0))
-                .fill(if on { ACCENT.gamma_multiply(0.15) } else { Color32::TRANSPARENT })
-                .stroke(Stroke::NONE);
-            if ui.add(toggle).on_hover_text("Toggle sidebar (⌘B)").clicked() {
+            if sidebar_toggle(ui, vm.show_sidebar).clicked() {
                 vm.show_sidebar = !vm.show_sidebar;
             }
-            ui.add_space(2.0);
-            ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(30.0, 30.0)));
-            ui.label(RichText::new("proxyproxy").size(16.0).strong());
             let paused = vm.capture_paused();
-            let label = if paused { "paused".to_string() } else { format!("127.0.0.1:{port}") };
-            if ui.add(egui::Button::new(RichText::new(ico(if paused { ph::PLAY } else { ph::PAUSE }, &label)).size(12.0).color(if paused { AMBER } else { GREEN })).corner_radius(20)).on_hover_text("Pause / resume capturing").clicked() {
+            let (icon, label, state, tip) = if paused {
+                (ph::PAUSE_CIRCLE, "Paused".to_string(), warning(), format!("Capture paused. Click to resume (proxy on 127.0.0.1:{port})"))
+            } else {
+                (ph::RECORD, format!("Capturing · :{port}"), success(), format!("Capturing on 127.0.0.1:{port}. Click to pause"))
+            };
+            let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).corner_radius(RADIUS_PILL)));
+            if pill_resp.on_hover_text(tip).clicked() {
                 out.push(ToolbarIntent::ToggleCapture);
             }
             ui.add_space(8.0);
             let search = ui.add(
                 TextEdit::singleline(&mut vm.filter)
                     .id(egui::Id::unique("search"))
-                    .hint_text(ico(ph::MAGNIFYING_GLASS, "host:api.* status:>=400 method:POST body:\"userId\"  (⌘F)"))
+                    .hint_text(ico(ph::MAGNIFYING_GLASS, &format!("Search or filter  ({}F)", cmd())))
                     .desired_width(420.0)
                     .margin(Margin::symmetric(12, 7))
-                    .background_color(BG),
+                    .background_color(canvas()),
             );
             if vm.focus_search {
                 search.request_focus();
                 vm.focus_search = false;
             }
-            search.on_hover_text(format!("Fields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error mocked pending json", filter::FIELDS.join(" ")));
+            search.on_hover_text(format!("Example: host:api.* status:>=400 method:POST body:\"userId\"\nFields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error modified pending json", filter::FIELDS.join(" ")));
             saved_menu(ui, vm, &mut out);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
-                let b = egui::Button::new(RichText::new(ico(ph::SLIDERS_HORIZONTAL, &label)).size(13.5)).fill(if *show_rules { ACCENT.gamma_multiply(0.3) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE);
-                if ui.add(b).clicked() {
+                let b = egui::Button::new(RichText::new(ico(ph::SLIDERS_HORIZONTAL, &label)).size(FS_SMALL)).fill(if *show_rules { tint(accent(), Tint::Normal) } else { Color32::TRANSPARENT });
+                if flat(ui, |ui| ui.add(b)).clicked() {
                     *show_rules = !*show_rules;
                 }
-                devices_menu(ui, ctx, port, cert, &mut out);
-                session_menu(ui, &mut out);
-                if icon_button(ui, ph::PLUS, "Compose").clicked() {
-                    out.push(ToolbarIntent::Compose);
-                }
-                if icon_button(ui, ph::TRASH, "Clear").on_hover_text("Clear unpinned requests").clicked() {
-                    out.push(ToolbarIntent::ClearUnpinned);
-                }
+                capsule(ui, |ui| {
+                    // right_to_left parent: add in reverse visual order
+                    devices_menu(ui, ctx, port, api_port, cert, &mut out);
+                    session_menu(ui, &mut out);
+                    if icon_button(ui, ph::PLUS, "Compose").clicked() {
+                        out.push(ToolbarIntent::Compose);
+                    }
+                });
+                // remaining space between the search box and the actions
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add_space(8.0);
+                    if paused_breakpoints > 0 {
+                        pill(ui, &format!("{paused_breakpoints} paused"), warning());
+                    }
+                    if !status.is_empty() {
+                        ui.add(egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate()).on_hover_text(status);
+                    }
+                });
             });
         });
         ui.horizontal(|ui| {
-            for (label, tok, c) in [("Errors", "is:error", RED), ("Pinned", "is:pinned", AMBER), ("JSON", "is:json", GREEN), ("WebSocket", "is:ws", PURPLE), ("Modified", "is:mocked", BLUE), ("Pending", "is:pending", MUTED)] {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (label, tok, c) in [("Errors", "is:error", danger()), ("Pinned", "is:pinned", warning()), ("JSON", "is:json", success()), ("WebSocket", "is:ws", violet()), ("Modified", "is:modified", info()), ("Pending", "is:pending", fg_muted())] {
                 if chip(ui, label, vm.token_on(tok), c).clicked() {
                     out.push(ToolbarIntent::ToggleToken(tok));
                 }
             }
+            ui.spacing_mut().item_spacing.x = 8.0;
             if let Some(e) = &vm.query.error {
-                ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(RED).size(12.0));
+                ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()).size(FS_CAPTION));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.checkbox(&mut vm.follow, "Follow");
                 let hidden = vm.hidden_cols();
-                ui.menu_button(RichText::new(ico(ph::COLUMNS, "Columns")).size(12.5), |ui| {
+                toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
                     for c in ALL_COLS.iter().skip(1) {
                         let mut on = !hidden.iter().any(|h| h == c);
                         if ui.checkbox(&mut on, *c).changed() {
@@ -93,7 +104,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
-    ui.menu_button(RichText::new(ph::STAR).size(14.0), |ui| {
+    let menu = flat(ui, |ui| ui.menu_button(RichText::new(ph::STAR).size(FS_BODY), |ui| {
         if !vm.filter.trim().is_empty() && ui.button(ico(ph::PLUS, "Save current query")).clicked() {
             out.push(ToolbarIntent::SaveQuery);
             ui.close();
@@ -114,15 +125,14 @@ fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
                 }
             });
         }
-    })
-    .response
-    .on_hover_text("Saved queries");
+    }));
+    menu.response.on_hover_text("Saved queries");
 }
 
 fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>) {
-    ui.menu_button(RichText::new(ico(ph::FOLDER_OPEN, "Session")).size(13.5), |ui| {
+    toolbar_menu(ui, ph::FOLDER_OPEN, "Session", |ui| {
         let mut act = None::<u8>;
-        for (i, l) in ["New session", "Open session…", "Save session as…", "-", "Import HAR / Charles JSON…", "-", "Export HAR (visible)", "Export CSV (visible)", "Export rules…", "Import rules…"].iter().enumerate() {
+        for (i, l) in ["New session", "Open session…", "Save session as…", "-", "Import HAR / Charles JSON…", "-", "Export HAR (visible)", "Export CSV (visible)", "Export rules…", "Import rules…", "-", "Clear unpinned requests"].iter().enumerate() {
             if *l == "-" {
                 ui.separator();
             } else if ui.button(*l).clicked() {
@@ -141,6 +151,10 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>) {
             7 => dlg().set_file_name("export.csv").save_file().map(SessionIntent::ExportCsv),
             8 => dlg().set_file_name("proxyproxy-rules.json").save_file().map(SessionIntent::ExportRules),
             9 => dlg().add_filter("rules", &["json"]).pick_file().map(SessionIntent::ImportRules),
+            11 => {
+                out.push(ToolbarIntent::ClearUnpinned);
+                None
+            }
             _ => None,
         };
         if let Some(i) = intent {
@@ -149,8 +163,8 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>) {
     });
 }
 
-fn devices_menu(ui: &mut egui::Ui, ctx: &egui::Context, port: u16, cert: &str, out: &mut Vec<ToolbarIntent>) {
-    ui.menu_button(RichText::new(ico(ph::DEVICE_MOBILE, "Capture")).size(13.5), |ui| {
+fn devices_menu(ui: &mut egui::Ui, ctx: &egui::Context, port: u16, api_port: u16, cert: &str, out: &mut Vec<ToolbarIntent>) {
+    toolbar_menu(ui, ph::DEVICE_MOBILE, "Capture", |ui| {
         let item = |ui: &mut egui::Ui, label: &str| {
             let c = ui.button(label).clicked();
             if c {
@@ -185,6 +199,9 @@ fn devices_menu(ui: &mut egui::Ui, ctx: &egui::Context, port: u16, cert: &str, o
         ui.separator();
         if item(ui, "Copy CA path") {
             ctx.copy_text(cert.to_string());
+        }
+        if item(ui, &format!("Copy REST API URL (127.0.0.1:{api_port})")) {
+            ctx.copy_text(format!("http://127.0.0.1:{api_port}"));
         }
     });
 }

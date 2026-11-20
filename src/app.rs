@@ -41,16 +41,14 @@ struct App {
     port: u16,
     api_port: u16,
     cert: String,
-    logo: egui::TextureHandle,
 }
 
 impl App {
     fn new(ctx: &egui::Context, port: u16, rx: Receiver<Event>, cfg: Shared, store: FlowStore, api_port: u16) -> Self {
-        let logo = ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied([256, 256], &views::icon::rgba()), egui::TextureOptions::LINEAR);
         let repaint: Arc<dyn Repaint> = Arc::new(EguiRepaint(ctx.clone()));
         let cert = proxy::tls::cert_path().display().to_string();
         let session = SessionVm::new(store.clone(), cfg.clone());
-        let status_text = session.restore().unwrap_or_else(|| format!("CA: {cert}"));
+        let status_text = session.restore().unwrap_or_default();
         Self {
             rx,
             capture: CaptureVm::new(store.clone(), cfg.clone()),
@@ -65,7 +63,6 @@ impl App {
             port,
             api_port,
             cert,
-            logo,
         }
     }
 
@@ -91,7 +88,15 @@ impl App {
 
     fn toolbar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let active_rules = self.rules.active_rule_count();
-        let props = views::toolbar::Props { port: self.port, cert: &self.cert, logo: &self.logo, show_rules: &mut self.rules.show, active_rules };
+        let props = views::toolbar::Props {
+            port: self.port,
+            cert: &self.cert,
+            show_rules: &mut self.rules.show,
+            active_rules,
+            status: &self.status.text,
+            api_port: self.api_port,
+            paused_breakpoints: self.rules.paused.len(),
+        };
         for i in views::toolbar::show(ui, ctx, &mut self.capture, props) {
             match i {
                 ToolbarIntent::Session(s) => self.session.handle(s, &mut self.capture, &mut self.rules, &mut self.status),
@@ -140,6 +145,7 @@ impl Drop for App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        views::theme::sync(&ctx);
         self.drain();
         self.capture.refresh_visible();
         for i in views::shortcuts::read(&ctx) {
@@ -153,7 +159,6 @@ impl eframe::App for App {
         self.replay.poll();
 
         self.toolbar(ui, &ctx);
-        views::status_bar::show(ui, &self.status.text, self.api_port, self.rules.paused.len());
 
         self.schemas.sync();
         self.capture.refresh_tree();

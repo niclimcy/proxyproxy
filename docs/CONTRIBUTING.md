@@ -21,6 +21,23 @@ curl -s http://127.0.0.1:19091/flows     # REST API, port + 1
 
 After changing `proxy/` or `views/`, check HTTP and HTTPS capture, a breakpoint edit, replay, mute and scope, and HAR and Charles import.
 
+## Commits
+
+Use [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`. The scope is optional.
+
+| Type | Use for |
+|---|---|
+| `feat` | new behaviour or UI users can see |
+| `fix` | a bug fix |
+| `refactor` | code change with no behaviour change |
+| `test` | adding or changing tests only |
+| `chore` | tooling, dependencies, docs, other upkeep |
+
+- Keep the summary short and lower case, with no trailing period.
+- Mark breaking changes with `!` after the type (`feat!:`) and a `BREAKING CHANGE:` footer.
+- Keep each commit to one type. Split a fix from a refactor.
+- Don't add `Co-Authored-By` trailers.
+
 ## Where a change goes
 
 - Data or policy: `domain/`.

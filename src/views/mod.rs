@@ -8,7 +8,6 @@ pub mod rules_window;
 pub mod schemas_tab;
 pub mod shortcuts;
 pub mod sidebar;
-pub mod status_bar;
 pub mod table;
 pub mod theme;
 pub mod toolbar;

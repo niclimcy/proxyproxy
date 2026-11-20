@@ -15,9 +15,9 @@ pub fn show(ctx: &egui::Context, vm: &mut RulesVm) -> Option<RuleIntent> {
     };
     egui::Window::new(title).default_size([640.0, 520.0]).collapsible(false).show(ctx, |ui| {
         ui.horizontal(|ui| {
-            pill(ui, &format!("#{}", d.id), AMBER);
+            pill(ui, &format!("#{}", d.id), warning());
             if total > 1 {
-                pill(ui, &format!("{} more waiting", total - 1), MUTED);
+                pill(ui, &format!("{} more waiting", total - 1), fg_muted());
             }
         });
         ui.add_space(4.0);
@@ -43,10 +43,10 @@ pub fn show(ctx: &egui::Context, vm: &mut RulesVm) -> Option<RuleIntent> {
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            if ui.add(egui::Button::new(RichText::new(ico(ph::PLAY, "Execute")).strong()).fill(GREEN.gamma_multiply(0.45))).clicked() {
+            if ui.add(action_button(ico(ph::PLAY, "Execute"), success())).clicked() {
                 decision = Some(true);
             }
-            if ui.add(egui::Button::new(ico(ph::X, "Abort")).fill(RED.gamma_multiply(0.35))).clicked() {
+            if ui.add(action_button(ico(ph::X, "Abort"), danger())).clicked() {
                 decision = Some(false);
             }
         });

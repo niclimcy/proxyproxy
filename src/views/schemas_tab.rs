@@ -16,7 +16,7 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
     ui.add_space(6.0);
     let v = vm.view();
     if v.paths.is_empty() {
-        ui.label(RichText::new("No schemas loaded").color(MUTED));
+        ui.label(RichText::new("No schemas loaded").color(fg_muted()));
     }
     for (i, p) in v.paths.iter().enumerate() {
         ui.horizontal(|ui| {
@@ -25,7 +25,7 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
             }
             ui.label(RichText::new(p).monospace());
             if let Some((_, e)) = v.errors.iter().find(|(ep, _)| ep == p) {
-                ui.label(RichText::new(e).color(RED));
+                ui.label(RichText::new(e).color(danger()));
             }
         });
     }

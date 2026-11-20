@@ -35,7 +35,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     let rules = vm.rules_snapshot();
     ScrollArea::vertical().max_height(220.0).id_salt("rule-list").show(ui, |ui| {
         if rules.is_empty() {
-            ui.label(RichText::new("No rules yet").color(MUTED));
+            ui.label(RichText::new("No rules yet").color(fg_muted()));
         }
         let n = rules.len();
         for (i, r) in rules.iter().enumerate() {
@@ -46,11 +46,11 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
                         out.push(RuleIntent::SetEnabled(r.id, enabled));
                     }
                     let c = match r.action {
-                        Action::Breakpoint { .. } => AMBER,
-                        Action::Block { .. } => RED,
-                        Action::Script { .. } => PURPLE,
-                        Action::Delay { .. } => BLUE,
-                        _ => GREEN,
+                        Action::Breakpoint { .. } => warning(),
+                        Action::Block { .. } => danger(),
+                        Action::Script { .. } => violet(),
+                        Action::Delay { .. } => info(),
+                        _ => success(),
                     };
                     pill(ui, r.action.label(), c);
                     if !r.method.is_empty() {
@@ -94,7 +94,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     form_ui(ui, &mut vm.form);
     ui.horizontal(|ui| {
         let label = if editing { "Save rule" } else { "Add rule" };
-        if ui.add_enabled(vm.form.valid(), egui::Button::new(RichText::new(ico(ph::PLUS, label)).strong()).fill(ACCENT.gamma_multiply(0.5))).clicked() {
+        if ui.add_enabled(vm.form.valid(), action_button(ico(ph::PLUS, label), accent())).clicked() {
             out.push(RuleIntent::Submit);
         }
         if !vm.form.pattern.trim().is_empty() {
@@ -263,8 +263,8 @@ fn console_tab(ui: &mut egui::Ui, vm: &RulesVm, out: &mut Vec<RuleIntent>) {
             ui.label(muted("Nothing logged yet. Add a Script rule with onRequest/onResponse."));
         }
         for l in &vm.console {
-            let c = if l.starts_with("[error]") { RED } else { TEXT };
-            ui.label(RichText::new(l).monospace().size(12.0).color(c));
+            let c = if l.starts_with("[error]") { danger() } else { fg() };
+            ui.label(RichText::new(l).monospace().size(FS_CAPTION).color(c));
         }
     });
 }

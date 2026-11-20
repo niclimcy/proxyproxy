@@ -18,7 +18,7 @@ pub fn show(ctx: &egui::Context, vm: &mut ReplayVm) -> Vec<u64> {
                     }
                 });
                 ui.add(TextEdit::singleline(&mut d.url).desired_width(ui.available_width() - 90.0));
-                let go = ui.add_enabled(!d.sending, egui::Button::new(RichText::new(ico(ph::PAPER_PLANE_TILT, "Send")).strong()).fill(GREEN.gamma_multiply(0.45)));
+                let go = ui.add_enabled(!d.sending, action_button(ico(ph::PAPER_PLANE_TILT, "Send"), success()));
                 if go.clicked() {
                     send.push(d.id);
                 }
@@ -57,7 +57,7 @@ pub fn show(ctx: &egui::Context, vm: &mut ReplayVm) -> Vec<u64> {
                     }
                 }
                 Some(Err(e)) => {
-                    ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(RED));
+                    ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()));
                 }
                 None => {}
             }

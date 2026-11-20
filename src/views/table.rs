@@ -15,39 +15,48 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
     let sort = vm.sort;
     let has_flows = vm.has_flows();
 
-    egui::CentralPanel::default().frame(Frame::new().fill(BG).inner_margin(Margin::same(PAD))).show(ui, |ui| {
+    egui::CentralPanel::default().frame(Frame::new().fill(canvas()).inner_margin(Margin::same(PAD))).show(ui, |ui| {
         if !has_flows {
-            ui.centered_and_justified(|ui| {
-                ui.label(RichText::new(format!("Waiting for traffic…\n\nPoint a client at 127.0.0.1:{port}, use the Capture menu,\nor run:  proxyproxy run -- curl https://example.com")).color(MUTED).size(15.0));
+            ui.vertical_centered(|ui| {
+                const BLOCK_H: f32 = 140.0; // approx height of the message block
+                ui.add_space(((ui.available_height() - BLOCK_H) / 2.0).max(0.0));
+                ui.label(RichText::new("Waiting for traffic…").size(FS_TITLE).strong());
+                ui.add_space(6.0);
+                ui.label(RichText::new(format!("Proxy is listening on 127.0.0.1:{port}")).color(fg_muted()));
+                ui.add_space(10.0);
+                ui.label(muted("1. Capture menu → Trust CA, then Set system proxy"));
+                ui.label(muted("2. Or point any client at the proxy address"));
+                ui.label(muted("3. Or run:  proxyproxy run -- curl https://example.com"));
             });
             return;
         }
         if vm.visible.is_empty() {
-            ui.centered_and_justified(|ui| ui.label(RichText::new("No requests match the filter").color(MUTED).size(14.0)));
+            ui.centered_and_justified(|ui| ui.label(RichText::new("No requests match the filter").color(fg_muted()).size(FS_BODY)));
             return;
         }
         let mut tb = TableBuilder::new(ui).striped(true).sense(egui::Sense::click()).cell_layout(egui::Layout::left_to_right(egui::Align::Center)).stick_to_bottom(follow);
         for &c in &cols {
             tb = tb.column(match ALL_COLS[c] {
-                "#" => Column::exact(64.0),
+                "#" => Column::exact(92.0),
                 "App" => Column::initial(110.0).resizable(true).clip(true),
-                "Method" => Column::exact(72.0),
-                "Status" => Column::exact(64.0),
+                "Method" => Column::exact(84.0),
+                "Status" => Column::exact(72.0),
                 "Host" => Column::initial(210.0).resizable(true).clip(true),
                 "Path" => Column::remainder().clip(true),
                 "Time" => Column::exact(72.0),
                 _ => Column::exact(80.0),
             });
         }
-        tb.header(26.0, |mut h| {
+        tb.header(HIT, |mut h| {
             for &c in &cols {
                 let (_, r) = h.col(|ui| {
                     let arrow = match sort {
                         Some((sc, asc)) if sc == c => if asc { " ▲" } else { " ▼" },
                         _ => "",
                     };
-                    ui.label(RichText::new(format!("{}{arrow}", ALL_COLS[c].to_uppercase())).size(11.0).strong().color(MUTED));
+                    ui.label(overline(format!("{}{arrow}", ALL_COLS[c].to_uppercase())));
                 });
+                let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Click to sort");
                 if r.clicked() {
                     out.push(RowIntent::Sort(c));
                 }
@@ -55,32 +64,33 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
         })
         .body(|body| {
             let st = vm.store.lock();
-            body.rows(26.0, vm.visible.len(), |mut row| {
+            body.rows(HIT, vm.visible.len(), |mut row| {
                 let f = &st.flows[vm.visible[row.index()]];
                 row.set_selected(selected == Some(f.id));
                 for &c in &cols {
                     row.col(|ui| match ALL_COLS[c] {
                         "#" => {
+                            status_dot(ui, f.status.map(status_color).unwrap_or_else(fg_muted));
                             if let Some(i) = f.color {
-                                ui.label(RichText::new(ph::CIRCLE).color(COLORS[i as usize % 5].1).size(10.0));
+                                ui.label(RichText::new(ph::CIRCLE).color(tag_colors()[i as usize % 5].1).size(FS_CAPTION));
                             }
                             if f.pinned {
-                                ui.label(RichText::new(ph::PUSH_PIN).color(AMBER).size(12.0));
+                                ui.label(RichText::new(ph::PUSH_PIN).color(warning()).size(FS_CAPTION));
                             }
                             if diff_base == Some(f.id) {
-                                ui.label(RichText::new(ph::GIT_DIFF).color(ACCENT).size(12.0));
+                                ui.label(RichText::new(ph::GIT_DIFF).color(accent()).size(FS_CAPTION));
                             }
-                            ui.label(RichText::new(f.id.to_string()).color(MUTED));
+                            ui.label(RichText::new(f.id.to_string()).monospace().color(fg_muted()));
                         }
                         "App" => {
-                            ui.label(RichText::new(f.app_label()).color(MUTED));
+                            ui.label(RichText::new(f.app_label()).color(fg_muted()));
                         }
                         "Method" => {
-                            ui.label(RichText::new(if f.is_ws { "WS" } else { &f.method }).strong().color(if f.is_ws { PURPLE } else { method_color(&f.method) }));
+                            badge(ui, if f.is_ws { "WS" } else { &f.method }, if f.is_ws { violet() } else { method_color(&f.method) });
                         }
                         "Status" => match f.status {
                             Some(s) => {
-                                ui.label(RichText::new(s.to_string()).strong().color(status_color(s)));
+                                badge(ui, &s.to_string(), status_color(s));
                             }
                             None => {
                                 ui.spinner();
@@ -90,19 +100,19 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
                             ui.label(&f.host);
                         }
                         "Path" => {
-                            ui.label(RichText::new(&f.path).color(MUTED));
+                            ui.label(RichText::new(&f.path).color(fg_muted()));
                             if !f.tag.is_empty() {
-                                pill(ui, &f.tag, PURPLE);
+                                pill(ui, &f.tag, violet());
                             }
                             if !f.comment.is_empty() {
-                                ui.label(RichText::new(ph::NOTE).color(AMBER)).on_hover_text(&f.comment);
+                                ui.label(RichText::new(ph::NOTE).color(warning())).on_hover_text(&f.comment);
                             }
                         }
                         "Time" => {
-                            ui.label(RichText::new(f.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default()).color(MUTED));
+                            ui.label(RichText::new(f.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default()).monospace().color(fg_muted()));
                         }
                         _ => {
-                            ui.label(RichText::new(f.response.as_ref().map(|r| fmt_size(r.body.len())).unwrap_or_default()).color(MUTED));
+                            ui.label(RichText::new(f.response.as_ref().map(|r| fmt_size(r.body.len())).unwrap_or_default()).monospace().color(fg_muted()));
                         }
                     });
                 }
@@ -119,7 +129,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
                         }
                         c
                     };
-                    if b(ui, &ico(ph::PLAY, "Replay / edit…  (⌘R)")) {
+                    if b(ui, &ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd()))) {
                         out.push(RowIntent::Replay(id));
                     }
                     ui.menu_button(ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), |ui| {
@@ -138,7 +148,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
                         if b(ui, "None") {
                             out.push(RowIntent::Color(id, None));
                         }
-                        for (i, (n, _)) in COLORS.iter().enumerate() {
+                        for (i, (n, _)) in tag_colors().iter().enumerate() {
                             if b(ui, n) {
                                 out.push(RowIntent::Color(id, Some(i as u8)));
                             }

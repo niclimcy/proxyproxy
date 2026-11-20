@@ -17,7 +17,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                 ui.label("→");
                 ui.add(TextEdit::singleline(ip).desired_width(140.0).hint_text("127.0.0.1"));
                 if !valid_ip(ip) {
-                    ui.label(RichText::new("invalid IP").color(RED));
+                    ui.label(RichText::new("invalid IP").color(danger()));
                 }
                 if ui.small_button(ph::X).clicked() {
                     out.push(NetworkIntent::RemoveDns(i));
