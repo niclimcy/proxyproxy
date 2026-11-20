@@ -105,8 +105,3 @@ One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_panel`
 - A body view implements `services::decoders::BodyDecoder` and returns a `Rendered` value (text, form, tree, hex or sections). Views draw `Rendered` and never match on a decoder.
 
 Neither should panic. They return values or change the message they are given.
-
-## Not supported
-
-- Passthrough CONNECT and WebSocket traffic skip DNS overrides and the upstream proxy.
-- SOCKS.

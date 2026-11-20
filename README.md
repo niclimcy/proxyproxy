@@ -43,6 +43,14 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 - Export HAR, CSV and rules JSON. Import HAR and Charles JSON sessions (`.chlsj`).
 - REST API: `http://127.0.0.1:<port+1>/flows?q=&limit=`, `/flows/{id}`, `/har`.
 
+## WIP
+
+- MCP connector for exposing proxy data and actions to MCP clients.
+- Settings UI for managing application configuration.
+- Customizable keyboard shortcuts.
+- DNS overrides and upstream proxy support for passthrough CONNECT and WebSocket traffic.
+- SOCKS proxy support.
+
 ## Notes
 
 - Rule edits apply to the next request. "Don't decrypt TLS" is checked when a connection opens, so it only affects new connections.
