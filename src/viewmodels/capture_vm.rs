@@ -137,6 +137,7 @@ impl CaptureVm {
     pub fn handle_toolbar(&mut self, intent: ToolbarIntent) {
         match intent {
             ToolbarIntent::ClearUnpinned => self.remove_flows(|f| f.pinned),
+            ToolbarIntent::ClearAll => self.remove_flows(|_| false),
             ToolbarIntent::ToggleCapture => {
                 let mut c = self.cfg.lock().unwrap();
                 c.capture_paused = !c.capture_paused;
@@ -442,6 +443,15 @@ mod tests {
         vm.handle_row(RowIntent::Pin(2), &mut status);
         vm.handle_toolbar(ToolbarIntent::ClearUnpinned);
         assert_eq!(vm.store.lock().flows.iter().map(|f| f.id).collect::<Vec<_>>(), vec![2]);
+    }
+
+    #[test]
+    fn clear_all_removes_pinned_too() {
+        let (mut vm, mut status) = setup(3);
+        vm.handle_row(RowIntent::Pin(2), &mut status);
+        vm.handle_toolbar(ToolbarIntent::ClearAll);
+        assert_eq!(vm.flow_count(), 0);
+        assert_eq!(vm.selected, None);
     }
 
     #[test]

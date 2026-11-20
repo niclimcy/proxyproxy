@@ -61,6 +61,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props
                     if icon_button(ui, ph::PLUS, "Compose").clicked() {
                         out.push(ToolbarIntent::Compose);
                     }
+                    if icon_button(ui, ph::TRASH, "Clear").on_hover_text("Remove all requests (including pinned)").clicked() {
+                        out.push(ToolbarIntent::ClearAll);
+                    }
                 });
                 // remaining space between the search box and the actions
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {

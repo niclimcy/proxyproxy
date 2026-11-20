@@ -70,6 +70,7 @@ pub enum ToolbarIntent {
     Device(DeviceAction),
     Compose,
     ClearUnpinned,
+    ClearAll,
     ToggleCapture,
     ToggleToken(&'static str),
     SaveQuery,
