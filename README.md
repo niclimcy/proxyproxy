@@ -1,6 +1,12 @@
+<p align="center"><img src="assets/icon.png" alt="proxyproxy icon" width="128"></p>
+
 # proxyproxy
 
 A desktop HTTP(S) debugging proxy written in Rust, similar to Proxyman and Charles. It decrypts TLS with a local CA, shows traffic in an egui window, and can rewrite, mock, pause and replay requests.
+
+![Traffic list with request and response inspector](assets/screenshot-main.png)
+
+![Rules and scope panel](assets/screenshot-rules.png)
 
 ## Run
 
