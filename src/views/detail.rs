@@ -49,6 +49,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected:
     }
     egui::Panel::bottom("detail")
         .resizable(true)
+        .show_separator_line(false) // would bleed under the side panels
         .default_size(360.0)
         .frame(panel_frame().inner_margin(Margin::same(PAD)))
         .show(ui, |ui| {
