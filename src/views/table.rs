@@ -10,7 +10,6 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
     let mut out = vec![];
     let hidden = vm.hidden_cols();
     let cols: Vec<usize> = (0..ALL_COLS.len()).filter(|&i| i == 0 || !hidden.iter().any(|h| h == ALL_COLS[i])).collect();
-    let selected = vm.selected;
     let follow = vm.follow && vm.sort.is_none();
     let sort = vm.sort;
     let has_flows = vm.has_flows();
@@ -34,6 +33,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
             ui.centered_and_justified(|ui| ui.label(RichText::new("No requests match the filter").color(fg_muted()).size(FS_BODY)));
             return;
         }
+        ui.style_mut().interaction.selectable_labels = false;
+        ui.style_mut().interaction.multi_widget_text_select = false;
         let mut tb = TableBuilder::new(ui).striped(true).sense(egui::Sense::click()).cell_layout(egui::Layout::left_to_right(egui::Align::Center)).stick_to_bottom(follow);
         for &c in &cols {
             tb = tb.column(match ALL_COLS[c] {
@@ -66,7 +67,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: O
             let st = vm.store.lock();
             body.rows(HIT, vm.visible.len(), |mut row| {
                 let f = &st.flows[vm.visible[row.index()]];
-                row.set_selected(selected == Some(f.id));
+                row.set_selected(vm.selected == Some(f.id));
                 for &c in &cols {
                     row.col(|ui| match ALL_COLS[c] {
                         "#" => {
