@@ -1,0 +1,30 @@
+[package]
+name = "proxyproxy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.23.1"
+bytes = "1.12.2"
+dirs = "7.0.0"
+eframe = "0.37.0"
+egui-pop-phosphor = "0.15.0"
+egui_extras = "0.37.0"
+futures-util = "0.3.34"
+http-body-util = "0.1.5"
+hudsucker = { version = "0.25.0", features = ["rcgen-ca", "rustls-client"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "tls12", "webpki-tokio"] }
+tower-service = "0.3.3"
+prost = "0.14.6"
+prost-reflect = { version = "0.16.5", features = ["serde"] }
+prost-types = "0.14.6"
+regex = "1.13.2"
+reqwest = { version = "0.13.5", features = ["blocking"] }
+rfd = "0.18.0"
+rquickjs = "0.14.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+similar = "3.2.1"
+tokio = { version = "1.54.1", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
