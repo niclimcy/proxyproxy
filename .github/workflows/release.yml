@@ -118,8 +118,8 @@ jobs:
             dist/proxyproxy-macos-universal.dmg
           if-no-files-found: error
 
-  linux-wip:
-    name: Linux distributions (WIP)
+  linux:
+    name: Linux distributions
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -209,7 +209,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: linux-wip
+          name: linux
           path: |
             dist/proxyproxy-linux-x86_64.tar.gz
             dist/proxyproxy-linux-amd64.deb
@@ -218,7 +218,7 @@ jobs:
 
   release:
     name: Publish GitHub release
-    needs: [windows, macos, linux-wip]
+    needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8.0.2

@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use crate::domain::about;
 
 // native menu bar; None where the UI draws its own (Linux)
