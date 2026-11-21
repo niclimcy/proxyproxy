@@ -82,6 +82,7 @@ pub fn show(
     vm: &mut OnboardingVm,
     port: u16,
     cert: &str,
+    ios_simulators: &[crate::services::devices::IosSimulator],
     status: &str,
     flow_count: usize,
 ) -> Vec<OnboardingIntent> {
@@ -221,8 +222,25 @@ pub fn show(
                         }
                     }
                     OnboardingTarget::Ios => {
-                        if ui.button("Install CA in iOS Simulator").clicked() {
-                            out.push(OnboardingIntent::Device(DeviceAction::IosSimInstallCa));
+                        ui.label(RichText::new("Running iOS simulators").strong());
+                        if ios_simulators.is_empty() {
+                            ui.label(muted("No running simulators"));
+                        } else {
+                            for sim in ios_simulators {
+                                ui.label(muted(&format!("{} · {}", sim.name, sim.runtime)));
+                            }
+                            if action_button_sized(
+                                ui,
+                                "Install CA on running simulators",
+                                accent(),
+                                280.0,
+                            )
+                            .clicked()
+                            {
+                                out.push(OnboardingIntent::Device(
+                                    DeviceAction::IosSimInstallCa,
+                                ));
+                            }
                         }
                         ui.label(muted(
                             "For a physical device, copy the CA path and install it in Settings.",
@@ -281,13 +299,35 @@ pub fn show(
                     if action_button_sized(ui, "Launch Chrome", accent(), 220.0).clicked() {
                         out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
                     }
-                    if action_button_sized(ui, "iOS Simulator CA", accent(), 220.0).clicked() {
+                    let mut ios_clicked = false;
+                    ui.scope(|ui| {
+                        ios_clicked = ui
+                            .add_enabled(
+                                !ios_simulators.is_empty(),
+                                action_button("iOS Simulator CA", accent()).min_size(egui::vec2(
+                                    220.0,
+                                    HIT,
+                                )),
+                            )
+                            .clicked();
+                    });
+                    if ios_clicked {
                         out.push(OnboardingIntent::Device(DeviceAction::IosSimInstallCa));
                     }
                     if action_button_sized(ui, "Android setup", accent(), 220.0).clicked() {
                         out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
                     }
                 });
+                if ios_simulators.is_empty() {
+                    ui.label(muted("iOS Simulator: no running simulators"));
+                } else {
+                    let names = ios_simulators
+                        .iter()
+                        .map(|sim| format!("{} ({})", sim.name, sim.runtime))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ui.label(muted(format!("iOS Simulator: {names}")));
+                }
                 ui.add_space(12.0);
                 card().show(ui, |ui| {
                     ui.label(RichText::new(format!("Proxy: 127.0.0.1:{port}")).monospace());

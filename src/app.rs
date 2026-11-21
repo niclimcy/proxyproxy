@@ -156,6 +156,7 @@ impl App {
         let props = views::toolbar::Props {
             port: self.port,
             cert: &self.cert,
+            ios_simulators: &self.session.ios_simulators,
             show_rules: &mut self.rules.show,
             active_rules,
             status: &self.status.text,
@@ -233,6 +234,7 @@ impl eframe::App for App {
                 &mut self.onboarding,
                 self.port,
                 &self.cert,
+                &self.session.ios_simulators,
                 &self.status.text,
                 flow_count,
             ) {

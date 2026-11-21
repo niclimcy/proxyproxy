@@ -126,17 +126,101 @@ pub fn android_install_ca(cert: &str) -> Res {
     })
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct IosSimulator {
+    pub udid: String,
+    pub name: String,
+    pub runtime: String,
+}
+
+#[cfg(target_os = "macos")]
+fn parse_ios_simulators(json: &str) -> Result<Vec<IosSimulator>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("invalid simctl JSON: {e}"))?;
+    let devices = value
+        .get("devices")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "simctl returned no devices".to_string())?;
+
+    let mut sims = vec![];
+    for (runtime, entries) in devices {
+        let runtime_name = runtime
+            .strip_prefix("com.apple.CoreSimulator.SimRuntime.")
+            .unwrap_or(runtime);
+        let Some(entries) = entries.as_array() else {
+            continue;
+        };
+        for entry in entries {
+            let is_available = entry
+                .get("isAvailable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let state = entry
+                .get("state")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let udid = entry
+                .get("udid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let name = entry
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if is_available && state == "Booted" && !udid.is_empty() {
+                sims.push(IosSimulator {
+                    udid: udid.to_string(),
+                    name: name.to_string(),
+                    runtime: runtime_name.to_string(),
+                });
+            }
+        }
+    }
+    sims.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.udid.cmp(&b.udid)));
+    Ok(sims)
+}
+
+#[cfg(target_os = "macos")]
+pub fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
+    let json = run("xcrun", &["simctl", "list", "-j", "devices"])?;
+    parse_ios_simulators(&json)
+}
+
 #[cfg(target_os = "macos")]
 pub fn ios_sim_install_ca(cert: &str) -> Res {
-    run(
-        "xcrun",
-        &["simctl", "keychain", "booted", "add-root-cert", cert],
-    )?;
-    Ok("CA installed on booted iOS simulator(s)".into())
+    let sims = ios_simulators()?;
+    if sims.is_empty() {
+        return Err("no booted iOS simulators available".into());
+    }
+
+    let mut errs = vec![];
+    for sim in &sims {
+        if let Err(e) = run(
+            "xcrun",
+            &["simctl", "keychain", &sim.udid, "add-root-cert", cert],
+        ) {
+            errs.push(format!("{}: {e}", sim.name));
+        }
+    }
+    if errs.is_empty() {
+        let names = sims
+            .iter()
+            .map(|sim| sim.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        Ok(format!("CA installed on {names}"))
+    } else {
+        Err(errs.join("; "))
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn ios_sim_install_ca(_: &str) -> Res {
+    Err("iOS simulator requires macOS".into())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
     Err("iOS simulator requires macOS".into())
 }
 
@@ -297,4 +381,31 @@ pub fn launch_chrome(port: u16) -> Res {
         }
     }
     Err("Chrome not found".into())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_only_available_booted_sims() {
+        let json = r#"{
+          "devices": {
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+              {"name":"iPhone A","udid":"UDID-A","state":"Booted","isAvailable":true},
+              {"name":"iPhone B","udid":"UDID-B","state":"Shutdown","isAvailable":true},
+              {"name":"iPhone C","udid":"UDID-C","state":"Booted","isAvailable":false}
+            ]
+          }
+        }"#;
+
+        assert_eq!(
+            parse_ios_simulators(json).unwrap(),
+            vec![IosSimulator {
+                udid: "UDID-A".into(),
+                name: "iPhone A".into(),
+                runtime: "iOS-27-0".into(),
+            }]
+        );
+    }
 }

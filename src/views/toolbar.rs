@@ -8,6 +8,7 @@ use egui_phosphor::regular as ph;
 pub struct Props<'a> {
     pub port: u16,
     pub cert: &'a str,
+    pub ios_simulators: &'a [crate::services::devices::IosSimulator],
     pub show_rules: &'a mut bool,
     pub active_rules: usize,
     pub status: &'a str,
@@ -26,6 +27,7 @@ pub fn show(
     let Props {
         port,
         cert,
+        ios_simulators,
         show_rules,
         active_rules,
         status,
@@ -36,7 +38,7 @@ pub fn show(
     egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
         let compact = ui.available_width() < 900.0;
         if compact {
-            compact_primary_rows(ui, ctx, vm, port, cert, show_rules, active_rules, status, api_port, paused_breakpoints, show_help, &mut out);
+            compact_primary_rows(ui, ctx, vm, port, cert, ios_simulators, show_rules, active_rules, status, api_port, paused_breakpoints, show_help, &mut out);
         } else {
             ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
@@ -88,7 +90,7 @@ pub fn show(
                             }
                         });
                     }
-                    devices_menu(ui, ctx, port, api_port, cert, &mut out, false);
+                    devices_menu(ui, ctx, port, api_port, cert, ios_simulators, &mut out, false);
                     session_menu(ui, &mut out, false);
                     if icon_button(ui, ph::PLUS, "Compose").clicked() {
                         out.push(ToolbarIntent::Compose);
@@ -197,6 +199,7 @@ fn compact_primary_rows(
     vm: &mut CaptureVm,
     port: u16,
     cert: &str,
+    ios_simulators: &[crate::services::devices::IosSimulator],
     show_rules: &mut bool,
     active_rules: usize,
     status: &str,
@@ -247,7 +250,7 @@ fn compact_primary_rows(
             out.push(ToolbarIntent::Compose);
         }
         session_menu(ui, out, true);
-        devices_menu(ui, ctx, port, api_port, cert, out, true);
+        devices_menu(ui, ctx, port, api_port, cert, ios_simulators, out, true);
         if show_help {
             toolbar_menu(ui, ph::QUESTION, "", |ui| {
                 menu_width(ui, &["Setup guide", "About proxyproxy"]);
@@ -417,6 +420,7 @@ fn devices_menu(
     port: u16,
     api_port: u16,
     cert: &str,
+    ios_simulators: &[crate::services::devices::IosSimulator],
     out: &mut Vec<ToolbarIntent>,
     compact: bool,
 ) {
@@ -476,11 +480,19 @@ fn devices_menu(
             }
             ui.separator();
             ui.label(muted("Devices"));
-            device(
-                ui,
-                "iOS Simulator: install CA",
-                DeviceAction::IosSimInstallCa,
-            );
+            ui.label(muted("iOS Simulators"));
+            if ios_simulators.is_empty() {
+                ui.label(muted("No running simulators"));
+            } else {
+                for sim in ios_simulators {
+                    ui.label(muted(&format!("{} · {}", sim.name, sim.runtime)));
+                }
+                device(
+                    ui,
+                    "Install CA on running simulators",
+                    DeviceAction::IosSimInstallCa,
+                );
+            }
             device(
                 ui,
                 "Android: set proxy (adb)",

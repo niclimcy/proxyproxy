@@ -10,8 +10,10 @@ use std::time::{Duration, Instant};
 pub struct SessionVm {
     pub store: FlowStore,
     pub cfg: Shared,
+    pub ios_simulators: Vec<devices::IosSimulator>,
     cfg_saved: String,
     cfg_checked: Instant,
+    ios_sim_checked: Instant,
     saved_rev: u64,
     last_save: Instant,
 }
@@ -23,11 +25,14 @@ fn cfg_json(cfg: &Shared) -> String {
 impl SessionVm {
     pub fn new(store: FlowStore, cfg: Shared) -> Self {
         let cfg_saved = cfg_json(&cfg);
+        let ios_simulators = devices::ios_simulators().unwrap_or_default();
         Self {
             store,
             cfg,
+            ios_simulators,
             cfg_saved,
             cfg_checked: Instant::now(),
+            ios_sim_checked: Instant::now(),
             saved_rev: 0,
             last_save: Instant::now(),
         }
@@ -50,10 +55,32 @@ impl SessionVm {
             self.cfg_checked = Instant::now();
             self.save_config_if_changed();
         }
+        if self.ios_sim_checked.elapsed() > Duration::from_secs(5) {
+            self.ios_sim_checked = Instant::now();
+            self.refresh_ios_simulators();
+        }
         if self.last_save.elapsed() > Duration::from_secs(30)
             && self.saved_rev != self.store.lock().rev()
         {
             self.save_now();
+        }
+    }
+
+    pub fn refresh_ios_simulators(&mut self) -> Option<String> {
+        match devices::ios_simulators() {
+            Ok(sims) => {
+                let message = if sims.is_empty() {
+                    Some("No running iOS simulators".into())
+                } else {
+                    Some(format!("{} running iOS simulator(s)", sims.len()))
+                };
+                self.ios_simulators = sims;
+                message
+            }
+            Err(_) => {
+                self.ios_simulators.clear();
+                None
+            }
         }
     }
 
