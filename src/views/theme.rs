@@ -900,6 +900,69 @@ pub fn action_button_sized(
     resp
 }
 
+/// Fixed-size icon action with a stable hover and pressed state.
+pub fn action_button_icon_sized(
+    ui: &mut egui::Ui,
+    icon: &str,
+    text: &str,
+    color: Color32,
+    width: f32,
+) -> egui::Response {
+    action_button_icon_sized_enabled(ui, icon, text, color, width, true)
+}
+
+pub fn action_button_icon_sized_enabled(
+    ui: &mut egui::Ui,
+    icon: &str,
+    text: &str,
+    color: Color32,
+    width: f32,
+    enabled: bool,
+) -> egui::Response {
+    let text = ico(icon, text);
+    let g = ui
+        .painter()
+        .layout_no_wrap(text, egui::FontId::proportional(FS_BODY), fg());
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, HIT), sense);
+    let fill = if enabled && resp.is_pointer_button_down_on() {
+        color.gamma_multiply(if pal().dark { 0.70 } else { 0.82 })
+    } else if enabled && resp.hovered() {
+        color.gamma_multiply(if pal().dark { 0.85 } else { 1.12 })
+    } else if !enabled {
+        tint(fg_muted(), Tint::Subtle)
+    } else {
+        tint(color, Tint::Strong)
+    };
+    let stroke = if enabled && resp.hovered() {
+        Stroke::new(1.5, color)
+    } else if !enabled {
+        Stroke::new(1.0, border())
+    } else {
+        Stroke::new(1.0, color)
+    };
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(RADIUS_SM),
+        fill,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - g.size().x / 2.0,
+            rect.center().y - g.size().y / 2.0,
+        ),
+        g,
+        fg(),
+    );
+    resp
+}
+
 pub fn method_color(m: &str) -> Color32 {
     match m {
         "GET" => success(),

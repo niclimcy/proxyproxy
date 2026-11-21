@@ -20,7 +20,7 @@ fn header(ui: &mut egui::Ui, ctx: &egui::Context, title: &str, subtitle: &str, i
     );
     ui.add(egui::Image::new(&texture).fit_to_exact_size(egui::vec2(icon_size, icon_size)));
     ui.add_space(10.0);
-    ui.label(RichText::new(title).size(FS_TITLE).strong());
+    ui.label(RichText::new(title).size(FS_TITLE).strong().color(fg()));
     if !subtitle.is_empty() {
         ui.add_space(4.0);
         ui.label(RichText::new(subtitle).size(FS_BODY).color(fg_muted()));
@@ -46,7 +46,14 @@ fn choice_card(
     painter.rect_stroke(
         rect,
         egui::CornerRadius::same(RADIUS),
-        egui::Stroke::new(1.0, border()),
+        egui::Stroke::new(
+            if response.hovered() { 1.5 } else { 1.0 },
+            if response.hovered() {
+                accent()
+            } else {
+                border()
+            },
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -90,6 +97,10 @@ pub fn show(
         return vec![];
     }
 
+    sync(ctx);
+    ui.painter()
+        .rect_filled(ui.max_rect(), egui::CornerRadius::ZERO, canvas());
+
     let mut out = vec![];
     let block_height = match vm.stage {
         OnboardingStage::ChooseExperience => 319.0,
@@ -104,46 +115,55 @@ pub fn show(
             OnboardingStage::ChooseExperience => {
                 header(ui, ctx, "Welcome to proxyproxy", "", 96.0);
                 ui.add_space(18.0);
-                ui.horizontal(|ui| {
-                    let gap = 16.0;
-                    let width = ((ui.available_width() - gap) / 2.0).clamp(220.0, 340.0);
-                    let start = ((ui.available_width() - (width * 2.0 + gap)) / 2.0).max(0.0);
-                    ui.add_space(start);
-                    if choice_card(
-                        ui,
-                        "",
-                        "I'm new to HTTP debugging",
-                        "Start with a platform and follow a short setup checklist.",
-                        width,
-                    )
-                    .clicked()
-                    {
-                        out.push(OnboardingIntent::ChooseProfile(OnboardingProfile::Beginner));
-                    }
-                    ui.add_space(gap);
-                    if choice_card(
-                        ui,
-                        "",
-                        "I've used Charles or Proxyman",
-                        "Import a session or jump directly to proxy setup.",
-                        width,
-                    )
-                    .clicked()
-                    {
-                        out.push(OnboardingIntent::ChooseProfile(
-                            OnboardingProfile::Experienced,
-                        ));
-                    }
+                let gap = 16.0;
+                let width = 340.0;
+                let content_width = width * 2.0 + gap;
+                ui.allocate_ui(egui::vec2(content_width, 132.0), |ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    ui.horizontal(|ui| {
+                        if choice_card(
+                            ui,
+                            ph::LIGHTNING,
+                            "I'm new to HTTP debugging",
+                            "Start with a platform and follow a short setup checklist.",
+                            width,
+                        )
+                        .clicked()
+                        {
+                            out.push(OnboardingIntent::ChooseProfile(OnboardingProfile::Beginner));
+                        }
+                        ui.add_space(gap);
+                        if choice_card(
+                            ui,
+                            ph::HANDSHAKE,
+                            "I've used Charles or Proxyman",
+                            "Import a session or jump directly to proxy setup.",
+                            width,
+                        )
+                        .clicked()
+                        {
+                            out.push(OnboardingIntent::ChooseProfile(
+                                OnboardingProfile::Experienced,
+                            ));
+                        }
+                    });
                 });
                 ui.add_space(18.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(action_button("Skip and open the app", accent()))
+                ui.allocate_ui(egui::vec2(content_width, HIT), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if action_button_icon_sized(
+                                ui,
+                                ph::ARROW_RIGHT,
+                                "Skip and open the app",
+                                accent(),
+                                210.0,
+                            )
                             .clicked()
-                        {
-                            out.push(OnboardingIntent::Skip);
-                        }
+                            {
+                                out.push(OnboardingIntent::Skip);
+                            }
+                        });
                     });
                 });
             }
@@ -156,39 +176,39 @@ pub fn show(
                     64.0,
                 );
                 ui.add_space(18.0);
-                ui.horizontal_wrapped(|ui| {
-                    let width = if ui.available_width() < 720.0 {
-                        ui.available_width()
-                    } else {
-                        230.0
-                    };
-                    for (target, icon, title, description) in [
-                        (
-                            OnboardingTarget::Web,
-                            ph::GLOBE,
-                            "Web / desktop",
-                            "Browser traffic or this computer.",
-                        ),
-                        (
-                            OnboardingTarget::Ios,
-                            ph::APPLE_LOGO,
-                            "iOS",
-                            "Simulator or a physical iOS device.",
-                        ),
-                        (
-                            OnboardingTarget::Android,
-                            ph::ANDROID_LOGO,
-                            "Android",
-                            "adb emulator or connected device.",
-                        ),
-                    ] {
-                        if choice_card(ui, icon, title, description, width).clicked() {
-                            out.push(OnboardingIntent::ChooseTarget(target));
+                let width = 230.0;
+                let gap = 8.0;
+                let content_width = width * 3.0 + gap * 2.0;
+                ui.allocate_ui(egui::vec2(content_width, 132.0), |ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    ui.horizontal(|ui| {
+                        for (target, icon, title, description) in [
+                            (
+                                OnboardingTarget::Web,
+                                ph::GLOBE,
+                                "Web / desktop",
+                                "Browser traffic or this computer.",
+                            ),
+                            (
+                                OnboardingTarget::Ios,
+                                ph::APPLE_LOGO,
+                                "iOS",
+                                "Simulator or a physical iOS device.",
+                            ),
+                            (
+                                OnboardingTarget::Android,
+                                ph::ANDROID_LOGO,
+                                "Android",
+                                "adb emulator or connected device.",
+                            ),
+                        ] {
+                            if choice_card(ui, icon, title, description, width).clicked() {
+                                out.push(OnboardingIntent::ChooseTarget(target));
+                            }
                         }
-                        ui.add_space(8.0);
-                    }
+                    });
                 });
-                footer(ui, &mut out);
+                footer(ui, &mut out, content_width);
             }
             OnboardingStage::Beginner(target) => {
                 let (title, subtitle) = match target {
@@ -209,63 +229,117 @@ pub fn show(
                 ui.add_space(14.0);
                 steps(ui, target, flow_count, status);
                 ui.add_space(12.0);
-                card().show(ui, |ui| match target {
-                    OnboardingTarget::Web => {
-                        if ui.button("Trust CA on this computer").clicked() {
-                            out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
-                        }
-                        if ui.button("Set system proxy").clicked() {
-                            out.push(OnboardingIntent::Device(DeviceAction::SetSystemProxy));
-                        }
-                        if ui.button("Launch clean Chrome").clicked() {
-                            out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
-                        }
-                    }
-                    OnboardingTarget::Ios => {
-                        ui.label(RichText::new("Running iOS simulators").strong());
-                        if ios_simulators.is_empty() {
-                            ui.label(muted("No running simulators"));
-                        } else {
-                            for sim in ios_simulators {
-                                ui.label(muted(&format!("{} · {}", sim.name, sim.runtime)));
-                            }
-                            if action_button_sized(
+                ui.allocate_ui(egui::vec2(760.0, 180.0), |ui| {
+                    card().show(ui, |ui| match target {
+                        OnboardingTarget::Web => {
+                            if action_button_icon_sized(
                                 ui,
-                                "Install CA on running simulators",
+                                ph::SHIELD_CHECK,
+                                "Trust CA on this computer",
                                 accent(),
-                                280.0,
+                                240.0,
                             )
                             .clicked()
                             {
-                                out.push(OnboardingIntent::Device(
-                                    DeviceAction::IosSimInstallCa,
-                                ));
+                                out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
+                            }
+                            ui.add_space(8.0);
+                            if action_button_icon_sized(
+                                ui,
+                                ph::GEAR_SIX,
+                                "Set system proxy",
+                                accent(),
+                                240.0,
+                            )
+                            .clicked()
+                            {
+                                out.push(OnboardingIntent::Device(DeviceAction::SetSystemProxy));
+                            }
+                            ui.add_space(8.0);
+                            if action_button_icon_sized(
+                                ui,
+                                ph::BROWSERS,
+                                "Launch clean Chrome",
+                                accent(),
+                                240.0,
+                            )
+                            .clicked()
+                            {
+                                out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
                             }
                         }
-                        ui.label(muted(
+                        OnboardingTarget::Ios => {
+                            ui.label(RichText::new("Running iOS simulators").strong());
+                            if ios_simulators.is_empty() {
+                                ui.label(muted("No running simulators"));
+                            } else {
+                                for sim in ios_simulators {
+                                    ui.label(muted(&format!("{} · {}", sim.name, sim.runtime)));
+                                }
+                                if action_button_icon_sized(
+                                    ui,
+                                    ph::SHIELD_CHECK,
+                                    "Install CA on running simulators",
+                                    accent(),
+                                    280.0,
+                                )
+                                .clicked()
+                                {
+                                    out.push(OnboardingIntent::Device(
+                                        DeviceAction::IosSimInstallCa,
+                                    ));
+                                }
+                            }
+                            ui.label(muted(
                             "For a physical device, copy the CA path and install it in Settings.",
                         ));
-                        if ui.button("Copy CA path").clicked() {
-                            ctx.copy_text(cert.to_string());
+                            if action_button_icon_sized(
+                                ui,
+                                ph::COPY,
+                                "Copy CA path",
+                                accent(),
+                                180.0,
+                            )
+                            .clicked()
+                            {
+                                ctx.copy_text(cert.to_string());
+                            }
                         }
-                    }
-                    OnboardingTarget::Android => {
-                        if ui.button("Set proxy with adb").clicked() {
-                            out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
+                        OnboardingTarget::Android => {
+                            if action_button_icon_sized(
+                                ui,
+                                ph::GEAR_SIX,
+                                "Set proxy with adb",
+                                accent(),
+                                220.0,
+                            )
+                            .clicked()
+                            {
+                                out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
+                            }
+                            ui.add_space(8.0);
+                            if action_button_icon_sized(
+                                ui,
+                                ph::SHIELD_CHECK,
+                                "Push CA to Android",
+                                accent(),
+                                220.0,
+                            )
+                            .clicked()
+                            {
+                                out.push(OnboardingIntent::Device(DeviceAction::AndroidInstallCa));
+                            }
+                            ui.label(muted(
+                                "Android 7+ apps may ignore user CAs unless they opt in.",
+                            ));
                         }
-                        if ui.button("Push CA to Android").clicked() {
-                            out.push(OnboardingIntent::Device(DeviceAction::AndroidInstallCa));
-                        }
-                        ui.label(muted(
-                            "Android 7+ apps may ignore user CAs unless they opt in.",
-                        ));
-                    }
+                    });
                 });
                 if flow_count > 0 {
                     ui.add_space(10.0);
                     pill(ui, &format!("{flow_count} captured request(s)"), success());
                 }
-                footer(ui, &mut out);
+                footer(ui, &mut out, 760.0);
             }
             OnboardingStage::Experienced => {
                 header(
@@ -276,47 +350,88 @@ pub fn show(
                     64.0,
                 );
                 ui.add_space(14.0);
-                ui.horizontal_wrapped(|ui| {
-                    if action_button_sized(ui, "Import HAR / Charles JSON", accent(), 220.0)
+                let content_width = 676.0;
+                ui.allocate_ui(egui::vec2(content_width, 64.0), |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        if action_button_icon_sized(
+                            ui,
+                            ph::FOLDER_OPEN,
+                            "Import HAR / Charles JSON",
+                            accent(),
+                            220.0,
+                        )
                         .clicked()
-                    {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("HAR / Charles JSON", &["har", "json", "chlsj"])
-                            .pick_file()
                         {
-                            out.push(OnboardingIntent::ImportFlows(path));
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("HAR / Charles JSON", &["har", "json", "chlsj"])
+                                .pick_file()
+                            {
+                                out.push(OnboardingIntent::ImportFlows(path));
+                            }
                         }
-                    }
-                    if action_button_sized(ui, "Trust CA", accent(), 220.0).clicked() {
-                        out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
-                    }
-                    if action_button_sized(ui, "Set system proxy", accent(), 220.0).clicked() {
-                        out.push(OnboardingIntent::Device(DeviceAction::SetSystemProxy));
-                    }
-                });
-                ui.add_space(8.0);
-                ui.horizontal_wrapped(|ui| {
-                    if action_button_sized(ui, "Launch Chrome", accent(), 220.0).clicked() {
-                        out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
-                    }
-                    let mut ios_clicked = false;
-                    ui.scope(|ui| {
-                        ios_clicked = ui
-                            .add_enabled(
+                        if action_button_icon_sized(
+                            ui,
+                            ph::SHIELD_CHECK,
+                            "Trust CA",
+                            accent(),
+                            220.0,
+                        )
+                        .clicked()
+                        {
+                            out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
+                        }
+                        if action_button_icon_sized(
+                            ui,
+                            ph::GEAR_SIX,
+                            "Set system proxy",
+                            accent(),
+                            220.0,
+                        )
+                        .clicked()
+                        {
+                            out.push(OnboardingIntent::Device(DeviceAction::SetSystemProxy));
+                        }
+                    });
+                    ui.add_space(8.0);
+                    ui.horizontal_wrapped(|ui| {
+                        if action_button_icon_sized(
+                            ui,
+                            ph::BROWSERS,
+                            "Launch Chrome",
+                            accent(),
+                            220.0,
+                        )
+                        .clicked()
+                        {
+                            out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
+                        }
+                        let mut ios_clicked = false;
+                        ui.scope(|ui| {
+                            ios_clicked = action_button_icon_sized_enabled(
+                                ui,
+                                ph::APPLE_LOGO,
+                                "iOS Simulator CA",
+                                accent(),
+                                220.0,
                                 !ios_simulators.is_empty(),
-                                action_button("iOS Simulator CA", accent()).min_size(egui::vec2(
-                                    220.0,
-                                    HIT,
-                                )),
                             )
                             .clicked();
+                        });
+                        if ios_clicked {
+                            out.push(OnboardingIntent::Device(DeviceAction::IosSimInstallCa));
+                        }
+                        if action_button_icon_sized(
+                            ui,
+                            ph::ANDROID_LOGO,
+                            "Android setup",
+                            accent(),
+                            220.0,
+                        )
+                        .clicked()
+                        {
+                            out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
+                        }
                     });
-                    if ios_clicked {
-                        out.push(OnboardingIntent::Device(DeviceAction::IosSimInstallCa));
-                    }
-                    if action_button_sized(ui, "Android setup", accent(), 220.0).clicked() {
-                        out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
-                    }
                 });
                 if ios_simulators.is_empty() {
                     ui.label(muted("iOS Simulator: no running simulators"));
@@ -329,22 +444,33 @@ pub fn show(
                     ui.label(muted(format!("iOS Simulator: {names}")));
                 }
                 ui.add_space(12.0);
-                card().show(ui, |ui| {
-                    ui.label(RichText::new(format!("Proxy: 127.0.0.1:{port}")).monospace());
-                    ui.label(
-                        RichText::new(format!("CA: {cert}"))
-                            .size(FS_SMALL)
-                            .color(fg_muted()),
-                    );
-                    if ui.button("Copy shell environment").clicked() {
-                        ctx.copy_text(crate::services::devices::env_snippet(port, cert));
-                    }
+                ui.allocate_ui(egui::vec2(content_width, 92.0), |ui| {
+                    card().show(ui, |ui| {
+                        ui.label(RichText::new(format!("Proxy: 127.0.0.1:{port}")).monospace());
+                        ui.label(
+                            RichText::new(format!("CA: {cert}"))
+                                .size(FS_SMALL)
+                                .color(fg_muted()),
+                        );
+                        ui.add_space(8.0);
+                        if action_button_icon_sized(
+                            ui,
+                            ph::TERMINAL,
+                            "Copy shell environment",
+                            accent(),
+                            220.0,
+                        )
+                        .clicked()
+                        {
+                            ctx.copy_text(crate::services::devices::env_snippet(port, cert));
+                        }
+                    });
                 });
                 if !status.is_empty() {
                     ui.add_space(8.0);
                     ui.label(RichText::new(status).size(FS_SMALL).color(fg_muted()));
                 }
-                footer(ui, &mut out);
+                footer(ui, &mut out, content_width);
             }
         }
     });
@@ -373,19 +499,26 @@ fn steps(ui: &mut egui::Ui, target: OnboardingTarget, flow_count: usize, status:
     }
 }
 
-fn footer(ui: &mut egui::Ui, out: &mut Vec<OnboardingIntent>) {
+fn footer(ui: &mut egui::Ui, out: &mut Vec<OnboardingIntent>, content_width: f32) {
     ui.add_space(18.0);
-    ui.horizontal(|ui| {
-        if ui.button("Back").clicked() {
-            out.push(OnboardingIntent::Back);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.add(action_button("Open proxyproxy", accent())).clicked() {
-                out.push(OnboardingIntent::Complete);
+    ui.allocate_ui(egui::vec2(content_width, HIT), |ui| {
+        ui.horizontal(|ui| {
+            if action_button_icon_sized(ui, ph::ARROW_LEFT, "Back", fg_muted(), 100.0).clicked() {
+                out.push(OnboardingIntent::Back);
             }
-            if ui.button("Skip setup").clicked() {
-                out.push(OnboardingIntent::Skip);
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if action_button_icon_sized(ui, ph::ARROW_RIGHT, "Open proxyproxy", accent(), 170.0)
+                    .clicked()
+                {
+                    out.push(OnboardingIntent::Complete);
+                }
+                ui.add_space(8.0);
+                if action_button_icon_sized(ui, ph::FAST_FORWARD, "Skip setup", fg_muted(), 150.0)
+                    .clicked()
+                {
+                    out.push(OnboardingIntent::Skip);
+                }
+            });
         });
     });
 }
