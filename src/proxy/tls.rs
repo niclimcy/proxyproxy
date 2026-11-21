@@ -2,7 +2,10 @@ use crate::domain::config::Shared;
 use hudsucker::{
     certificate_authority::{CertificateAuthority, RcgenAuthority},
     hyper::http::uri::Authority,
-    rcgen::{BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair, KeyUsagePurpose},
+    rcgen::{
+        BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair,
+        KeyUsagePurpose,
+    },
     rustls::{
         KeyLog, ServerConfig,
         crypto::aws_lc_rs::{self, sign::any_supported_type},
@@ -21,7 +24,9 @@ use std::{
 };
 
 pub fn dir() -> PathBuf {
-    let d = dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("proxyproxy");
+    let d = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("proxyproxy");
     let _ = fs::create_dir_all(&d);
     d
 }
@@ -47,7 +52,11 @@ pub fn load_or_create() -> Result<RcgenAuthority, Box<dyn Error>> {
     }
     let key = KeyPair::from_pem(&fs::read_to_string(&key_p)?)?;
     let issuer = Issuer::from_ca_cert_pem(&fs::read_to_string(&cert_p)?, key)?;
-    Ok(RcgenAuthority::new(issuer, 1_000, aws_lc_rs::default_provider()))
+    Ok(RcgenAuthority::new(
+        issuer,
+        1_000,
+        aws_lc_rs::default_provider(),
+    ))
 }
 
 pub fn export_path(dir: &Path) -> PathBuf {
@@ -57,17 +66,24 @@ pub fn export_path(dir: &Path) -> PathBuf {
 fn check_pair(cert_pem: &str, key_pem: &str) -> Result<(), Box<dyn Error>> {
     let key = KeyPair::from_pem(key_pem).map_err(|e| format!("invalid private key: {e}"))?;
     Issuer::from_ca_cert_pem(cert_pem, key).map_err(|e| format!("invalid certificate: {e}"))?;
-    let cert = CertificateDer::from_pem_slice(cert_pem.as_bytes()).map_err(|e| format!("invalid certificate: {e}"))?;
-    let der = PrivateKeyDer::from_pem_slice(key_pem.as_bytes()).map_err(|e| format!("invalid private key: {e}"))?;
+    let cert = CertificateDer::from_pem_slice(cert_pem.as_bytes())
+        .map_err(|e| format!("invalid certificate: {e}"))?;
+    let der = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+        .map_err(|e| format!("invalid private key: {e}"))?;
     let signer = any_supported_type(&der).map_err(|e| format!("unsupported private key: {e}"))?;
-    CertifiedKey::new(vec![cert], signer).keys_match().map_err(|_| "certificate and private key do not match")?;
+    CertifiedKey::new(vec![cert], signer)
+        .keys_match()
+        .map_err(|_| "certificate and private key do not match")?;
     Ok(())
 }
 
 // Takes effect on next start; previous files are kept as *.bak-<unix-secs>.
 pub fn import_custom(dir: &Path, cert_pem: &str, key_pem: &str) -> Result<(), Box<dyn Error>> {
     check_pair(cert_pem, key_pem)?;
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     for name in ["ca.pem", "ca.key"] {
         let p = dir.join(name);
         if p.exists() {
@@ -118,7 +134,11 @@ pub struct KeyLogCa {
 
 impl KeyLogCa {
     pub fn new(inner: RcgenAuthority, log: Arc<dyn KeyLog>) -> Self {
-        Self { inner, log, cache: Mutex::new(HashMap::new()) }
+        Self {
+            inner,
+            log,
+            cache: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -168,7 +188,16 @@ mod tests {
         import_custom(&d, &c, &k).unwrap();
         assert_eq!(fs::read_to_string(export_path(&d)).unwrap(), c);
         assert_eq!(fs::read_to_string(d.join("ca.key")).unwrap(), k);
-        let baks = fs::read_dir(&d).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains(".bak-")).count();
+        let baks = fs::read_dir(&d)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".bak-")
+            })
+            .count();
         assert_eq!(baks, 2);
         fs::remove_dir_all(&d).unwrap();
     }
@@ -178,7 +207,12 @@ mod tests {
         let d = tmp("bad");
         let (c1, _) = gen_pair();
         let (_, k2) = gen_pair();
-        assert!(import_custom(&d, &c1, &k2).unwrap_err().to_string().contains("do not match"));
+        assert!(
+            import_custom(&d, &c1, &k2)
+                .unwrap_err()
+                .to_string()
+                .contains("do not match")
+        );
         assert!(import_custom(&d, "garbage", &k2).is_err());
         assert!(import_custom(&d, &c1, "garbage").is_err());
         assert!(!d.join("ca.pem").exists());

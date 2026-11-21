@@ -25,18 +25,41 @@ fn run_cli(args: &[String]) -> ! {
         eprintln!("usage: proxyproxy run [--port N] -- <command> [args...]");
         std::process::exit(2);
     };
-    if std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), std::time::Duration::from_millis(300)).is_err() {
+    if std::net::TcpStream::connect_timeout(
+        &([127, 0, 0, 1], port).into(),
+        std::time::Duration::from_millis(300),
+    )
+    .is_err()
+    {
         eprintln!("warning: nothing is listening on 127.0.0.1:{port} — start proxyproxy first");
     }
     let url = format!("http://127.0.0.1:{port}");
     let cert = proxy::tls::cert_path().display().to_string();
     let mut c = std::process::Command::new(cmd);
     c.args(&args[i + 1..]);
-    for k in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+    for k in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ] {
         c.env(k, &url);
     }
-    c.env("NO_PROXY", "localhost,127.0.0.1,::1").env("no_proxy", "localhost,127.0.0.1,::1").env("NODE_USE_ENV_PROXY", "1");
-    for k in ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "DENO_CERT", "AWS_CA_BUNDLE", "CARGO_HTTP_CAINFO"] {
+    c.env("NO_PROXY", "localhost,127.0.0.1,::1")
+        .env("no_proxy", "localhost,127.0.0.1,::1")
+        .env("NODE_USE_ENV_PROXY", "1");
+    for k in [
+        "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "GIT_SSL_CAINFO",
+        "DENO_CERT",
+        "AWS_CA_BUNDLE",
+        "CARGO_HTTP_CAINFO",
+    ] {
         c.env(k, &cert);
     }
     #[cfg(unix)]

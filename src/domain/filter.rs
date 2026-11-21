@@ -28,7 +28,8 @@ pub struct Query {
 }
 
 pub const FIELDS: &[&str] = &[
-    "host", "path", "url", "method", "status", "app", "type", "size", "time", "body", "req", "res", "header", "query", "is", "gql", "comment", "tag",
+    "host", "path", "url", "method", "status", "app", "type", "size", "time", "body", "req", "res",
+    "header", "query", "is", "gql", "comment", "tag",
 ];
 
 fn tokens(s: &str) -> Vec<String> {
@@ -52,14 +53,25 @@ fn tokens(s: &str) -> Vec<String> {
 
 fn parse_op(v: &str, numeric: bool) -> Result<Op, String> {
     if numeric {
-        for (p, mk) in [(">=", Op::Ge as fn(f64) -> Op), ("<=", Op::Le), (">", Op::Gt), ("<", Op::Lt)] {
+        for (p, mk) in [
+            (">=", Op::Ge as fn(f64) -> Op),
+            ("<=", Op::Le),
+            (">", Op::Gt),
+            ("<", Op::Lt),
+        ] {
             if let Some(n) = v.strip_prefix(p) {
-                return n.trim().parse().map(mk).map_err(|_| format!("bad number '{n}'"));
+                return n
+                    .trim()
+                    .parse()
+                    .map(mk)
+                    .map_err(|_| format!("bad number '{n}'"));
             }
         }
     }
     if let Some(r) = v.strip_prefix('/').and_then(|r| r.strip_suffix('/')) {
-        return Regex::new(&format!("(?i){r}")).map(Op::Re).map_err(|e| e.to_string());
+        return Regex::new(&format!("(?i){r}"))
+            .map(Op::Re)
+            .map_err(|e| e.to_string());
     }
     if let Some(e) = v.strip_prefix('=') {
         return Ok(Op::Eq(e.to_lowercase()));
@@ -79,7 +91,9 @@ impl Query {
                 _ => (false, tok.clone()),
             };
             let (field, val) = match t.split_once(':') {
-                Some((f, v)) if FIELDS.contains(&f.to_lowercase().as_str()) => (f.to_lowercase(), v.to_string()),
+                Some((f, v)) if FIELDS.contains(&f.to_lowercase().as_str()) => {
+                    (f.to_lowercase(), v.to_string())
+                }
                 _ => ("any".to_string(), t.clone()),
             };
             let numeric = matches!(field.as_str(), "status" | "size" | "time");
@@ -118,9 +132,14 @@ fn num_op(op: &Op, v: f64) -> bool {
 }
 
 fn gql_op(f: &Flow) -> String {
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.request.body) else { return String::new() };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.request.body) else {
+        return String::new();
+    };
     let one = |v: &serde_json::Value| {
-        let name = v.get("operationName").and_then(|x| x.as_str()).unwrap_or("");
+        let name = v
+            .get("operationName")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
         let q = v.get("query").and_then(|x| x.as_str()).unwrap_or("");
         format!("{name} {q}")
     };
@@ -140,19 +159,32 @@ fn term_matches(t: &Term, f: &Flow) -> bool {
         "app" => text_op(&t.op, &f.app_label()),
         "tag" => text_op(&t.op, &f.tag),
         "comment" => text_op(&t.op, &f.comment),
-        "status" => f.status.is_some_and(|s| num_op(&t.op, s as f64) || text_op(&t.op, &s.to_string())),
+        "status" => f
+            .status
+            .is_some_and(|s| num_op(&t.op, s as f64) || text_op(&t.op, &s.to_string())),
         "size" => num_op(&t.op, f.res_size() as f64),
         "time" => f.duration_ms.is_some_and(|d| num_op(&t.op, d as f64)),
         "type" => {
-            let ct = f.response.as_ref().map(|r| r.content_type()).unwrap_or_default();
+            let ct = f
+                .response
+                .as_ref()
+                .map(|r| r.content_type())
+                .unwrap_or_default();
             text_op(&t.op, &ct) || text_op(&t.op, ct.rsplit(['/', '+']).next().unwrap_or(""))
         }
         "req" => text_op(&t.op, &f.request.text()),
         "res" | "body" => {
-            f.response.as_ref().is_some_and(|r| text_op(&t.op, &r.text())) || (t.field == "body" && text_op(&t.op, &f.request.text()))
+            f.response
+                .as_ref()
+                .is_some_and(|r| text_op(&t.op, &r.text()))
+                || (t.field == "body" && text_op(&t.op, &f.request.text()))
         }
         "header" => {
-            let all = |m: &crate::domain::flow::Message| m.headers.iter().any(|(k, v)| text_op(&t.op, &format!("{k}: {v}")));
+            let all = |m: &crate::domain::flow::Message| {
+                m.headers
+                    .iter()
+                    .any(|(k, v)| text_op(&t.op, &format!("{k}: {v}")))
+            };
             all(&f.request) || f.response.as_ref().is_some_and(all)
         }
         "gql" => text_op(&t.op, &gql_op(f)),
@@ -165,7 +197,10 @@ fn term_matches(t: &Term, f: &Flow) -> bool {
                 "pending" => f.status.is_none() && f.error.is_none(),
                 "https" => f.scheme == "https",
                 "http" => f.scheme == "http",
-                "json" => f.response.as_ref().is_some_and(|r| r.content_type().contains("json")),
+                "json" => f
+                    .response
+                    .as_ref()
+                    .is_some_and(|r| r.content_type().contains("json")),
                 "commented" => !f.comment.is_empty(),
                 "colored" => f.color.is_some(),
                 _ => false,
@@ -188,22 +223,55 @@ mod tests {
 
     fn flow(method: &str, host: &str, path: &str, status: u16, body: &str) -> Flow {
         Flow {
-            id: 1, method: method.into(), scheme: "https".into(), host: host.into(), path: path.into(), version: "HTTP/1.1".into(),
-            started: std::time::SystemTime::now(), started_at: std::time::Instant::now(),
-            request: Message::default(), status: Some(status),
-            response: Some(Message { headers: vec![("content-type".into(), "application/json".into())], body: body.as_bytes().to_vec() }),
-            duration_ms: Some(120), tag: String::new(), app: "curl".into(), pinned: false, comment: String::new(), color: None,
-            is_ws: false, ws: vec![], error: None,
+            id: 1,
+            method: method.into(),
+            scheme: "https".into(),
+            host: host.into(),
+            path: path.into(),
+            version: "HTTP/1.1".into(),
+            started: std::time::SystemTime::now(),
+            started_at: std::time::Instant::now(),
+            request: Message::default(),
+            status: Some(status),
+            response: Some(Message {
+                headers: vec![("content-type".into(), "application/json".into())],
+                body: body.as_bytes().to_vec(),
+            }),
+            duration_ms: Some(120),
+            tag: String::new(),
+            app: "curl".into(),
+            pinned: false,
+            comment: String::new(),
+            color: None,
+            is_ws: false,
+            ws: vec![],
+            error: None,
         }
     }
 
     #[test]
     fn query_syntax() {
-        let f = flow("POST", "api.example.com:443", "/v1/users?id=3", 404, r#"{"userId": 7}"#);
+        let f = flow(
+            "POST",
+            "api.example.com:443",
+            "/v1/users?id=3",
+            404,
+            r#"{"userId": 7}"#,
+        );
         for (q, want) in [
-            ("host:api.*", true), ("host:=example.com", false), ("status:>=400", true), ("status:<400", false),
-            ("method:post -path:admin", true), ("path:admin", false), (r#"body:"userId""#, true), ("host:/^api[.]/", true),
-            ("is:error", true), ("is:pinned", false), ("time:>100", true), ("app:curl type:json", true), ("users", true),
+            ("host:api.*", true),
+            ("host:=example.com", false),
+            ("status:>=400", true),
+            ("status:<400", false),
+            ("method:post -path:admin", true),
+            ("path:admin", false),
+            (r#"body:"userId""#, true),
+            ("host:/^api[.]/", true),
+            ("is:error", true),
+            ("is:pinned", false),
+            ("time:>100", true),
+            ("app:curl type:json", true),
+            ("users", true),
         ] {
             assert_eq!(Query::parse(q).matches(&f), want, "{q}");
         }
@@ -218,10 +286,26 @@ mod characterization {
 
     fn base() -> Flow {
         Flow {
-            id: 1, method: "GET".into(), scheme: "http".into(), host: "a.com:8080".into(), path: "/p?x=1".into(), version: "HTTP/1.1".into(),
-            started: std::time::SystemTime::now(), started_at: std::time::Instant::now(), request: Message::default(), status: None,
-            response: None, duration_ms: None, tag: String::new(), app: String::new(), pinned: false, comment: String::new(),
-            color: None, is_ws: false, ws: vec![], error: None,
+            id: 1,
+            method: "GET".into(),
+            scheme: "http".into(),
+            host: "a.com:8080".into(),
+            path: "/p?x=1".into(),
+            version: "HTTP/1.1".into(),
+            started: std::time::SystemTime::now(),
+            started_at: std::time::Instant::now(),
+            request: Message::default(),
+            status: None,
+            response: None,
+            duration_ms: None,
+            tag: String::new(),
+            app: String::new(),
+            pinned: false,
+            comment: String::new(),
+            color: None,
+            is_ws: false,
+            ws: vec![],
+            error: None,
         }
     }
 

@@ -36,11 +36,20 @@ pub struct Message {
 
 impl Message {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 
     pub fn content_type(&self) -> String {
-        self.header("content-type").unwrap_or("").split(';').next().unwrap_or("").trim().to_lowercase()
+        self.header("content-type")
+            .unwrap_or("")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_lowercase()
     }
 
     pub fn text(&self) -> String {
@@ -137,7 +146,11 @@ impl Flow {
                 };
             }
         }
-        ua.split(['/', ' ']).next().filter(|s| !s.is_empty()).unwrap_or("unknown").to_string()
+        ua.split(['/', ' '])
+            .next()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("unknown")
+            .to_string()
     }
 
     pub fn endpoint_key(&self) -> String {
@@ -147,10 +160,26 @@ impl Flow {
     #[cfg(test)]
     pub fn sample(id: u64) -> Flow {
         Flow {
-            id, method: "GET".into(), scheme: "https".into(), host: "a.com".into(), path: "/".into(), version: "HTTP/1.1".into(),
-            started: SystemTime::now(), started_at: Instant::now(), request: Message::default(), status: None, response: None,
-            duration_ms: None, tag: String::new(), app: String::new(), pinned: false, comment: String::new(), color: None,
-            is_ws: false, ws: vec![], error: None,
+            id,
+            method: "GET".into(),
+            scheme: "https".into(),
+            host: "a.com".into(),
+            path: "/".into(),
+            version: "HTTP/1.1".into(),
+            started: SystemTime::now(),
+            started_at: Instant::now(),
+            request: Message::default(),
+            status: None,
+            response: None,
+            duration_ms: None,
+            tag: String::new(),
+            app: String::new(),
+            pinned: false,
+            comment: String::new(),
+            color: None,
+            is_ws: false,
+            ws: vec![],
+            error: None,
         }
     }
 }
@@ -184,11 +213,31 @@ pub struct Paused {
 
 pub enum Event {
     Request(Flow),
-    Edited { id: u64, method: String, host: String, path: String, request: Message },
-    Response { id: u64, status: u16, response: Message, duration_ms: u128 },
-    Failed { id: u64, error: String },
+    Edited {
+        id: u64,
+        method: String,
+        host: String,
+        path: String,
+        request: Message,
+    },
+    Response {
+        id: u64,
+        status: u16,
+        response: Message,
+        duration_ms: u128,
+    },
+    Failed {
+        id: u64,
+        error: String,
+    },
     Paused(Paused),
-    Ws { id: u64, msg: WsMsg },
-    App { id: u64, app: String },
+    Ws {
+        id: u64,
+        msg: WsMsg,
+    },
+    App {
+        id: u64,
+        app: String,
+    },
     Log(String),
 }

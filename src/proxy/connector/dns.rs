@@ -25,7 +25,12 @@ pub fn lookup_override(overrides: &[(String, String)], host: &str) -> Option<IpA
     let h = host.trim_end_matches('.').to_lowercase();
     overrides.iter().find_map(|(pat, ip)| {
         let p = pat.trim().to_lowercase();
-        let hit = !p.is_empty() && if p.contains('*') || p.contains('?') { glob(p.as_bytes(), h.as_bytes()) } else { p == h };
+        let hit = !p.is_empty()
+            && if p.contains('*') || p.contains('?') {
+                glob(p.as_bytes(), h.as_bytes())
+            } else {
+                p == h
+            };
         if hit { ip.trim().parse().ok() } else { None }
     })
 }
@@ -46,7 +51,10 @@ impl Service<Name> for Resolver {
             if let Some(ip) = hit {
                 return Ok(vec![SocketAddr::new(ip, 0)].into_iter());
             }
-            Ok(tokio::net::lookup_host((host.as_str(), 0)).await?.collect::<Vec<_>>().into_iter())
+            Ok(tokio::net::lookup_host((host.as_str(), 0))
+                .await?
+                .collect::<Vec<_>>()
+                .into_iter())
         })
     }
 }
@@ -56,14 +64,26 @@ mod tests {
     use super::*;
 
     fn ov(v: &[(&str, &str)]) -> Vec<(String, String)> {
-        v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+        v.iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect()
     }
 
     #[test]
     fn overrides_match() {
-        let o = ov(&[("api.test", "10.0.0.1"), ("*.dev.test", " ::1 "), ("bad.test", "nope")]);
-        assert_eq!(lookup_override(&o, "API.test"), Some("10.0.0.1".parse().unwrap()));
-        assert_eq!(lookup_override(&o, "a.dev.test."), Some("::1".parse().unwrap()));
+        let o = ov(&[
+            ("api.test", "10.0.0.1"),
+            ("*.dev.test", " ::1 "),
+            ("bad.test", "nope"),
+        ]);
+        assert_eq!(
+            lookup_override(&o, "API.test"),
+            Some("10.0.0.1".parse().unwrap())
+        );
+        assert_eq!(
+            lookup_override(&o, "a.dev.test."),
+            Some("::1".parse().unwrap())
+        );
         assert_eq!(lookup_override(&o, "other.test"), None);
         assert_eq!(lookup_override(&o, "bad.test"), None);
     }
@@ -73,7 +93,11 @@ mod tests {
         let cfg: Shared = Default::default();
         cfg.lock().unwrap().dns_overrides = ov(&[("x.invalid", "127.0.0.9")]);
         let mut r = Resolver::new(cfg);
-        let addrs: Vec<_> = r.call("x.invalid".parse().unwrap()).await.unwrap().collect();
+        let addrs: Vec<_> = r
+            .call("x.invalid".parse().unwrap())
+            .await
+            .unwrap()
+            .collect();
         assert_eq!(addrs, vec![SocketAddr::from(([127, 0, 0, 9], 0))]);
     }
 }

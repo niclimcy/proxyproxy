@@ -6,7 +6,9 @@ use crate::domain::flow::Flow;
 use crate::services::flow_store::FlowStore;
 use std::collections::BTreeMap;
 
-pub const ALL_COLS: [&str; 8] = ["#", "App", "Method", "Status", "Host", "Path", "Time", "Size"];
+pub const ALL_COLS: [&str; 8] = [
+    "#", "App", "Method", "Status", "Host", "Path", "Time", "Size",
+];
 
 pub type Tree = Vec<(String, Vec<(String, usize)>)>;
 type VisKey = (u64, String, Option<(usize, bool)>);
@@ -71,7 +73,13 @@ impl CaptureVm {
         if key == self.vis_key {
             return;
         }
-        self.visible = st.flows.iter().enumerate().filter(|(_, f)| self.query.matches(f)).map(|(i, _)| i).collect();
+        self.visible = st
+            .flows
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| self.query.matches(f))
+            .map(|(i, _)| i)
+            .collect();
         if let Some((col, asc)) = self.sort {
             let fl = &st.flows;
             self.visible.sort_by(|&a, &b| {
@@ -89,10 +97,17 @@ impl CaptureVm {
         }
         let mut m: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
         for f in &st.flows {
-            *m.entry(f.app_label()).or_default().entry(f.hostname().to_string()).or_default() += 1;
+            *m.entry(f.app_label())
+                .or_default()
+                .entry(f.hostname().to_string())
+                .or_default() += 1;
         }
-        self.tree = m.into_iter().map(|(a, h)| (a, h.into_iter().collect())).collect();
-        self.tree.sort_by_key(|(_, h)| std::cmp::Reverse(h.iter().map(|(_, n)| n).sum::<usize>()));
+        self.tree = m
+            .into_iter()
+            .map(|(a, h)| (a, h.into_iter().collect()))
+            .collect();
+        self.tree
+            .sort_by_key(|(_, h)| std::cmp::Reverse(h.iter().map(|(_, n)| n).sum::<usize>()));
         self.tree_rev = st.rev();
     }
 
@@ -114,7 +129,15 @@ impl CaptureVm {
 
     pub fn toggle_token(&mut self, tok: &str) {
         let parts: Vec<&str> = self.filter.split_whitespace().collect();
-        self.filter = if parts.contains(&tok) { parts.into_iter().filter(|p| *p != tok).collect::<Vec<_>>().join(" ") } else { format!("{} {tok}", self.filter).trim().to_string() };
+        self.filter = if parts.contains(&tok) {
+            parts
+                .into_iter()
+                .filter(|p| *p != tok)
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            format!("{} {tok}", self.filter).trim().to_string()
+        };
     }
 
     pub fn token_on(&self, tok: &str) -> bool {
@@ -123,7 +146,11 @@ impl CaptureVm {
 
     // picking the active filter again clears it
     pub fn set_filter(&mut self, q: String) {
-        self.filter = if self.filter.trim() == q { String::new() } else { q };
+        self.filter = if self.filter.trim() == q {
+            String::new()
+        } else {
+            q
+        };
     }
 
     pub fn cycle_sort(&mut self, col: usize) {
@@ -167,7 +194,10 @@ impl CaptureVm {
                     cfg.hidden_cols.push(c.to_string());
                 }
             }
-            ToolbarIntent::Compose | ToolbarIntent::About | ToolbarIntent::Session(_) | ToolbarIntent::Device(_) => {}
+            ToolbarIntent::Compose
+            | ToolbarIntent::About
+            | ToolbarIntent::Session(_)
+            | ToolbarIntent::Device(_) => {}
         }
     }
 
@@ -198,13 +228,18 @@ impl CaptureVm {
             RowIntent::Rule(id, kind) => return Some(Effect::RuleFromFlow(id, kind)),
             RowIntent::Mute(h) => {
                 self.cfg.lock().unwrap().muted.push(h.clone());
-                status.set(format!("Muted {h} — hidden from the record; traffic still flows"));
+                status.set(format!(
+                    "Muted {h} — hidden from the record; traffic still flows"
+                ));
             }
             RowIntent::Scope(h) => {
                 let mut c = self.cfg.lock().unwrap();
                 c.scope.push(h);
                 c.scope_only = true;
-                status.set(format!("Recording only {} — other traffic still flows, unrecorded", c.scope.join(", ")));
+                status.set(format!(
+                    "Recording only {} — other traffic still flows, unrecorded",
+                    c.scope.join(", ")
+                ));
             }
             RowIntent::NoTls(h) => {
                 self.cfg.lock().unwrap().bypass_tls.push(h.clone());
@@ -212,7 +247,9 @@ impl CaptureVm {
             }
             RowIntent::Delete(id) => self.remove_flows(|f| f.id != id),
             RowIntent::DiffBase(id) => {
-                status.set(format!("#{id} is the diff base — select another request to compare"));
+                status.set(format!(
+                    "#{id} is the diff base — select another request to compare"
+                ));
                 return Some(Effect::DiffBase(id));
             }
         }
@@ -252,10 +289,15 @@ impl CaptureVm {
 
     fn step(&mut self, down: bool) {
         let st = self.store.lock();
-        let pos = self.selected.and_then(|id| self.visible.iter().position(|&i| st.flows[i].id == id));
+        let pos = self
+            .selected
+            .and_then(|id| self.visible.iter().position(|&i| st.flows[i].id == id));
         let next = match (pos, down) {
             (None, _) => self.visible.first().copied(),
-            (Some(p), true) => self.visible.get((p + 1).min(self.visible.len().saturating_sub(1))).copied(),
+            (Some(p), true) => self
+                .visible
+                .get((p + 1).min(self.visible.len().saturating_sub(1)))
+                .copied(),
             (Some(p), false) => self.visible.get(p.saturating_sub(1)).copied(),
         };
         if let Some(i) = next {
@@ -415,10 +457,19 @@ mod tests {
     #[test]
     fn cross_vm_row_intents_return_effects() {
         let (mut vm, mut status) = setup(1);
-        assert!(matches!(vm.handle_row(RowIntent::Replay(1), &mut status), Some(Effect::OpenReplay(1))));
-        assert!(matches!(vm.handle_row(RowIntent::DiffBase(1), &mut status), Some(Effect::DiffBase(1))));
+        assert!(matches!(
+            vm.handle_row(RowIntent::Replay(1), &mut status),
+            Some(Effect::OpenReplay(1))
+        ));
+        assert!(matches!(
+            vm.handle_row(RowIntent::DiffBase(1), &mut status),
+            Some(Effect::DiffBase(1))
+        ));
         assert!(status.text.starts_with("#1 is the diff base"));
-        assert!(matches!(vm.handle_row(RowIntent::Comment(1), &mut status), Some(Effect::ShowOverview)));
+        assert!(matches!(
+            vm.handle_row(RowIntent::Comment(1), &mut status),
+            Some(Effect::ShowOverview)
+        ));
         assert_eq!(vm.selected, Some(1));
     }
 
@@ -444,7 +495,10 @@ mod tests {
         vm.handle_shortcut(ShortcutIntent::DeleteSelected);
         assert_eq!(vm.flow_count(), 2);
         vm.selected = Some(1);
-        assert!(matches!(vm.handle_shortcut(ShortcutIntent::ReplaySelected), Some(Effect::OpenReplay(1))));
+        assert!(matches!(
+            vm.handle_shortcut(ShortcutIntent::ReplaySelected),
+            Some(Effect::OpenReplay(1))
+        ));
         vm.handle_shortcut(ShortcutIntent::DeleteSelected);
         assert_eq!(vm.flow_count(), 1);
         assert_eq!(vm.selected, None);
@@ -455,7 +509,15 @@ mod tests {
         let (mut vm, mut status) = setup(3);
         vm.handle_row(RowIntent::Pin(2), &mut status);
         vm.handle_toolbar(ToolbarIntent::ClearUnpinned);
-        assert_eq!(vm.store.lock().flows.iter().map(|f| f.id).collect::<Vec<_>>(), vec![2]);
+        assert_eq!(
+            vm.store
+                .lock()
+                .flows
+                .iter()
+                .map(|f| f.id)
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
     }
 
     #[test]
@@ -493,14 +555,25 @@ mod tests {
     #[test]
     fn tree_groups_by_app_then_host_sorted_by_volume() {
         let (mut vm, _) = setup(0);
-        for (id, app, host) in [(1, "curl", "a.com"), (2, "curl", "a.com"), (3, "curl", "b.com"), (4, "node", "c.com")] {
+        for (id, app, host) in [
+            (1, "curl", "a.com"),
+            (2, "curl", "a.com"),
+            (3, "curl", "b.com"),
+            (4, "node", "c.com"),
+        ] {
             let mut f = Flow::sample(id);
             f.app = app.into();
             f.host = host.into();
             vm.store.lock().push(f);
         }
         vm.refresh_tree();
-        assert_eq!(vm.tree[0], ("curl".to_string(), vec![("a.com".to_string(), 2), ("b.com".to_string(), 1)]));
+        assert_eq!(
+            vm.tree[0],
+            (
+                "curl".to_string(),
+                vec![("a.com".to_string(), 2), ("b.com".to_string(), 1)]
+            )
+        );
         assert_eq!(vm.tree[1].0, "node");
     }
 

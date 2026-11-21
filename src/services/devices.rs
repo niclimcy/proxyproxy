@@ -3,12 +3,19 @@ use std::process::Command;
 type Res = Result<String, String>;
 
 fn run(cmd: &str, args: &[&str]) -> Res {
-    let out = Command::new(cmd).args(args).output().map_err(|e| format!("{cmd}: {e}"))?;
+    let out = Command::new(cmd)
+        .args(args)
+        .output()
+        .map_err(|e| format!("{cmd}: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if out.status.success() {
         Ok(text)
     } else {
-        Err(format!("{cmd} {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()))
+        Err(format!(
+            "{cmd} {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
     }
 }
 
@@ -36,7 +43,11 @@ fn each_android(f: impl Fn(&str) -> Res) -> Res {
             errs.push(e);
         }
     }
-    if errs.is_empty() { Ok(format!("{} Android device(s)", devs.len())) } else { Err(errs.join("; ")) }
+    if errs.is_empty() {
+        Ok(format!("{} Android device(s)", devs.len()))
+    } else {
+        Err(errs.join("; "))
+    }
 }
 
 // `adb reverse` lets emulators and USB devices reach the host proxy via localhost
@@ -44,16 +55,46 @@ pub fn android_set_proxy(port: u16) -> Res {
     let p = port.to_string();
     let addr = format!("127.0.0.1:{port}");
     each_android(|d| {
-        run("adb", &["-s", d, "reverse", &format!("tcp:{p}"), &format!("tcp:{p}")])?;
-        run("adb", &["-s", d, "shell", "settings", "put", "global", "http_proxy", &addr])
+        run(
+            "adb",
+            &["-s", d, "reverse", &format!("tcp:{p}"), &format!("tcp:{p}")],
+        )?;
+        run(
+            "adb",
+            &[
+                "-s",
+                d,
+                "shell",
+                "settings",
+                "put",
+                "global",
+                "http_proxy",
+                &addr,
+            ],
+        )
     })
     .map(|s| format!("Proxy enabled on {s}"))
 }
 
 pub fn android_clear_proxy(port: u16) -> Res {
     each_android(|d| {
-        let _ = run("adb", &["-s", d, "reverse", "--remove", &format!("tcp:{port}")]);
-        run("adb", &["-s", d, "shell", "settings", "put", "global", "http_proxy", ":0"])
+        let _ = run(
+            "adb",
+            &["-s", d, "reverse", "--remove", &format!("tcp:{port}")],
+        );
+        run(
+            "adb",
+            &[
+                "-s",
+                d,
+                "shell",
+                "settings",
+                "put",
+                "global",
+                "http_proxy",
+                ":0",
+            ],
+        )
     })
     .map(|s| format!("Proxy cleared on {s}"))
 }
@@ -61,15 +102,36 @@ pub fn android_clear_proxy(port: u16) -> Res {
 // Android 7+ apps ignore user CAs unless their network security config opts in
 pub fn android_install_ca(cert: &str) -> Res {
     each_android(|d| {
-        run("adb", &["-s", d, "push", cert, "/sdcard/Download/proxyproxy-ca.crt"])?;
-        run("adb", &["-s", d, "shell", "am", "start", "-a", "android.settings.SECURITY_SETTINGS"])
+        run(
+            "adb",
+            &["-s", d, "push", cert, "/sdcard/Download/proxyproxy-ca.crt"],
+        )?;
+        run(
+            "adb",
+            &[
+                "-s",
+                d,
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "android.settings.SECURITY_SETTINGS",
+            ],
+        )
     })
-    .map(|s| format!("CA pushed to Downloads on {s}; install via Settings > Security > Install from storage"))
+    .map(|s| {
+        format!(
+            "CA pushed to Downloads on {s}; install via Settings > Security > Install from storage"
+        )
+    })
 }
 
 #[cfg(target_os = "macos")]
 pub fn ios_sim_install_ca(cert: &str) -> Res {
-    run("xcrun", &["simctl", "keychain", "booted", "add-root-cert", cert])?;
+    run(
+        "xcrun",
+        &["simctl", "keychain", "booted", "add-root-cert", cert],
+    )?;
     Ok("CA installed on booted iOS simulator(s)".into())
 }
 
@@ -113,24 +175,76 @@ pub fn system_proxy(enable: bool, port: u16) -> Res {
             run("gsettings", &["set", &schema, "port", &p])?;
         }
     }
-    run("gsettings", &["set", "org.gnome.system.proxy", "mode", if enable { "manual" } else { "none" }])?;
-    Ok(format!("System proxy {}", if enable { "on" } else { "off" }))
+    run(
+        "gsettings",
+        &[
+            "set",
+            "org.gnome.system.proxy",
+            "mode",
+            if enable { "manual" } else { "none" },
+        ],
+    )?;
+    Ok(format!(
+        "System proxy {}",
+        if enable { "on" } else { "off" }
+    ))
 }
 
 #[cfg(target_os = "windows")]
 pub fn system_proxy(enable: bool, port: u16) -> Res {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-    run("reg", &["add", key, "/v", "ProxyEnable", "/t", "REG_DWORD", "/d", if enable { "1" } else { "0" }, "/f"])?;
+    run(
+        "reg",
+        &[
+            "add",
+            key,
+            "/v",
+            "ProxyEnable",
+            "/t",
+            "REG_DWORD",
+            "/d",
+            if enable { "1" } else { "0" },
+            "/f",
+        ],
+    )?;
     if enable {
-        run("reg", &["add", key, "/v", "ProxyServer", "/t", "REG_SZ", "/d", &format!("127.0.0.1:{port}"), "/f"])?;
+        run(
+            "reg",
+            &[
+                "add",
+                key,
+                "/v",
+                "ProxyServer",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &format!("127.0.0.1:{port}"),
+                "/f",
+            ],
+        )?;
     }
-    Ok(format!("System proxy {}", if enable { "on" } else { "off" }))
+    Ok(format!(
+        "System proxy {}",
+        if enable { "on" } else { "off" }
+    ))
 }
 
 #[cfg(target_os = "macos")]
 pub fn trust_ca_on_host(cert: &str) -> Res {
-    let kc = dirs::home_dir().ok_or("no home dir")?.join("Library/Keychains/login.keychain-db");
-    run("security", &["add-trusted-cert", "-r", "trustRoot", "-k", &kc.to_string_lossy(), cert])?;
+    let kc = dirs::home_dir()
+        .ok_or("no home dir")?
+        .join("Library/Keychains/login.keychain-db");
+    run(
+        "security",
+        &[
+            "add-trusted-cert",
+            "-r",
+            "trustRoot",
+            "-k",
+            &kc.to_string_lossy(),
+            cert,
+        ],
+    )?;
     Ok("CA trusted in login keychain".into())
 }
 
@@ -142,7 +256,9 @@ pub fn trust_ca_on_host(cert: &str) -> Res {
 
 #[cfg(target_os = "linux")]
 pub fn trust_ca_on_host(cert: &str) -> Res {
-    Err(format!("copy {cert} into /usr/local/share/ca-certificates/ and run update-ca-certificates"))
+    Err(format!(
+        "copy {cert} into /usr/local/share/ca-certificates/ and run update-ca-certificates"
+    ))
 }
 
 pub fn env_snippet(port: u16, cert: &str) -> String {
@@ -161,7 +277,10 @@ pub fn launch_chrome(port: u16) -> Res {
         .args(["--no-first-run", "--no-default-browser-check"])
         .spawn()
         .map_err(|e| format!("open: {e}"))?;
-    Ok("Launched Chrome with a clean profile routed through proxyproxy (trust the CA first)".into())
+    Ok(
+        "Launched Chrome with a clean profile routed through proxyproxy (trust the CA first)"
+            .into(),
+    )
 }
 
 #[cfg(not(target_os = "macos"))]

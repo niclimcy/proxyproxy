@@ -22,6 +22,13 @@ mod tests {
 
     #[test]
     fn replies_with_status_without_a_server() {
-        assert_eq!(Block { status: 403 }.short_circuit().unwrap().status().as_u16(), 403);
+        assert_eq!(
+            Block { status: 403 }
+                .short_circuit()
+                .unwrap()
+                .status()
+                .as_u16(),
+            403
+        );
     }
 }

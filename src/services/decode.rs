@@ -13,9 +13,14 @@ pub struct Ctx<'a> {
 
 pub fn gql_report(m: &Message, c: &Ctx) -> Option<String> {
     if c.response {
-        return if c.gql_req || c.path.contains("graphql") { crate::services::graphql::response_report(m) } else { None };
+        return if c.gql_req || c.path.contains("graphql") {
+            crate::services::graphql::response_report(m)
+        } else {
+            None
+        };
     }
-    crate::services::graphql::parse_request(c.method, c.path, m).map(|ops| crate::services::graphql::request_report(&ops))
+    crate::services::graphql::parse_request(c.method, c.path, m)
+        .map(|ops| crate::services::graphql::request_report(&ops))
 }
 
 pub fn is_graphql_request(method: &str, path: &str, m: &Message) -> bool {
@@ -63,7 +68,11 @@ pub fn is_protobuf(m: &Message) -> bool {
     ct.contains("protobuf") || ct.contains("grpc")
 }
 
-pub fn schema_decode(m: &Message, c: &Ctx, forced: Option<&str>) -> Option<crate::services::schemas::Decoded> {
+pub fn schema_decode(
+    m: &Message,
+    c: &Ctx,
+    forced: Option<&str>,
+) -> Option<crate::services::schemas::Decoded> {
     if !crate::services::schemas::is_loaded() || is_json(m) || m.body.is_empty() {
         return None;
     }
@@ -75,13 +84,20 @@ pub fn jwts(m: &Message) -> Vec<String> {
     let mut scan = |s: &str| {
         for w in s.split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))) {
             let parts: Vec<&str> = w.split('.').collect();
-            if parts.len() == 3 && parts[0].starts_with("eyJ") && parts[1].len() > 4 && !found.contains(&w.to_string()) {
+            if parts.len() == 3
+                && parts[0].starts_with("eyJ")
+                && parts[1].len() > 4
+                && !found.contains(&w.to_string())
+            {
                 found.push(w.to_string());
             }
         }
     };
     for (k, v) in &m.headers {
-        if matches!(k.to_ascii_lowercase().as_str(), "authorization" | "cookie" | "set-cookie") {
+        if matches!(
+            k.to_ascii_lowercase().as_str(),
+            "authorization" | "cookie" | "set-cookie"
+        ) {
             scan(v);
         }
     }
@@ -108,7 +124,11 @@ pub fn pretty_text(m: &Message) -> String {
     }
     match std::str::from_utf8(&m.body) {
         Ok(s) => {
-            if m.content_type().contains("xml") || m.content_type().contains("html") { indent_markup(s) } else { s.to_string() }
+            if m.content_type().contains("xml") || m.content_type().contains("html") {
+                indent_markup(s)
+            } else {
+                s.to_string()
+            }
         }
         Err(_) => format!("<{} bytes binary — see Hex>", m.body.len()),
     }
@@ -132,7 +152,11 @@ fn indent_markup(s: &str) -> String {
         }
         out.push_str(&"  ".repeat(depth));
         out.push_str(tag);
-        if !tag.starts_with("</") && !tag.ends_with("/>") && !tag.starts_with("<?") && !tag.starts_with("<!") {
+        if !tag.starts_with("</")
+            && !tag.ends_with("/>")
+            && !tag.starts_with("<?")
+            && !tag.starts_with("<!")
+        {
             depth += 1;
         }
         rest = &rest[i + j + 1..];
@@ -174,18 +198,28 @@ pub fn protobuf(data: &[u8], depth: usize) -> Option<String> {
             1 => {
                 let b: [u8; 8] = data.get(i..i + 8)?.try_into().ok()?;
                 i += 8;
-                out.push_str(&format!("{pad}{field}: {} (fixed64)\n", u64::from_le_bytes(b)));
+                out.push_str(&format!(
+                    "{pad}{field}: {} (fixed64)\n",
+                    u64::from_le_bytes(b)
+                ));
             }
             5 => {
                 let b: [u8; 4] = data.get(i..i + 4)?.try_into().ok()?;
                 i += 4;
-                out.push_str(&format!("{pad}{field}: {} (fixed32)\n", u32::from_le_bytes(b)));
+                out.push_str(&format!(
+                    "{pad}{field}: {} (fixed32)\n",
+                    u32::from_le_bytes(b)
+                ));
             }
             2 => {
                 let n = varint(&mut i)? as usize;
                 let sub = data.get(i..i.checked_add(n)?)?;
                 i += n;
-                if let Some(nested) = (depth < 6).then(|| protobuf(sub, depth + 1)).flatten().filter(|_| !sub.is_empty()) {
+                if let Some(nested) = (depth < 6)
+                    .then(|| protobuf(sub, depth + 1))
+                    .flatten()
+                    .filter(|_| !sub.is_empty())
+                {
                     out.push_str(&format!("{pad}{field} {{\n{nested}{pad}}}\n"));
                 } else if let Ok(s) = std::str::from_utf8(sub) {
                     out.push_str(&format!("{pad}{field}: {s:?}\n"));
@@ -200,14 +234,25 @@ pub fn protobuf(data: &[u8], depth: usize) -> Option<String> {
 }
 
 pub fn query_params(path: &str) -> Vec<(String, String)> {
-    path.split_once('?').map(|(_, q)| parse_form(q.split('#').next().unwrap_or(q))).unwrap_or_default()
+    path.split_once('?')
+        .map(|(_, q)| parse_form(q.split('#').next().unwrap_or(q)))
+        .unwrap_or_default()
 }
 
 pub fn diff_text(a: &str, b: &str) -> Vec<(char, String)> {
     use similar::{ChangeTag, TextDiff};
     TextDiff::from_lines(a, b)
         .iter_all_changes()
-        .map(|c| (match c.tag() { ChangeTag::Equal => ' ', ChangeTag::Delete => '-', ChangeTag::Insert => '+' }, c.value().trim_end_matches('\n').to_string()))
+        .map(|c| {
+            (
+                match c.tag() {
+                    ChangeTag::Equal => ' ',
+                    ChangeTag::Delete => '-',
+                    ChangeTag::Insert => '+',
+                },
+                c.value().trim_end_matches('\n').to_string(),
+            )
+        })
         .collect()
 }
 
@@ -217,7 +262,10 @@ mod tests {
 
     #[test]
     fn decoders() {
-        assert_eq!(parse_form("a=1%202&b=x+y"), vec![("a".into(), "1 2".into()), ("b".into(), "x y".into())]);
+        assert_eq!(
+            parse_form("a=1%202&b=x+y"),
+            vec![("a".into(), "1 2".into()), ("b".into(), "x y".into())]
+        );
         assert_eq!(url_decode("100%"), "100%");
         let pb = protobuf(&[0x08, 0x96, 0x01, 0x12, 0x03, b'a', b'b', b'c'], 0).unwrap();
         assert!(pb.contains("1: 150") && pb.contains("2: \"abc\""), "{pb}");

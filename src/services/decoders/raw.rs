@@ -18,6 +18,9 @@ impl BodyDecoder for Raw {
     }
 
     fn render(&self, m: &Message, _: &Ctx, _: Option<&str>) -> Rendered {
-        Rendered::Text { text: m.text(), caption: None }
+        Rendered::Text {
+            text: m.text(),
+            caption: None,
+        }
     }
 }

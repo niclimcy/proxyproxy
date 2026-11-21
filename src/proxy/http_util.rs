@@ -9,13 +9,23 @@ use hudsucker::{
 };
 
 pub fn headers(h: &HeaderMap) -> Vec<(String, String)> {
-    h.iter().map(|(k, v)| (k.to_string(), String::from_utf8_lossy(v.as_bytes()).into_owned())).collect()
+    h.iter()
+        .map(|(k, v)| {
+            (
+                k.to_string(),
+                String::from_utf8_lossy(v.as_bytes()).into_owned(),
+            )
+        })
+        .collect()
 }
 
 pub fn header_map(h: &[(String, String)]) -> HeaderMap {
     let mut map = HeaderMap::new();
     for (k, v) in h {
-        if let (Ok(k), Ok(v)) = (HeaderName::try_from(k.trim()), HeaderValue::try_from(v.trim())) {
+        if let (Ok(k), Ok(v)) = (
+            HeaderName::try_from(k.trim()),
+            HeaderValue::try_from(v.trim()),
+        ) {
             map.append(k, v);
         }
     }
@@ -25,13 +35,26 @@ pub fn header_map(h: &[(String, String)]) -> HeaderMap {
 pub fn remap(orig: &Uri, target: &str) -> Option<Uri> {
     let t: Uri = target.trim().parse().ok()?;
     let auth = t.authority()?.clone();
-    let scheme = t.scheme_str().or(orig.scheme_str()).unwrap_or("https").to_string();
-    let path = if t.path() == "/" { orig.path() } else { t.path() };
+    let scheme = t
+        .scheme_str()
+        .or(orig.scheme_str())
+        .unwrap_or("https")
+        .to_string();
+    let path = if t.path() == "/" {
+        orig.path()
+    } else {
+        t.path()
+    };
     let pq = match t.query().or(orig.query()) {
         Some(q) => format!("{path}?{q}"),
         None => path.to_string(),
     };
-    Uri::builder().scheme(scheme.as_str()).authority(auth).path_and_query(pq).build().ok()
+    Uri::builder()
+        .scheme(scheme.as_str())
+        .authority(auth)
+        .path_and_query(pq)
+        .build()
+        .ok()
 }
 
 pub fn reply(status: u16, content_type: &str, body: Vec<u8>) -> Response<Body> {
@@ -48,7 +71,9 @@ pub fn text_response(status: u16, body: String) -> Response<Body> {
 }
 
 pub fn set_header(h: &mut HeaderMap, name: &str, value: &str, remove: bool) {
-    let Ok(n) = HeaderName::try_from(name.trim()) else { return };
+    let Ok(n) = HeaderName::try_from(name.trim()) else {
+        return;
+    };
     h.remove(&n);
     if !remove {
         if let Ok(v) = HeaderValue::try_from(value.trim()) {
@@ -59,7 +84,14 @@ pub fn set_header(h: &mut HeaderMap, name: &str, value: &str, remove: bool) {
 
 pub fn replace_body(body: &[u8], find: &str, with: &str, regex: bool) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(body).ok()?;
-    let out = if regex { regex::Regex::new(find).ok()?.replace_all(text, with).into_owned() } else { text.replace(find, with) };
+    let out = if regex {
+        regex::Regex::new(find)
+            .ok()?
+            .replace_all(text, with)
+            .into_owned()
+    } else {
+        text.replace(find, with)
+    };
     Some(out.into_bytes())
 }
 
@@ -102,8 +134,14 @@ mod tests {
     #[test]
     fn remap_keeps_path_unless_target_has_one() {
         let orig: Uri = "https://a.com/x?y=1".parse().unwrap();
-        assert_eq!(remap(&orig, "http://b.com:8080").unwrap().to_string(), "http://b.com:8080/x?y=1");
-        assert_eq!(remap(&orig, "http://b.com/other").unwrap().to_string(), "http://b.com/other?y=1");
+        assert_eq!(
+            remap(&orig, "http://b.com:8080").unwrap().to_string(),
+            "http://b.com:8080/x?y=1"
+        );
+        assert_eq!(
+            remap(&orig, "http://b.com/other").unwrap().to_string(),
+            "http://b.com/other?y=1"
+        );
         assert!(remap(&orig, "not a uri").is_none());
     }
 }

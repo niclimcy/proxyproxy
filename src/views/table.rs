@@ -6,10 +6,18 @@ use eframe::egui::{self, Frame, Margin, RichText};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
 
-pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &CaptureVm, diff_base: Option<u64>, port: u16) -> Vec<RowIntent> {
+pub fn show(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &CaptureVm,
+    diff_base: Option<u64>,
+    port: u16,
+) -> Vec<RowIntent> {
     let mut out = vec![];
     let hidden = vm.hidden_cols();
-    let cols: Vec<usize> = (0..ALL_COLS.len()).filter(|&i| i == 0 || !hidden.iter().any(|h| h == ALL_COLS[i])).collect();
+    let cols: Vec<usize> = (0..ALL_COLS.len())
+        .filter(|&i| i == 0 || !hidden.iter().any(|h| h == ALL_COLS[i]))
+        .collect();
     let follow = vm.follow && vm.sort.is_none();
     let sort = vm.sort;
     let has_flows = vm.has_flows();

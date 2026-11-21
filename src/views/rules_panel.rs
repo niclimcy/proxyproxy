@@ -1,6 +1,6 @@
 use crate::domain::rule::Action;
 use crate::viewmodels::intent::{ListKind, RuleIntent};
-use crate::viewmodels::rules_vm::{RuleForm, RuleKind, RulesTab, RulesVm, KINDS};
+use crate::viewmodels::rules_vm::{KINDS, RuleForm, RuleKind, RulesTab, RulesVm};
 use crate::views::theme::*;
 use eframe::egui::{self, Color32, RichText, ScrollArea, Stroke, TextEdit};
 use egui_phosphor::regular as ph;
@@ -292,11 +292,12 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                                 && !f.map_file_loaded_path.is_empty()
                             {
                                 ui.label(muted("JSON file"));
-                                let mut layouter = |ui: &egui::Ui,
-                                                     text: &dyn egui::TextBuffer,
-                                                     wrap_width: f32| {
-                                    code_layouter(ui, text, wrap_width, "json")
-                                };
+                                let mut layouter =
+                                    |ui: &egui::Ui,
+                                     text: &dyn egui::TextBuffer,
+                                     wrap_width: f32| {
+                                        code_layouter(ui, text, wrap_width, "json")
+                                    };
                                 let editor = TextEdit::multiline(&mut f.map_file_content)
                                     .code_editor()
                                     .desired_rows(10)
@@ -401,11 +402,10 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                     });
                 }
                 RuleKind::Script => field(ui, "Code", |ui| {
-                    let mut layouter = |ui: &egui::Ui,
-                                         text: &dyn egui::TextBuffer,
-                                         wrap_width: f32| {
-                        code_layouter(ui, text, wrap_width, "javascript")
-                    };
+                    let mut layouter =
+                        |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                            code_layouter(ui, text, wrap_width, "javascript")
+                        };
                     ui.add(
                         TextEdit::multiline(&mut f.code)
                             .code_editor()

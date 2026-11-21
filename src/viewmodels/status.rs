@@ -29,7 +29,11 @@ pub struct Status {
 impl Status {
     pub fn new(text: String, repaint: Arc<dyn Repaint>) -> Self {
         let (tx, rx) = channel();
-        Self { text, jobs: JobRunner { tx, repaint }, rx }
+        Self {
+            text,
+            jobs: JobRunner { tx, repaint },
+            rx,
+        }
     }
 
     pub fn set(&mut self, text: impl Into<String>) {

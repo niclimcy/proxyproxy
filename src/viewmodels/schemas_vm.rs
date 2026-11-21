@@ -23,7 +23,11 @@ impl SchemasVm {
     }
 
     pub fn view(&self) -> SchemasView {
-        SchemasView { paths: self.cfg.lock().unwrap().proto_descs.clone(), errors: schemas::errors(), stats: schemas::stats() }
+        SchemasView {
+            paths: self.cfg.lock().unwrap().proto_descs.clone(),
+            errors: schemas::errors(),
+            stats: schemas::stats(),
+        }
     }
 
     pub fn handle(&mut self, intent: SchemasIntent) {
@@ -56,11 +60,21 @@ mod tests {
     #[test]
     fn add_dedupes_and_remove_is_bounds_checked() {
         let mut vm = SchemasVm::new(Arc::new(Mutex::new(Config::default())));
-        vm.handle(SchemasIntent::AddFiles(vec!["/a.desc".into(), "/b.desc".into(), "/a.desc".into()]));
+        vm.handle(SchemasIntent::AddFiles(vec![
+            "/a.desc".into(),
+            "/b.desc".into(),
+            "/a.desc".into(),
+        ]));
         vm.handle(SchemasIntent::AddFiles(vec!["/b.desc".into()]));
-        assert_eq!(vm.view().paths, vec!["/a.desc".to_string(), "/b.desc".to_string()]);
+        assert_eq!(
+            vm.view().paths,
+            vec!["/a.desc".to_string(), "/b.desc".to_string()]
+        );
         vm.handle(SchemasIntent::Remove(5));
         vm.handle(SchemasIntent::Remove(0));
-        assert_eq!(vm.cfg.lock().unwrap().proto_descs, vec!["/b.desc".to_string()]);
+        assert_eq!(
+            vm.cfg.lock().unwrap().proto_descs,
+            vec!["/b.desc".to_string()]
+        );
     }
 }

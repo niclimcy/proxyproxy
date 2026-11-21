@@ -17,7 +17,10 @@ use crate::viewmodels::{
 };
 use crate::views::{self, theme::apply_theme};
 use eframe::egui;
-use std::sync::{Arc, Mutex, mpsc::{Receiver, channel}};
+use std::sync::{
+    Arc, Mutex,
+    mpsc::{Receiver, channel},
+};
 use std::time::Duration;
 
 struct EguiRepaint(egui::Context);
@@ -61,7 +64,14 @@ struct App {
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>, port: u16, rx: Receiver<Event>, cfg: Shared, store: FlowStore, api_port: u16) -> Self {
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        port: u16,
+        rx: Receiver<Event>,
+        cfg: Shared,
+        store: FlowStore,
+        api_port: u16,
+    ) -> Self {
         let ctx = &cc.egui_ctx;
         let icon = views::icon::data();
         let menu = services::app_menu::AppMenu::install(win32_hwnd(cc), icon.rgba, icon.width);
@@ -122,8 +132,14 @@ impl App {
         };
         for i in views::toolbar::show(ui, ctx, &mut self.capture, props) {
             match i {
-                ToolbarIntent::Session(s) => self.session.handle(s, &mut self.capture, &mut self.rules, &mut self.status),
-                ToolbarIntent::Device(a) => self.session.run_device(a, self.port, self.cert.clone(), &self.status),
+                ToolbarIntent::Session(s) => {
+                    self.session
+                        .handle(s, &mut self.capture, &mut self.rules, &mut self.status)
+                }
+                ToolbarIntent::Device(a) => {
+                    self.session
+                        .run_device(a, self.port, self.cert.clone(), &self.status)
+                }
                 ToolbarIntent::Compose => self.replay.open_compose(),
                 ToolbarIntent::About => self.about.open(),
                 other => self.capture.handle_toolbar(other),
@@ -194,7 +210,13 @@ impl eframe::App for App {
             self.capture.handle_sidebar(i);
         }
         self.rules_panel(ui);
-        for i in views::detail::show(ui, &ctx, &mut self.detail, self.capture.selected, self.capture.has_flows()) {
+        for i in views::detail::show(
+            ui,
+            &ctx,
+            &mut self.detail,
+            self.capture.selected,
+            self.capture.has_flows(),
+        ) {
             let e = self.detail.handle(i);
             self.apply(e);
         }
@@ -222,7 +244,13 @@ pub fn run(port: u16) -> eframe::Result {
 
     eframe::run_native(
         "proxyproxy",
-        eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 840.0]).with_min_inner_size([560.0, 400.0]).with_icon(views::icon::data()), ..Default::default() },
+        eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([1360.0, 840.0])
+                .with_min_inner_size([560.0, 400.0])
+                .with_icon(views::icon::data()),
+            ..Default::default()
+        },
         Box::new(move |cc| {
             apply_theme(&cc.egui_ctx);
             cc.egui_ctx.set_embed_viewports(false);
@@ -231,7 +259,10 @@ pub fn run(port: u16) -> eframe::Result {
                 // macOS would otherwise merge child viewports into tabs
                 objc2_app_kit::NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
             }
-            let sink: Arc<dyn proxy::sink::FlowSink> = Arc::new(proxy::sink::ChannelSink::new(tx, Arc::new(EguiRepaint(cc.egui_ctx.clone()))));
+            let sink: Arc<dyn proxy::sink::FlowSink> = Arc::new(proxy::sink::ChannelSink::new(
+                tx,
+                Arc::new(EguiRepaint(cc.egui_ctx.clone())),
+            ));
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 if let Err(e) = rt.block_on(proxy::run(port, sink, proxy_cfg)) {

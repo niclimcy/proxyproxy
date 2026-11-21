@@ -41,22 +41,41 @@ pub struct Overview {
 }
 
 fn headers_text(m: &Message) -> String {
-    m.headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n")
+    m.headers
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn request_text(x: &Flow) -> String {
-    format!("{} {}\n{}\n\n{}", x.method, x.path, headers_text(&x.request), decode::pretty_text(&x.request))
+    format!(
+        "{} {}\n{}\n\n{}",
+        x.method,
+        x.path,
+        headers_text(&x.request),
+        decode::pretty_text(&x.request)
+    )
 }
 
 fn response_text(x: &Flow) -> String {
     match &x.response {
-        Some(r) => format!("# status {}\n{}\n\n{}", x.status.unwrap_or(0), headers_text(r), decode::pretty_text(r)),
+        Some(r) => format!(
+            "# status {}\n{}\n\n{}",
+            x.status.unwrap_or(0),
+            headers_text(r),
+            decode::pretty_text(r)
+        ),
         None => String::new(),
     }
 }
 
 fn flow_report(x: &Flow) -> String {
-    format!("## request\n{}\n## response\n{}", request_text(x), response_text(x))
+    format!(
+        "## request\n{}\n## response\n{}",
+        request_text(x),
+        response_text(x)
+    )
 }
 
 impl DetailVm {
@@ -87,8 +106,18 @@ impl DetailVm {
         let st = self.store.lock();
         let key = f.endpoint_key();
         Overview {
-            max_ms: st.flows.iter().filter_map(|x| x.duration_ms).max().unwrap_or(1),
-            same: st.flows.iter().filter(|x| x.id != f.id && x.endpoint_key() == key).cloned().collect(),
+            max_ms: st
+                .flows
+                .iter()
+                .filter_map(|x| x.duration_ms)
+                .max()
+                .unwrap_or(1),
+            same: st
+                .flows
+                .iter()
+                .filter(|x| x.id != f.id && x.endpoint_key() == key)
+                .cloned()
+                .collect(),
         }
     }
 
@@ -98,12 +127,20 @@ impl DetailVm {
         self.diff_base
             .filter(|b| *b != f.id)
             .and_then(|b| st.find(b))
-            .or_else(|| st.flows.iter().rev().find(|x| x.id < f.id && x.endpoint_key() == f.endpoint_key() && x.response.is_some()))
+            .or_else(|| {
+                st.flows.iter().rev().find(|x| {
+                    x.id < f.id && x.endpoint_key() == f.endpoint_key() && x.response.is_some()
+                })
+            })
             .cloned()
     }
 
     pub fn diff_lines(&mut self, base: &Flow, f: &Flow) -> &[(char, String)] {
-        let key = (base.id, f.id, (f.res_size() + base.res_size()) ^ f.request.body.len());
+        let key = (
+            base.id,
+            f.id,
+            (f.res_size() + base.res_size()) ^ f.request.body.len(),
+        );
         if self.diff_cache.as_ref().map(|(k, _)| *k) != Some(key) {
             self.diff_cache = Some((key, decode::diff_text(&flow_report(base), &flow_report(f))));
         }
@@ -175,7 +212,10 @@ mod tests {
         f.path = path.into();
         f.status = Some(200);
         f.duration_ms = Some(id as u128 * 10);
-        f.response = Some(Message { headers: vec![], body: body.as_bytes().to_vec() });
+        f.response = Some(Message {
+            headers: vec![],
+            body: body.as_bytes().to_vec(),
+        });
         f
     }
 
@@ -189,7 +229,11 @@ mod tests {
 
     #[test]
     fn diff_defaults_to_previous_answered_call_on_same_endpoint() {
-        let vm = vm_with(vec![flow(1, "/a", "x"), flow(2, "/b", "y"), flow(3, "/a", "z")]);
+        let vm = vm_with(vec![
+            flow(1, "/a", "x"),
+            flow(2, "/b", "y"),
+            flow(3, "/a", "z"),
+        ]);
         let f3 = vm.flow(3).unwrap();
         assert_eq!(vm.diff_base_for(&f3).unwrap().id, 1);
         assert!(vm.diff_base_for(&vm.flow(1).unwrap()).is_none());
@@ -197,7 +241,11 @@ mod tests {
 
     #[test]
     fn explicit_base_wins_and_self_base_is_ignored() {
-        let mut vm = vm_with(vec![flow(1, "/a", "x"), flow(2, "/b", "y"), flow(3, "/a", "z")]);
+        let mut vm = vm_with(vec![
+            flow(1, "/a", "x"),
+            flow(2, "/b", "y"),
+            flow(3, "/a", "z"),
+        ]);
         vm.use_as_base(2);
         assert_eq!(vm.tab, DTab::Diff);
         assert_eq!(vm.diff_base_for(&vm.flow(3).unwrap()).unwrap().id, 2);
@@ -218,7 +266,11 @@ mod tests {
 
     #[test]
     fn overview_lists_other_calls_and_max_duration() {
-        let vm = vm_with(vec![flow(1, "/a", ""), flow(2, "/a", ""), flow(3, "/b", "")]);
+        let vm = vm_with(vec![
+            flow(1, "/a", ""),
+            flow(2, "/a", ""),
+            flow(3, "/b", ""),
+        ]);
         let o = vm.overview(&vm.flow(1).unwrap());
         assert_eq!(o.max_ms, 30);
         assert_eq!(o.same.iter().map(|f| f.id).collect::<Vec<_>>(), vec![2]);
@@ -240,7 +292,10 @@ mod tests {
     #[test]
     fn replay_intent_becomes_effect_and_ws_selection_resets() {
         let mut vm = vm_with(vec![]);
-        assert!(matches!(vm.handle(DetailIntent::Replay(4)), Some(Effect::OpenReplay(4))));
+        assert!(matches!(
+            vm.handle(DetailIntent::Replay(4)),
+            Some(Effect::OpenReplay(4))
+        ));
         vm.handle(DetailIntent::SelectWs(2));
         assert_eq!(vm.ws_sel, Some(2));
         vm.on_select();
@@ -260,7 +315,10 @@ mod tests {
 
     #[test]
     fn raw_text_has_start_line_headers_blank_line_body() {
-        let m = Message { headers: vec![("a".into(), "1".into())], body: b"hi".to_vec() };
+        let m = Message {
+            headers: vec![("a".into(), "1".into())],
+            body: b"hi".to_vec(),
+        };
         assert_eq!(raw_text("GET / HTTP/1.1", &m), "GET / HTTP/1.1\na: 1\n\nhi");
     }
 }

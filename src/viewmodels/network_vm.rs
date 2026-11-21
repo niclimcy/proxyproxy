@@ -19,7 +19,12 @@ impl NetworkVm {
 
     pub fn handle(&mut self, intent: NetworkIntent, status: &mut Status) {
         match intent {
-            NetworkIntent::AddDns => self.cfg.lock().unwrap().dns_overrides.push((String::new(), String::new())),
+            NetworkIntent::AddDns => self
+                .cfg
+                .lock()
+                .unwrap()
+                .dns_overrides
+                .push((String::new(), String::new())),
             NetworkIntent::RemoveDns(i) => {
                 let mut c = self.cfg.lock().unwrap();
                 if i < c.dns_overrides.len() {
@@ -50,7 +55,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     fn setup() -> (NetworkVm, Status) {
-        (NetworkVm::new(Arc::new(Mutex::new(Config::default()))), Status::new(String::new(), Arc::new(NoRepaint)))
+        (
+            NetworkVm::new(Arc::new(Mutex::new(Config::default()))),
+            Status::new(String::new(), Arc::new(NoRepaint)),
+        )
     }
 
     #[test]
@@ -70,13 +78,19 @@ mod tests {
         vm.handle(NetworkIntent::SetKeylog("/tmp/k".into()), &mut st);
         vm.handle(NetworkIntent::SetPac("/tmp/p.pac".into()), &mut st);
         let c = vm.cfg.lock().unwrap();
-        assert_eq!((c.keylog_path.as_str(), c.upstream.pac_path.as_str()), ("/tmp/k", "/tmp/p.pac"));
+        assert_eq!(
+            (c.keylog_path.as_str(), c.upstream.pac_path.as_str()),
+            ("/tmp/k", "/tmp/p.pac")
+        );
     }
 
     #[test]
     fn bad_ca_import_reports_failure_in_status() {
         let (mut vm, mut st) = setup();
-        vm.handle(NetworkIntent::ImportCa("/nonexistent/c.pem".into(), "/nonexistent/k.pem".into()), &mut st);
+        vm.handle(
+            NetworkIntent::ImportCa("/nonexistent/c.pem".into(), "/nonexistent/k.pem".into()),
+            &mut st,
+        );
         assert!(st.text.starts_with("CA import failed"), "{}", st.text);
     }
 

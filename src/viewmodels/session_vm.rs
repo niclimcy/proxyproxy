@@ -23,7 +23,14 @@ fn cfg_json(cfg: &Shared) -> String {
 impl SessionVm {
     pub fn new(store: FlowStore, cfg: Shared) -> Self {
         let cfg_saved = cfg_json(&cfg);
-        Self { store, cfg, cfg_saved, cfg_checked: Instant::now(), saved_rev: 0, last_save: Instant::now() }
+        Self {
+            store,
+            cfg,
+            cfg_saved,
+            cfg_checked: Instant::now(),
+            saved_rev: 0,
+            last_save: Instant::now(),
+        }
     }
 
     // restores the last autosave; returns a status line when something was restored
@@ -43,7 +50,9 @@ impl SessionVm {
             self.cfg_checked = Instant::now();
             self.save_config_if_changed();
         }
-        if self.last_save.elapsed() > Duration::from_secs(30) && self.saved_rev != self.store.lock().rev() {
+        if self.last_save.elapsed() > Duration::from_secs(30)
+            && self.saved_rev != self.store.lock().rev()
+        {
             self.save_now();
         }
     }
@@ -68,7 +77,13 @@ impl SessionVm {
         config_store::save(&self.cfg.lock().unwrap());
     }
 
-    pub fn handle(&mut self, intent: SessionIntent, capture: &mut CaptureVm, rules: &mut RulesVm, status: &mut Status) {
+    pub fn handle(
+        &mut self,
+        intent: SessionIntent,
+        capture: &mut CaptureVm,
+        rules: &mut RulesVm,
+        status: &mut Status,
+    ) {
         match intent {
             SessionIntent::New => {
                 capture.remove_flows(|f| f.pinned);
@@ -93,7 +108,9 @@ impl SessionVm {
                 });
             }
             SessionIntent::ImportFlows(p) => {
-                let res = std::fs::read(&p).map_err(|e| e.to_string()).and_then(|d| importer::import_bytes(&d));
+                let res = std::fs::read(&p)
+                    .map_err(|e| e.to_string())
+                    .and_then(|d| importer::import_bytes(&d));
                 status.set(match res {
                     Ok(fl) => {
                         let n = fl.len();
@@ -118,10 +135,20 @@ impl SessionVm {
         }
     }
 
-    fn export(&self, p: &std::path::Path, capture: &CaptureVm, status: &mut Status, render: fn(&[&Flow]) -> String) {
+    fn export(
+        &self,
+        p: &std::path::Path,
+        capture: &CaptureVm,
+        status: &mut Status,
+        render: fn(&[&Flow]) -> String,
+    ) {
         let (data, n) = {
             let st = self.store.lock();
-            let visible: Vec<&Flow> = capture.visible.iter().filter_map(|&i| st.flows.get(i)).collect();
+            let visible: Vec<&Flow> = capture
+                .visible
+                .iter()
+                .filter_map(|&i| st.flows.get(i))
+                .collect();
             (render(&visible), visible.len())
         };
         status.set(match std::fs::write(p, data) {
@@ -135,12 +162,18 @@ impl SessionVm {
         match action {
             DeviceAction::TrustCa => jobs.spawn(move || devices::trust_ca_on_host(&cert)),
             DeviceAction::SetSystemProxy => jobs.spawn(move || devices::system_proxy(true, port)),
-            DeviceAction::ClearSystemProxy => jobs.spawn(move || devices::system_proxy(false, port)),
+            DeviceAction::ClearSystemProxy => {
+                jobs.spawn(move || devices::system_proxy(false, port))
+            }
             DeviceAction::LaunchChrome => jobs.spawn(move || devices::launch_chrome(port)),
             DeviceAction::IosSimInstallCa => jobs.spawn(move || devices::ios_sim_install_ca(&cert)),
             DeviceAction::AndroidSetProxy => jobs.spawn(move || devices::android_set_proxy(port)),
-            DeviceAction::AndroidClearProxy => jobs.spawn(move || devices::android_clear_proxy(port)),
-            DeviceAction::AndroidInstallCa => jobs.spawn(move || devices::android_install_ca(&cert)),
+            DeviceAction::AndroidClearProxy => {
+                jobs.spawn(move || devices::android_clear_proxy(port))
+            }
+            DeviceAction::AndroidInstallCa => {
+                jobs.spawn(move || devices::android_install_ca(&cert))
+            }
         }
     }
 }
@@ -196,14 +229,24 @@ mod tests {
         add(&r, 10, false);
         add(&r, 11, false);
         let p = r.dir.join("s.pxp");
-        r.s.handle(SessionIntent::SaveAs(p.clone()), &mut r.c, &mut r.r, &mut r.st);
+        r.s.handle(
+            SessionIntent::SaveAs(p.clone()),
+            &mut r.c,
+            &mut r.r,
+            &mut r.st,
+        );
         assert!(r.st.text.starts_with("Saved 2 requests"));
         r.s.store.lock().replace(vec![]);
         r.c.selected = Some(10);
         r.s.handle(SessionIntent::Open(p), &mut r.c, &mut r.r, &mut r.st);
         assert_eq!(r.s.store.lock().flows.len(), 2);
         assert_eq!(r.c.selected, None);
-        r.s.handle(SessionIntent::Open(r.dir.join("missing.pxp")), &mut r.c, &mut r.r, &mut r.st);
+        r.s.handle(
+            SessionIntent::Open(r.dir.join("missing.pxp")),
+            &mut r.c,
+            &mut r.r,
+            &mut r.st,
+        );
         assert!(r.st.text.starts_with("Error:"));
         assert_eq!(r.s.store.lock().flows.len(), 2);
     }
@@ -219,7 +262,12 @@ mod tests {
         r.c.filter = "status:>=500".into();
         r.c.refresh_visible();
         let p = r.dir.join("out.har");
-        r.s.handle(SessionIntent::ExportHar(p.clone()), &mut r.c, &mut r.r, &mut r.st);
+        r.s.handle(
+            SessionIntent::ExportHar(p.clone()),
+            &mut r.c,
+            &mut r.r,
+            &mut r.st,
+        );
         assert!(r.st.text.starts_with("Exported 1 requests"));
         r.s.handle(SessionIntent::ImportFlows(p), &mut r.c, &mut r.r, &mut r.st);
         assert_eq!(r.st.text, "Imported 1 requests");
@@ -232,7 +280,12 @@ mod tests {
         add(&r, 1, false);
         r.c.refresh_visible();
         let p = r.dir.join("o.csv");
-        r.s.handle(SessionIntent::ExportCsv(p.clone()), &mut r.c, &mut r.r, &mut r.st);
+        r.s.handle(
+            SessionIntent::ExportCsv(p.clone()),
+            &mut r.c,
+            &mut r.r,
+            &mut r.st,
+        );
         assert_eq!(std::fs::read_to_string(p).unwrap().lines().count(), 2);
     }
 
@@ -254,11 +307,21 @@ mod tests {
         r.r.form.kind = crate::viewmodels::rules_vm::RuleKind::Block;
         r.r.handle(crate::viewmodels::intent::RuleIntent::Submit);
         let p = r.dir.join("rules.json");
-        r.s.handle(SessionIntent::ExportRules(p.clone()), &mut r.c, &mut r.r, &mut r.st);
+        r.s.handle(
+            SessionIntent::ExportRules(p.clone()),
+            &mut r.c,
+            &mut r.r,
+            &mut r.st,
+        );
         assert!(r.st.text.starts_with("Rules saved"));
         r.s.handle(SessionIntent::ImportRules(p), &mut r.c, &mut r.r, &mut r.st);
         assert_eq!(r.s.cfg.lock().unwrap().rules.len(), 2);
-        r.s.handle(SessionIntent::ImportRules(r.dir.join("nope.json")), &mut r.c, &mut r.r, &mut r.st);
+        r.s.handle(
+            SessionIntent::ImportRules(r.dir.join("nope.json")),
+            &mut r.c,
+            &mut r.r,
+            &mut r.st,
+        );
         assert!(r.st.text.starts_with("Error:"));
     }
 }

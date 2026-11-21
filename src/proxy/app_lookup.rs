@@ -1,6 +1,9 @@
 #[cfg(unix)]
 pub fn lookup_app(port: u16, own_pid: u32) -> Option<String> {
-    let out = std::process::Command::new("lsof").args(["-nP", &format!("-iTCP:{port}"), "-Fpc"]).output().ok()?;
+    let out = std::process::Command::new("lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-Fpc"])
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     let (mut pid, mut found) = (0u32, None);
     for l in text.lines() {

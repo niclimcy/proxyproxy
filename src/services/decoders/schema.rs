@@ -19,7 +19,13 @@ impl BodyDecoder for Schema {
 
     fn render(&self, m: &Message, c: &Ctx, forced: Option<&str>) -> Rendered {
         let d = schema_decode(m, c, forced);
-        Rendered::Text { caption: Some(format!("decoded as {}", d.as_ref().map(|d| d.type_name.as_str()).unwrap_or("?"))), text: d.map(|d| d.text).unwrap_or_default() }
+        Rendered::Text {
+            caption: Some(format!(
+                "decoded as {}",
+                d.as_ref().map(|d| d.type_name.as_str()).unwrap_or("?")
+            )),
+            text: d.map(|d| d.text).unwrap_or_default(),
+        }
     }
 
     fn default_rank(&self) -> Option<u8> {

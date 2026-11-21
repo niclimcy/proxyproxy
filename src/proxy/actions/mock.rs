@@ -14,7 +14,11 @@ impl RuleAction for Mock {
     }
 
     fn short_circuit(&self) -> Option<Response<Body>> {
-        Some(reply(self.status, &self.content_type, self.body.clone().into_bytes()))
+        Some(reply(
+            self.status,
+            &self.content_type,
+            self.body.clone().into_bytes(),
+        ))
     }
 }
 
@@ -24,7 +28,13 @@ mod tests {
 
     #[test]
     fn replies_with_configured_status_and_type() {
-        let r = Mock { status: 201, content_type: "text/plain".into(), body: "b".into() }.short_circuit().unwrap();
+        let r = Mock {
+            status: 201,
+            content_type: "text/plain".into(),
+            body: "b".into(),
+        }
+        .short_circuit()
+        .unwrap();
         assert_eq!(r.status().as_u16(), 201);
         assert_eq!(r.headers().get("content-type").unwrap(), "text/plain");
     }

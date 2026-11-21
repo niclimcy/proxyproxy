@@ -4,8 +4,8 @@
 //! Every text colour must hold WCAG AA (4.5:1) on every surface; see tests.
 
 use eframe::egui::{self, Color32, CornerRadius, Frame, Margin, RichText, Stroke};
-use std::sync::atomic::{AtomicBool, Ordering};
 use egui_extras::syntax_highlighting::{CodeTheme, highlight};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct Palette {
     pub dark: bool,
@@ -72,21 +72,49 @@ pub fn sync(ctx: &egui::Context) {
 }
 
 pub fn pal() -> &'static Palette {
-    if IS_DARK.load(Ordering::Relaxed) { &DARK } else { &LIGHT }
+    if IS_DARK.load(Ordering::Relaxed) {
+        &DARK
+    } else {
+        &LIGHT
+    }
 }
 
-pub fn canvas() -> Color32 { pal().canvas }
-pub fn panel() -> Color32 { pal().panel }
-pub fn surface() -> Color32 { pal().surface }
-pub fn border() -> Color32 { pal().border }
-pub fn fg() -> Color32 { pal().fg }
-pub fn fg_muted() -> Color32 { pal().fg_muted }
-pub fn accent() -> Color32 { pal().accent }
-pub fn success() -> Color32 { pal().success }
-pub fn info() -> Color32 { pal().info }
-pub fn warning() -> Color32 { pal().warning }
-pub fn danger() -> Color32 { pal().danger }
-pub fn violet() -> Color32 { pal().violet }
+pub fn canvas() -> Color32 {
+    pal().canvas
+}
+pub fn panel() -> Color32 {
+    pal().panel
+}
+pub fn surface() -> Color32 {
+    pal().surface
+}
+pub fn border() -> Color32 {
+    pal().border
+}
+pub fn fg() -> Color32 {
+    pal().fg
+}
+pub fn fg_muted() -> Color32 {
+    pal().fg_muted
+}
+pub fn accent() -> Color32 {
+    pal().accent
+}
+pub fn success() -> Color32 {
+    pal().success
+}
+pub fn info() -> Color32 {
+    pal().info
+}
+pub fn warning() -> Color32 {
+    pal().warning
+}
+pub fn danger() -> Color32 {
+    pal().danger
+}
+pub fn violet() -> Color32 {
+    pal().violet
+}
 
 /// Translucent wash of a hue for fills behind fg text or the hue itself.
 pub fn tint(c: Color32, strength: Tint) -> Color32 {
@@ -125,7 +153,11 @@ pub const RADIUS_PILL: u8 = 20;
 pub const HIT: f32 = 28.0;
 
 fn visuals(p: &Palette) -> egui::Visuals {
-    let mut v = if p.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+    let mut v = if p.dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
     v.panel_fill = p.panel;
     v.window_fill = p.panel;
     v.extreme_bg_color = p.canvas;
@@ -139,7 +171,13 @@ fn visuals(p: &Palette) -> egui::Visuals {
     v.selection.bg_fill = p.accent.gamma_multiply(sel);
     v.selection.stroke = Stroke::new(1.5, p.fg); // also colours text in selected rows
     let r = CornerRadius::same(RADIUS);
-    for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
         w.corner_radius = r;
         w.fg_stroke = Stroke::new(1.0, p.fg);
     }
@@ -162,13 +200,38 @@ fn visuals(p: &Palette) -> egui::Visuals {
 /// Prefer the platform UI and mono fonts when present; egui's bundled fonts stay as fallback.
 fn load_system_fonts(fonts: &mut egui::FontDefinitions) {
     let candidates = [
-        ("sys-ui", egui::FontFamily::Proportional, ["/System/Library/Fonts/SFNS.ttf", "/usr/share/fonts/truetype/inter/Inter-Regular.ttf", "C:\\Windows\\Fonts\\segoeui.ttf"]),
-        ("sys-mono", egui::FontFamily::Monospace, ["/System/Library/Fonts/SFNSMono.ttf", "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf", "C:\\Windows\\Fonts\\consola.ttf"]),
+        (
+            "sys-ui",
+            egui::FontFamily::Proportional,
+            [
+                "/System/Library/Fonts/SFNS.ttf",
+                "/usr/share/fonts/truetype/inter/Inter-Regular.ttf",
+                "C:\\Windows\\Fonts\\segoeui.ttf",
+            ],
+        ),
+        (
+            "sys-mono",
+            egui::FontFamily::Monospace,
+            [
+                "/System/Library/Fonts/SFNSMono.ttf",
+                "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
+                "C:\\Windows\\Fonts\\consola.ttf",
+            ],
+        ),
     ];
     for (name, family, paths) in candidates {
-        let Some(bytes) = paths.iter().find_map(|p| std::fs::read(p).ok()) else { continue };
-        fonts.font_data.insert(name.into(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
-        fonts.families.entry(family).or_default().insert(0, name.into());
+        let Some(bytes) = paths.iter().find_map(|p| std::fs::read(p).ok()) else {
+            continue;
+        };
+        fonts.font_data.insert(
+            name.into(),
+            std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, name.into());
     }
 }
 
@@ -185,11 +248,18 @@ pub fn apply_theme(ctx: &egui::Context) {
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(10.0, 5.0);
         s.spacing.interact_size.y = HIT;
-        use egui::{FontFamily::{Monospace, Proportional}, FontId, TextStyle};
-        s.text_styles.insert(TextStyle::Body, FontId::new(FS_BODY, Proportional));
-        s.text_styles.insert(TextStyle::Button, FontId::new(FS_BODY, Proportional));
-        s.text_styles.insert(TextStyle::Small, FontId::new(FS_CAPTION, Proportional));
-        s.text_styles.insert(TextStyle::Monospace, FontId::new(FS_SMALL, Monospace));
+        use egui::{
+            FontFamily::{Monospace, Proportional},
+            FontId, TextStyle,
+        };
+        s.text_styles
+            .insert(TextStyle::Body, FontId::new(FS_BODY, Proportional));
+        s.text_styles
+            .insert(TextStyle::Button, FontId::new(FS_BODY, Proportional));
+        s.text_styles
+            .insert(TextStyle::Small, FontId::new(FS_CAPTION, Proportional));
+        s.text_styles
+            .insert(TextStyle::Monospace, FontId::new(FS_SMALL, Monospace));
     });
     sync(ctx);
 }
@@ -199,31 +269,51 @@ pub fn ico(icon: &str, text: &str) -> String {
 }
 
 pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(T, &str)]) {
-    Frame::new().fill(canvas()).corner_radius(CornerRadius::same(RADIUS)).inner_margin(Margin::same(3)).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        ui.horizontal(|ui| {
-            for (t, name) in items {
-                let on = *cur == *t;
-                let b = egui::Button::new(RichText::new(*name).size(FS_SMALL).color(if on { fg() } else { fg_muted() }))
-                    .fill(if on { if pal().dark { surface() } else { panel() } } else { Color32::TRANSPARENT })
+    Frame::new()
+        .fill(canvas())
+        .corner_radius(CornerRadius::same(RADIUS))
+        .inner_margin(Margin::same(3))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.horizontal(|ui| {
+                for (t, name) in items {
+                    let on = *cur == *t;
+                    let b = egui::Button::new(RichText::new(*name).size(FS_SMALL).color(if on {
+                        fg()
+                    } else {
+                        fg_muted()
+                    }))
+                    .fill(if on {
+                        if pal().dark { surface() } else { panel() }
+                    } else {
+                        Color32::TRANSPARENT
+                    })
                     .stroke(Stroke::NONE)
                     .corner_radius(CornerRadius::same(RADIUS_SM));
-                if ui.add(b).clicked() {
-                    *cur = *t;
+                    if ui.add(b).clicked() {
+                        *cur = *t;
+                    }
                 }
-            }
+            });
         });
-    });
 }
 
 /// Filter tab: selected = filled pill, otherwise plain text (fill is the non-colour cue).
 pub fn chip(ui: &mut egui::Ui, text: &str, on: bool, color: Color32) -> egui::Response {
     // same text and weight in both states, so toggling never changes the width
     flat(ui, |ui| {
-        let b = egui::Button::new(RichText::new(text).size(FS_SMALL).color(if on { color } else { fg_muted() }))
-            .fill(if on { tint(color, Tint::Normal) } else { Color32::TRANSPARENT })
-            .corner_radius(CornerRadius::same(RADIUS_PILL))
-            .min_size(egui::vec2(0.0, HIT));
+        let b = egui::Button::new(RichText::new(text).size(FS_SMALL).color(if on {
+            color
+        } else {
+            fg_muted()
+        }))
+        .fill(if on {
+            tint(color, Tint::Normal)
+        } else {
+            Color32::TRANSPARENT
+        })
+        .corner_radius(CornerRadius::same(RADIUS_PILL))
+        .min_size(egui::vec2(0.0, HIT));
         ui.add(b)
     })
 }
@@ -234,12 +324,21 @@ pub fn muted(text: impl Into<String>) -> RichText {
 
 /// Section label: small, caps, muted.
 pub fn overline(text: impl Into<String>) -> RichText {
-    RichText::new(text).size(FS_CAPTION).strong().color(fg_muted())
+    RichText::new(text)
+        .size(FS_CAPTION)
+        .strong()
+        .color(fg_muted())
 }
 
 /// Row tag colours, in menu order.
 pub fn tag_colors() -> [(&'static str, Color32); 5] {
-    [("Red", danger()), ("Amber", warning()), ("Green", success()), ("Blue", info()), ("Purple", violet())]
+    [
+        ("Red", danger()),
+        ("Amber", warning()),
+        ("Green", success()),
+        ("Blue", info()),
+        ("Purple", violet()),
+    ]
 }
 
 /// Borderless, transparent-at-rest widgets that still show hover/press fills.
@@ -255,32 +354,60 @@ pub fn flat<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
 }
 
 pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
-    let text = if label.is_empty() { icon.to_string() } else { ico(icon, label) };
-    flat(ui, |ui| ui.add(egui::Button::new(RichText::new(text).size(FS_SMALL))))
+    let text = if label.is_empty() {
+        icon.to_string()
+    } else {
+        ico(icon, label)
+    };
+    flat(ui, |ui| {
+        ui.add(egui::Button::new(RichText::new(text).size(FS_SMALL)))
+    })
 }
 
 /// Groups related toolbar actions in one rounded capsule.
 pub fn capsule<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    Frame::new().fill(canvas()).corner_radius(CornerRadius::same(RADIUS)).inner_margin(Margin::symmetric(2, 0)).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.horizontal(add).inner
-    }).inner
+    Frame::new()
+        .fill(canvas())
+        .corner_radius(CornerRadius::same(RADIUS))
+        .inner_margin(Margin::symmetric(2, 0))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.horizontal(add).inner
+        })
+        .inner
 }
 
 /// Sidebar toggle. State is shown by shape (filled left panel = open), not colour alone.
 pub fn sidebar_toggle(ui: &mut egui::Ui, open: bool) -> egui::Response {
-    let tip = format!("{} sidebar ({}B)", if open { "Hide" } else { "Show" }, cmd());
+    let tip = format!(
+        "{} sidebar ({}B)",
+        if open { "Hide" } else { "Show" },
+        cmd()
+    );
     panel_toggle(ui, open, false, "Capture", tip)
 }
 
 /// Mirror of `sidebar_toggle` for the right edge: label first, then icon.
-pub fn right_panel_toggle(ui: &mut egui::Ui, open: bool, label: &str, tip: String) -> egui::Response {
+pub fn right_panel_toggle(
+    ui: &mut egui::Ui,
+    open: bool,
+    label: &str,
+    tip: String,
+) -> egui::Response {
     panel_toggle(ui, open, true, label, tip)
 }
 
-fn panel_toggle(ui: &mut egui::Ui, open: bool, right: bool, label: &str, tip: String) -> egui::Response {
+fn panel_toggle(
+    ui: &mut egui::Ui,
+    open: bool,
+    right: bool,
+    label: &str,
+    tip: String,
+) -> egui::Response {
     let ink = if open { fg() } else { fg_muted() };
-    let g = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(FS_SMALL), ink);
+    let g =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(FS_SMALL), ink);
     let icon_size = egui::vec2(18.0, 14.0);
     let size = egui::vec2(10.0 + icon_size.x + 6.0 + g.size().x + 10.0, 32.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -298,29 +425,59 @@ fn panel_toggle(ui: &mut egui::Ui, open: bool, right: bool, label: &str, tip: St
     let (icon_x, text_x) = if right {
         (rect.max.x - 10.0 - icon_size.x / 2.0, rect.min.x + 10.0)
     } else {
-        (rect.min.x + 10.0 + icon_size.x / 2.0, rect.min.x + 10.0 + icon_size.x + 6.0)
+        (
+            rect.min.x + 10.0 + icon_size.x / 2.0,
+            rect.min.x + 10.0 + icon_size.x + 6.0,
+        )
     };
     let icon = egui::Rect::from_center_size(egui::pos2(icon_x, rect.center().y), icon_size);
-    p.galley(egui::pos2(text_x, rect.center().y - g.size().y / 2.0), g, ink);
+    p.galley(
+        egui::pos2(text_x, rect.center().y - g.size().y / 2.0),
+        g,
+        ink,
+    );
     let stroke = Stroke::new(1.5, ink);
     p.rect_stroke(icon, 3.0, stroke, egui::StrokeKind::Inside);
     if right {
         let panel = egui::Rect::from_min_max(egui::pos2(icon.max.x - 6.0, icon.min.y), icon.max);
         if open {
-            p.rect_filled(panel.shrink(1.0), CornerRadius { nw: 0, sw: 0, ne: 2, se: 2 }, ink);
+            p.rect_filled(
+                panel.shrink(1.0),
+                CornerRadius {
+                    nw: 0,
+                    sw: 0,
+                    ne: 2,
+                    se: 2,
+                },
+                ink,
+            );
         } else {
             p.line_segment([panel.left_top(), panel.left_bottom()], stroke);
         }
     } else {
         let panel = egui::Rect::from_min_max(icon.min, egui::pos2(icon.min.x + 6.0, icon.max.y));
         if open {
-            p.rect_filled(panel.shrink(1.0), CornerRadius { nw: 2, sw: 2, ne: 0, se: 0 }, ink);
+            p.rect_filled(
+                panel.shrink(1.0),
+                CornerRadius {
+                    nw: 2,
+                    sw: 2,
+                    ne: 0,
+                    se: 0,
+                },
+                ink,
+            );
         } else {
             p.line_segment([panel.right_top(), panel.right_bottom()], stroke);
         }
     }
     if resp.has_focus() {
-        p.rect_stroke(rect, CornerRadius::same(RADIUS), Stroke::new(2.0, accent()), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            CornerRadius::same(RADIUS),
+            Stroke::new(2.0, accent()),
+            egui::StrokeKind::Inside,
+        );
     }
     resp
 }
@@ -334,27 +491,49 @@ pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, add: impl FnOnce
 
 /// Modifier-key glyph for shortcut hints.
 pub fn cmd() -> &'static str {
-    if cfg!(target_os = "macos") { "⌘" } else { "Ctrl+" }
+    if cfg!(target_os = "macos") {
+        "⌘"
+    } else {
+        "Ctrl+"
+    }
 }
 
 pub fn card() -> Frame {
-    Frame::new().fill(surface()).stroke(Stroke::new(1.0, border())).corner_radius(CornerRadius::same(10)).inner_margin(Margin::same(PAD))
+    Frame::new()
+        .fill(surface())
+        .stroke(Stroke::new(1.0, border()))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(PAD))
 }
 
 /// Frame for side/top/bottom panels.
 pub fn panel_frame() -> Frame {
-    Frame::new().fill(panel()).stroke(Stroke::new(1.0, border()))
+    Frame::new()
+        .fill(panel())
+        .stroke(Stroke::new(1.0, border()))
 }
 
 pub fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
-    Frame::new().fill(tint(color, Tint::Normal)).corner_radius(CornerRadius::same(RADIUS_PILL)).inner_margin(Margin::symmetric(8, 2)).show(ui, |ui| {
-        ui.label(RichText::new(text).color(color).size(FS_CAPTION).strong());
-    });
+    Frame::new()
+        .fill(tint(color, Tint::Normal))
+        .corner_radius(CornerRadius::same(RADIUS_PILL))
+        .inner_margin(Margin::symmetric(8, 2))
+        .show(ui, |ui| {
+            ui.label(RichText::new(text).color(color).size(FS_CAPTION).strong());
+        });
 }
 
 /// Full-width list row: label left, count right, filled when selected.
-pub fn list_row(ui: &mut egui::Ui, icon: Option<&str>, label: &str, count: Option<usize>, selected: bool, dim: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), HIT), egui::Sense::click());
+pub fn list_row(
+    ui: &mut egui::Ui,
+    icon: Option<&str>,
+    label: &str,
+    count: Option<usize>,
+    selected: bool,
+    dim: bool,
+) -> egui::Response {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), HIT), egui::Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, label));
     let fill = if selected {
         tint(accent(), Tint::Normal)
@@ -368,17 +547,35 @@ pub fn list_row(ui: &mut egui::Ui, icon: Option<&str>, label: &str, count: Optio
     let ink = if dim { fg_muted() } else { fg() };
     let mut x = rect.left() + 8.0;
     if let Some(icon) = icon {
-        p.text(egui::pos2(x, rect.center().y), egui::Align2::LEFT_CENTER, icon, egui::FontId::proportional(FS_BODY), fg_muted());
+        p.text(
+            egui::pos2(x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            icon,
+            egui::FontId::proportional(FS_BODY),
+            fg_muted(),
+        );
         x += 22.0;
     }
     let right = count.map(|n| {
-        let g = p.layout_no_wrap(n.to_string(), egui::FontId::monospace(FS_CAPTION), fg_muted());
+        let g = p.layout_no_wrap(
+            n.to_string(),
+            egui::FontId::monospace(FS_CAPTION),
+            fg_muted(),
+        );
         let w = g.size().x;
-        p.galley(egui::pos2(rect.right() - 8.0 - w, rect.center().y - g.size().y / 2.0), g, fg_muted());
+        p.galley(
+            egui::pos2(rect.right() - 8.0 - w, rect.center().y - g.size().y / 2.0),
+            g,
+            fg_muted(),
+        );
         w + 8.0
     });
     let max_w = rect.right() - x - right.unwrap_or(0.0) - 8.0;
-    let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), egui::FontId::proportional(FS_SMALL), ink);
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        label.to_string(),
+        egui::FontId::proportional(FS_SMALL),
+        ink,
+    );
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_w.max(0.0));
     let g = p.layout_job(job);
     p.galley(egui::pos2(x, rect.center().y - g.size().y / 2.0), g, ink);
@@ -387,9 +584,19 @@ pub fn list_row(ui: &mut egui::Ui, icon: Option<&str>, label: &str, count: Optio
 
 /// Compact monospace badge for table cells (method, status).
 pub fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
-    Frame::new().fill(tint(color, Tint::Normal)).corner_radius(CornerRadius::same(RADIUS_SM)).inner_margin(Margin::symmetric(6, 1)).show(ui, |ui| {
-        ui.label(RichText::new(text).monospace().strong().size(FS_CAPTION).color(color));
-    });
+    Frame::new()
+        .fill(tint(color, Tint::Normal))
+        .corner_radius(CornerRadius::same(RADIUS_SM))
+        .inner_margin(Margin::symmetric(6, 1))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(text)
+                    .monospace()
+                    .strong()
+                    .size(FS_CAPTION)
+                    .color(color),
+            );
+        });
 }
 
 pub fn status_dot(ui: &mut egui::Ui, color: Color32) {
@@ -399,7 +606,9 @@ pub fn status_dot(ui: &mut egui::Ui, color: Color32) {
 
 /// Filled action button (primary/destructive). Text stays `fg` for contrast.
 pub fn action_button(text: impl Into<String>, color: Color32) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text).strong()).fill(tint(color, Tint::Strong)).stroke(Stroke::new(1.0, color))
+    egui::Button::new(RichText::new(text).strong())
+        .fill(tint(color, Tint::Strong))
+        .stroke(Stroke::new(1.0, color))
 }
 
 pub fn method_color(m: &str) -> Color32 {
@@ -447,7 +656,11 @@ mod tests {
 
     fn lin(c: u8) -> f64 {
         let c = c as f64 / 255.0;
-        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
     }
 
     fn lum(c: Color32) -> f64 {
@@ -465,13 +678,27 @@ mod tests {
     }
 
     fn hues(p: &Palette) -> [(&'static str, Color32); 7] {
-        [("accent", p.accent), ("success", p.success), ("info", p.info), ("warning", p.warning), ("danger", p.danger), ("violet", p.violet), ("fg_muted", p.fg_muted)]
+        [
+            ("accent", p.accent),
+            ("success", p.success),
+            ("info", p.info),
+            ("warning", p.warning),
+            ("danger", p.danger),
+            ("violet", p.violet),
+            ("fg_muted", p.fg_muted),
+        ]
     }
 
     #[test]
     fn text_meets_aa_on_every_surface() {
         for p in [&DARK, &LIGHT] {
-            for (bg_name, bg) in [("canvas", p.canvas), ("panel", p.panel), ("surface", p.surface), ("hover", p.hover), ("faint", p.faint)] {
+            for (bg_name, bg) in [
+                ("canvas", p.canvas),
+                ("panel", p.panel),
+                ("surface", p.surface),
+                ("hover", p.hover),
+                ("faint", p.faint),
+            ] {
                 for (n, c) in hues(p).into_iter().chain([("fg", p.fg)]) {
                     let r = ratio(c, bg);
                     assert!(r >= 4.5, "{n} on {bg_name} (dark={}) = {r:.2}", p.dark);
@@ -483,7 +710,11 @@ mod tests {
     #[test]
     fn control_outlines_meet_3_to_1() {
         for p in [&DARK, &LIGHT] {
-            for (n, bg) in [("panel", p.panel), ("canvas", p.canvas), ("surface", p.surface)] {
+            for (n, bg) in [
+                ("panel", p.panel),
+                ("canvas", p.canvas),
+                ("surface", p.surface),
+            ] {
                 let r = ratio(p.border_strong, bg);
                 assert!(r >= 3.0, "border_strong on {n} (dark={}) = {r:.2}", p.dark);
             }
@@ -496,7 +727,11 @@ mod tests {
             for (n, c) in hues(p) {
                 for base in [p.panel, p.surface, p.canvas] {
                     let r = ratio(c, over(c, tint_alpha(p.dark, Tint::Normal), base));
-                    assert!(r >= 4.5, "{n} on own tint over base (dark={}) = {r:.2}", p.dark);
+                    assert!(
+                        r >= 4.5,
+                        "{n} on own tint over base (dark={}) = {r:.2}",
+                        p.dark
+                    );
                 }
             }
         }

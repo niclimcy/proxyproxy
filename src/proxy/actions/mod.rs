@@ -58,14 +58,44 @@ pub type Rule = Arc<dyn RuleAction>;
 // The only place that maps persisted `Action` data onto behaviour.
 pub fn resolve(a: &Action) -> Rule {
     match a.clone() {
-        Action::Breakpoint { request, response } => Arc::new(breakpoint::Breakpoint { request, response }),
+        Action::Breakpoint { request, response } => {
+            Arc::new(breakpoint::Breakpoint { request, response })
+        }
         Action::MapLocal { path, status } => Arc::new(map_local::MapLocal { path, status }),
         Action::MapRemote { target } => Arc::new(map_remote::MapRemote { target }),
         Action::Block { status } => Arc::new(block::Block { status }),
         Action::Delay { ms, kbps } => Arc::new(delay::Delay { ms, kbps }),
-        Action::SetHeader { response, name, value, remove } => Arc::new(set_header::SetHeader { response, name, value, remove }),
-        Action::ReplaceBody { response, find, replace, regex } => Arc::new(replace_body::ReplaceBody { response, find, replace, regex }),
-        Action::Mock { status, content_type, body } => Arc::new(mock::Mock { status, content_type, body }),
+        Action::SetHeader {
+            response,
+            name,
+            value,
+            remove,
+        } => Arc::new(set_header::SetHeader {
+            response,
+            name,
+            value,
+            remove,
+        }),
+        Action::ReplaceBody {
+            response,
+            find,
+            replace,
+            regex,
+        } => Arc::new(replace_body::ReplaceBody {
+            response,
+            find,
+            replace,
+            regex,
+        }),
+        Action::Mock {
+            status,
+            content_type,
+            body,
+        } => Arc::new(mock::Mock {
+            status,
+            content_type,
+            body,
+        }),
         Action::Script { code } => Arc::new(script::Script { code }),
     }
 }
@@ -92,11 +122,22 @@ pub mod testing {
     }
 
     pub fn req_parts(uri: &str) -> Parts {
-        hudsucker::hyper::Request::builder().method("GET").uri(uri).body(()).unwrap().into_parts().0
+        hudsucker::hyper::Request::builder()
+            .method("GET")
+            .uri(uri)
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0
     }
 
     pub fn res_parts(status: u16) -> ResParts {
-        Response::builder().status(status).body(()).unwrap().into_parts().0
+        Response::builder()
+            .status(status)
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0
     }
 }
 
@@ -107,15 +148,60 @@ mod tests {
     #[test]
     fn every_action_variant_resolves_with_expected_tag() {
         let cases = [
-            (Action::Breakpoint { request: true, response: false }, "Breakpoint"),
-            (Action::MapLocal { path: "/x".into(), status: 200 }, "Mock"),
-            (Action::MapRemote { target: "http://b".into() }, "Redirect"),
+            (
+                Action::Breakpoint {
+                    request: true,
+                    response: false,
+                },
+                "Breakpoint",
+            ),
+            (
+                Action::MapLocal {
+                    path: "/x".into(),
+                    status: 200,
+                },
+                "Mock",
+            ),
+            (
+                Action::MapRemote {
+                    target: "http://b".into(),
+                },
+                "Redirect",
+            ),
             (Action::Block { status: 403 }, "Blocked"),
             (Action::Delay { ms: 1, kbps: 0 }, "Throttled"),
-            (Action::SetHeader { response: false, name: "a".into(), value: "b".into(), remove: false }, "Rewritten"),
-            (Action::ReplaceBody { response: false, find: "a".into(), replace: "b".into(), regex: false }, "Rewritten"),
-            (Action::Mock { status: 200, content_type: "t".into(), body: "b".into() }, "Mock"),
-            (Action::Script { code: String::new() }, "Script"),
+            (
+                Action::SetHeader {
+                    response: false,
+                    name: "a".into(),
+                    value: "b".into(),
+                    remove: false,
+                },
+                "Rewritten",
+            ),
+            (
+                Action::ReplaceBody {
+                    response: false,
+                    find: "a".into(),
+                    replace: "b".into(),
+                    regex: false,
+                },
+                "Rewritten",
+            ),
+            (
+                Action::Mock {
+                    status: 200,
+                    content_type: "t".into(),
+                    body: "b".into(),
+                },
+                "Mock",
+            ),
+            (
+                Action::Script {
+                    code: String::new(),
+                },
+                "Script",
+            ),
         ];
         for (a, tag) in cases {
             assert_eq!(resolve(&a).tag(), tag, "{a:?}");
@@ -126,9 +212,21 @@ mod tests {
     fn response_phase_membership() {
         let on = |a: Action| resolve(&a).runs_on_response();
         assert!(on(Action::Delay { ms: 0, kbps: 0 }));
-        assert!(on(Action::Script { code: String::new() }));
-        assert!(on(Action::SetHeader { response: true, name: "a".into(), value: String::new(), remove: false }));
-        assert!(!on(Action::SetHeader { response: false, name: "a".into(), value: String::new(), remove: false }));
+        assert!(on(Action::Script {
+            code: String::new()
+        }));
+        assert!(on(Action::SetHeader {
+            response: true,
+            name: "a".into(),
+            value: String::new(),
+            remove: false
+        }));
+        assert!(!on(Action::SetHeader {
+            response: false,
+            name: "a".into(),
+            value: String::new(),
+            remove: false
+        }));
         assert!(!on(Action::Block { status: 403 }));
     }
 }

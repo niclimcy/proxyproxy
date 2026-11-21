@@ -9,7 +9,16 @@ use crate::views::theme::*;
 use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
-fn msg_view(ui: &mut egui::Ui, id: &str, first: String, m: &Message, side: &mut Side, mode: &mut ModeId, params: Vec<(String, String)>, vc: &decode::Ctx) {
+fn msg_view(
+    ui: &mut egui::Ui,
+    id: &str,
+    first: String,
+    m: &Message,
+    side: &mut Side,
+    mode: &mut ModeId,
+    params: Vec<(String, String)>,
+    vc: &decode::Ctx,
+) {
     let items = side_tabs(side, !params.is_empty());
     segmented(ui, side, &items);
     ui.add_space(4.0);
@@ -17,15 +26,26 @@ fn msg_view(ui: &mut egui::Ui, id: &str, first: String, m: &Message, side: &mut 
         Side::Headers => body::headers_view(ui, id, m),
         Side::Body => body::body_view_ctx(ui, id, m, mode, vc),
         Side::Params => {
-            ScrollArea::vertical().id_salt(format!("{id}-q")).auto_shrink([false, false]).show(ui, |ui| {
-                body::kv_table(ui, params.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-            });
+            ScrollArea::vertical()
+                .id_salt(format!("{id}-q"))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    body::kv_table(ui, params.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+                });
         }
         Side::Raw => {
-            ScrollArea::both().id_salt(format!("{id}-raw")).auto_shrink([false, false]).show(ui, |ui| {
-                let mut t = raw_text(&first, m);
-                ui.add(TextEdit::multiline(&mut t).code_editor().desired_width(f32::INFINITY).frame(egui::Frame::NONE));
-            });
+            ScrollArea::both()
+                .id_salt(format!("{id}-raw"))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let mut t = raw_text(&first, m);
+                    ui.add(
+                        TextEdit::multiline(&mut t)
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .frame(egui::Frame::NONE),
+                    );
+                });
         }
     }
 }
@@ -35,11 +55,27 @@ fn timing_bar(ui: &mut egui::Ui, ms: u128, max: u128) {
     let (r, _) = ui.allocate_exact_size(egui::vec2(w, 8.0), egui::Sense::hover());
     ui.painter().rect_filled(r, 4.0, canvas());
     let frac = (ms as f32 / max.max(1) as f32).clamp(0.02, 1.0);
-    let color = if frac > 0.75 { danger() } else if frac > 0.4 { warning() } else { success() };
-    ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(w * frac, 8.0)), 4.0, color);
+    let color = if frac > 0.75 {
+        danger()
+    } else if frac > 0.4 {
+        warning()
+    } else {
+        success()
+    };
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(r.min, egui::vec2(w * frac, 8.0)),
+        4.0,
+        color,
+    );
 }
 
-pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected: Option<u64>, has_flows: bool) -> Vec<DetailIntent> {
+pub fn show(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &mut DetailVm,
+    selected: Option<u64>,
+    has_flows: bool,
+) -> Vec<DetailIntent> {
     let mut out = vec![];
     if selected.and_then(|id| vm.flow(id)).is_none() {
         if !has_flows {
@@ -56,34 +92,65 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected:
         .default_size(360.0)
         .frame(panel_frame().inner_margin(Margin::same(PAD)))
         .show(ui, |ui| {
-            let Some(f) = selected.and_then(|id| vm.flow(id)) else { return };
+            let Some(f) = selected.and_then(|id| vm.flow(id)) else {
+                return;
+            };
             let url = f.url();
-            Frame::new().fill(canvas()).corner_radius(CornerRadius::same(RADIUS)).inner_margin(Margin::symmetric(8, 4)).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    badge(ui, if f.is_ws { "WS" } else { &f.method }, if f.is_ws { violet() } else { method_color(&f.method) });
-                    if let Some(s) = f.status {
-                        badge(ui, &s.to_string(), status_color(s));
-                    }
-                    if !f.tag.is_empty() {
-                        pill(ui, &f.tag, violet());
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_button(ui, ph::COPY, "").on_hover_text("Copy URL").clicked() {
-                            ctx.copy_text(url.clone());
+            Frame::new()
+                .fill(canvas())
+                .corner_radius(CornerRadius::same(RADIUS))
+                .inner_margin(Margin::symmetric(8, 4))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        badge(
+                            ui,
+                            if f.is_ws { "WS" } else { &f.method },
+                            if f.is_ws {
+                                violet()
+                            } else {
+                                method_color(&f.method)
+                            },
+                        );
+                        if let Some(s) = f.status {
+                            badge(ui, &s.to_string(), status_color(s));
                         }
-                        ui.add(egui::Label::new(RichText::new(&url).monospace().color(fg_muted())).truncate());
+                        if !f.tag.is_empty() {
+                            pill(ui, &f.tag, violet());
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if icon_button(ui, ph::COPY, "")
+                                .on_hover_text("Copy URL")
+                                .clicked()
+                            {
+                                ctx.copy_text(url.clone());
+                            }
+                            ui.add(
+                                egui::Label::new(RichText::new(&url).monospace().color(fg_muted()))
+                                    .truncate(),
+                            );
+                        });
                     });
                 });
-            });
             ui.horizontal(|ui| {
-                let mut tabs = vec![(DTab::Split, "Request / Response"), (DTab::Overview, "Overview"), (DTab::Diff, "Diff")];
+                let mut tabs = vec![
+                    (DTab::Split, "Request / Response"),
+                    (DTab::Overview, "Overview"),
+                    (DTab::Diff, "Diff"),
+                ];
                 if f.is_ws {
                     tabs.push((DTab::Messages, "Messages"));
                 }
                 segmented(ui, &mut vm.tab, &tabs);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     toolbar_menu(ui, ph::COPY, "Copy as", |ui| {
-                        for (l, s) in [("URL", f.url()), ("cURL", ex::curl(&f)), ("fetch", ex::fetch(&f)), ("Python requests", ex::python(&f)), ("HTTPie", ex::httpie(&f)), ("Raw HTTP", ex::raw_http(&f))] {
+                        for (l, s) in [
+                            ("URL", f.url()),
+                            ("cURL", ex::curl(&f)),
+                            ("fetch", ex::fetch(&f)),
+                            ("Python requests", ex::python(&f)),
+                            ("HTTPie", ex::httpie(&f)),
+                            ("Raw HTTP", ex::raw_http(&f)),
+                        ] {
                             if ui.button(l).clicked() {
                                 ctx.copy_text(s);
                                 ui.close();
@@ -93,7 +160,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected:
                     if icon_button(ui, ph::PLAY, "Replay / edit").clicked() {
                         out.push(DetailIntent::Replay(f.id));
                     }
-                    if icon_button(ui, ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" }).clicked() {
+                    if icon_button(ui, ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" })
+                        .clicked()
+                    {
                         out.push(DetailIntent::TogglePin(f.id));
                     }
                 });
@@ -110,23 +179,69 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut DetailVm, selected:
 }
 
 fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
-    let (rs, ss, rm, sm) = (&mut vm.req_side, &mut vm.res_side, &mut vm.req_mode, &mut vm.res_mode);
+    let (rs, ss, rm, sm) = (
+        &mut vm.req_side,
+        &mut vm.res_side,
+        &mut vm.req_mode,
+        &mut vm.res_mode,
+    );
     let gql_req = decode::is_graphql_request(&f.method, &f.path, &f.request);
-    let (rc, sc) = (decode::Ctx { method: &f.method, path: &f.path, response: false, gql_req }, decode::Ctx { method: &f.method, path: &f.path, response: true, gql_req });
+    let (rc, sc) = (
+        decode::Ctx {
+            method: &f.method,
+            path: &f.path,
+            response: false,
+            gql_req,
+        },
+        decode::Ctx {
+            method: &f.method,
+            path: &f.path,
+            response: true,
+            gql_req,
+        },
+    );
     ui.columns(2, |cols| {
         cols[0].label(overline("REQUEST"));
-        msg_view(&mut cols[0], "req", format!("{} {} {}", f.method, f.path, f.version), &f.request, rs, rm, decode::query_params(&f.path), &rc);
+        msg_view(
+            &mut cols[0],
+            "req",
+            format!("{} {} {}", f.method, f.path, f.version),
+            &f.request,
+            rs,
+            rm,
+            decode::query_params(&f.path),
+            &rc,
+        );
         match &f.response {
             Some(r) => {
                 let s = f.status.unwrap_or(0);
-                cols[1].label(overline(format!("RESPONSE  ·  {s}  ·  {} ms  ·  {}", f.duration_ms.unwrap_or(0), fmt_size(r.body.len()))));
-                msg_view(&mut cols[1], "res", format!("{} {s}", f.version), r, ss, sm, vec![], &sc);
+                cols[1].label(overline(format!(
+                    "RESPONSE  ·  {s}  ·  {} ms  ·  {}",
+                    f.duration_ms.unwrap_or(0),
+                    fmt_size(r.body.len())
+                )));
+                msg_view(
+                    &mut cols[1],
+                    "res",
+                    format!("{} {s}", f.version),
+                    r,
+                    ss,
+                    sm,
+                    vec![],
+                    &sc,
+                );
             }
             None => {
                 if let Some(e) = &f.error {
                     cols[1].label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()));
                 } else if f.is_ws {
-                    cols[1].label(RichText::new(format!("WebSocket · {} messages — see Messages tab", f.ws.len())).color(violet()));
+                    cols[1].label(
+                        RichText::new(format!(
+                            "WebSocket · {} messages — see Messages tab",
+                            f.ws.len()
+                        ))
+                        .color(violet()),
+                    );
                 } else {
                     cols[1].label(RichText::new("Waiting for response…").color(fg_muted()));
                 }
@@ -138,71 +253,117 @@ fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
 fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailIntent>) {
     let ov = vm.overview(f);
     let mut comment = f.comment.clone();
-    ScrollArea::vertical().id_salt("overview").auto_shrink([false, false]).show(ui, |ui| {
-        egui::Grid::new("ov").num_columns(2).spacing([20.0, 7.0]).show(ui, |ui| {
-            let row = |ui: &mut egui::Ui, k: &str, v: String| {
-                ui.label(muted(k));
-                ui.label(RichText::new(v).monospace());
-                ui.end_row();
-            };
-            row(ui, "URL", f.url());
-            row(ui, "Client", f.app_label());
-            row(ui, "Protocol", format!("{} · {}", f.version, f.scheme.to_uppercase()));
-            row(ui, "Request size", fmt_size(f.request.body.len()));
-            row(ui, "Response size", fmt_size(f.res_size()));
-            if let Some(r) = &f.response {
-                row(ui, "Content-Type", r.header("content-type").unwrap_or("-").into());
-                if let Some(cl) = r.header("cache-control") {
-                    row(ui, "Cache-Control", cl.into());
-                }
-            }
-            ui.label(muted("Duration"));
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(f.duration_ms.map(|d| format!("{d} ms")).unwrap_or("pending".into())).monospace());
-                if let Some(d) = f.duration_ms {
-                    timing_bar(ui, d, ov.max_ms);
-                }
-            });
-            ui.end_row();
-            if let Some(e) = &f.error {
-                row(ui, "Error", e.clone());
-            }
-        });
-        let mut tokens = decode::jwts(&f.request);
-        if let Some(r) = &f.response {
-            tokens.extend(decode::jwts(r));
-        }
-        tokens.dedup();
-        for t in tokens.iter().take(3) {
-            if let Some((_, p)) = decode::decode_jwt(t) {
-                ui.add_space(8.0);
-                ui.label(RichText::new(format!("{} JWT claims", ph::KEY)).strong().color(violet()));
-                let mut s = serde_json::to_string_pretty(&p).unwrap_or_default();
-                ui.add(TextEdit::multiline(&mut s).code_editor().desired_width(f32::INFINITY));
-            }
-        }
-        ui.add_space(8.0);
-        ui.label(RichText::new("Comment").strong());
-        if ui.add(TextEdit::multiline(&mut comment).desired_rows(2).desired_width(f32::INFINITY).hint_text("Notes about this request")).changed() {
-            out.push(DetailIntent::SetComment(f.id, comment.clone()));
-        }
-        if !ov.same.is_empty() {
-            ui.add_space(8.0);
-            ui.label(RichText::new(format!("Same endpoint · {} other call{}", ov.same.len(), if ov.same.len() == 1 { "" } else { "s" })).strong());
-            for o in ov.same.iter().rev().take(8) {
-                ui.horizontal(|ui| {
-                    ui.label(muted(format!("#{}", o.id)));
-                    if let Some(s) = o.status {
-                        pill(ui, &s.to_string(), status_color(s));
+    ScrollArea::vertical()
+        .id_salt("overview")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Grid::new("ov")
+                .num_columns(2)
+                .spacing([20.0, 7.0])
+                .show(ui, |ui| {
+                    let row = |ui: &mut egui::Ui, k: &str, v: String| {
+                        ui.label(muted(k));
+                        ui.label(RichText::new(v).monospace());
+                        ui.end_row();
+                    };
+                    row(ui, "URL", f.url());
+                    row(ui, "Client", f.app_label());
+                    row(
+                        ui,
+                        "Protocol",
+                        format!("{} · {}", f.version, f.scheme.to_uppercase()),
+                    );
+                    row(ui, "Request size", fmt_size(f.request.body.len()));
+                    row(ui, "Response size", fmt_size(f.res_size()));
+                    if let Some(r) = &f.response {
+                        row(
+                            ui,
+                            "Content-Type",
+                            r.header("content-type").unwrap_or("-").into(),
+                        );
+                        if let Some(cl) = r.header("cache-control") {
+                            row(ui, "Cache-Control", cl.into());
+                        }
                     }
-                    ui.label(muted(o.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default()));
-                    if ui.small_button("Diff vs this").clicked() {
-                        out.push(DetailIntent::DiffAgainst(o.id));
+                    ui.label(muted("Duration"));
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(
+                                f.duration_ms
+                                    .map(|d| format!("{d} ms"))
+                                    .unwrap_or("pending".into()),
+                            )
+                            .monospace(),
+                        );
+                        if let Some(d) = f.duration_ms {
+                            timing_bar(ui, d, ov.max_ms);
+                        }
+                    });
+                    ui.end_row();
+                    if let Some(e) = &f.error {
+                        row(ui, "Error", e.clone());
                     }
                 });
+            let mut tokens = decode::jwts(&f.request);
+            if let Some(r) = &f.response {
+                tokens.extend(decode::jwts(r));
             }
-        }
-    });
+            tokens.dedup();
+            for t in tokens.iter().take(3) {
+                if let Some((_, p)) = decode::decode_jwt(t) {
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new(format!("{} JWT claims", ph::KEY))
+                            .strong()
+                            .color(violet()),
+                    );
+                    let mut s = serde_json::to_string_pretty(&p).unwrap_or_default();
+                    ui.add(
+                        TextEdit::multiline(&mut s)
+                            .code_editor()
+                            .desired_width(f32::INFINITY),
+                    );
+                }
+            }
+            ui.add_space(8.0);
+            ui.label(RichText::new("Comment").strong());
+            if ui
+                .add(
+                    TextEdit::multiline(&mut comment)
+                        .desired_rows(2)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Notes about this request"),
+                )
+                .changed()
+            {
+                out.push(DetailIntent::SetComment(f.id, comment.clone()));
+            }
+            if !ov.same.is_empty() {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!(
+                        "Same endpoint · {} other call{}",
+                        ov.same.len(),
+                        if ov.same.len() == 1 { "" } else { "s" }
+                    ))
+                    .strong(),
+                );
+                for o in ov.same.iter().rev().take(8) {
+                    ui.horizontal(|ui| {
+                        ui.label(muted(format!("#{}", o.id)));
+                        if let Some(s) = o.status {
+                            pill(ui, &s.to_string(), status_color(s));
+                        }
+                        ui.label(muted(
+                            o.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default(),
+                        ));
+                        if ui.small_button("Diff vs this").clicked() {
+                            out.push(DetailIntent::DiffAgainst(o.id));
+                        }
+                    });
+                }
+            }
+        });
 }
 
 fn diff_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow, out: &mut Vec<DetailIntent>) {
@@ -232,18 +393,41 @@ fn ws_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailIntent>
     }
     let sel = vm.ws_sel;
     ui.columns(2, |cols| {
-        ScrollArea::vertical().id_salt("ws-list").stick_to_bottom(sel.is_none()).auto_shrink([false, false]).show_rows(&mut cols[0], 22.0, f.ws.len(), |ui, range| {
-            for i in range {
-                let m = &f.ws[i];
-                let (arrow, c) = if m.dir == Dir::Out { (ph::ARROW_UP, warning()) } else { (ph::ARROW_DOWN, success()) };
-                let preview: String = if m.binary { format!("<{} bytes>", m.data.len()) } else { String::from_utf8_lossy(&m.data).chars().take(80).collect() };
-                if ui.selectable_label(sel == Some(i), RichText::new(format!("{arrow} {preview}")).monospace().color(c)).clicked() {
-                    out.push(DetailIntent::SelectWs(i));
+        ScrollArea::vertical()
+            .id_salt("ws-list")
+            .stick_to_bottom(sel.is_none())
+            .auto_shrink([false, false])
+            .show_rows(&mut cols[0], 22.0, f.ws.len(), |ui, range| {
+                for i in range {
+                    let m = &f.ws[i];
+                    let (arrow, c) = if m.dir == Dir::Out {
+                        (ph::ARROW_UP, warning())
+                    } else {
+                        (ph::ARROW_DOWN, success())
+                    };
+                    let preview: String = if m.binary {
+                        format!("<{} bytes>", m.data.len())
+                    } else {
+                        String::from_utf8_lossy(&m.data).chars().take(80).collect()
+                    };
+                    if ui
+                        .selectable_label(
+                            sel == Some(i),
+                            RichText::new(format!("{arrow} {preview}"))
+                                .monospace()
+                                .color(c),
+                        )
+                        .clicked()
+                    {
+                        out.push(DetailIntent::SelectWs(i));
+                    }
                 }
-            }
-        });
+            });
         if let Some(m) = sel.and_then(|i| f.ws.get(i)) {
-            let msg = Message { headers: vec![], body: m.data.clone() };
+            let msg = Message {
+                headers: vec![],
+                body: m.data.clone(),
+            };
             let mut mode = if decode::is_json(&msg) { TREE } else { PRETTY };
             body::body_view(&mut cols[1], "ws", &msg, &mut mode);
         } else {

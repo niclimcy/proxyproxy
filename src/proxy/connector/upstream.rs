@@ -39,7 +39,10 @@ pub struct ProxyAddr {
 
 pub fn parse_proxy(s: &str) -> Option<ProxyAddr> {
     let s = s.trim();
-    let (kind, s) = if let Some(s) = s.strip_prefix("socks5://").or_else(|| s.strip_prefix("socks://")) {
+    let (kind, s) = if let Some(s) = s
+        .strip_prefix("socks5://")
+        .or_else(|| s.strip_prefix("socks://"))
+    {
         (ProxyKind::Socks5, s)
     } else {
         (ProxyKind::Http, s.strip_prefix("http://").unwrap_or(s))
@@ -61,19 +64,30 @@ pub fn parse_proxy(s: &str) -> Option<ProxyAddr> {
     }
     let auth = cred.map(|c| {
         if kind == ProxyKind::Http {
-            format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(c))
+            format!(
+                "Basic {}",
+                base64::engine::general_purpose::STANDARD.encode(c)
+            )
         } else {
             c.to_string()
         }
     });
-    Some(ProxyAddr { kind, host: host.to_string(), port, auth })
+    Some(ProxyAddr {
+        kind,
+        host: host.to_string(),
+        port,
+        auth,
+    })
 }
 
 // First usable entry wins; DIRECT (or nothing usable) means no proxy.
 pub fn parse_pac_result(s: &str) -> Option<ProxyAddr> {
     for entry in s.split(';') {
         let mut it = entry.split_whitespace();
-        match (it.next().map(|k| k.to_ascii_uppercase()).as_deref(), it.next()) {
+        match (
+            it.next().map(|k| k.to_ascii_uppercase()).as_deref(),
+            it.next(),
+        ) {
             (Some("DIRECT"), _) => return None,
             (Some("PROXY" | "HTTP"), Some(hp)) => {
                 if let Some(p) = parse_proxy(hp) {
@@ -108,7 +122,12 @@ fn resolve_v4(h: &str) -> String {
     if let Ok(ip) = h.parse::<IpAddr>() {
         return ip.to_string();
     }
-    (h, 0).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())).map(|a| a.ip().to_string()).unwrap_or_default()
+    (h, 0)
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.find(|a| a.is_ipv4()))
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default()
 }
 
 pub fn eval_pac(code: &str, url: &str, host: &str) -> Result<String, String> {
@@ -119,11 +138,25 @@ pub fn eval_pac(code: &str, url: &str, host: &str) -> Result<String, String> {
     let js = Context::full(&rt).map_err(|e| e.to_string())?;
     js.with(|c| {
         let g = c.globals();
-        g.set("__dns", Function::new(c.clone(), |h: String| resolve_v4(&h)).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-        g.set("__glob", Function::new(c.clone(), |s: String, p: String| glob(p.as_bytes(), s.as_bytes())).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        g.set(
+            "__dns",
+            Function::new(c.clone(), |h: String| resolve_v4(&h)).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        g.set(
+            "__glob",
+            Function::new(c.clone(), |s: String, p: String| {
+                glob(p.as_bytes(), s.as_bytes())
+            })
+            .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         let lit = |s: &str| serde_json::to_string(s).unwrap_or_default();
-        let prog = format!("{PRELUDE}\n{code}\n;String(FindProxyForURL({}, {}))", lit(url), lit(host));
+        let prog = format!(
+            "{PRELUDE}\n{code}\n;String(FindProxyForURL({}, {}))",
+            lit(url),
+            lit(host)
+        );
         c.eval::<String, _>(prog).map_err(|e| match e {
             rquickjs::Error::Exception => format!("{:?}", c.catch()),
             e => e.to_string(),
@@ -148,10 +181,15 @@ fn pick(cfg: &Shared, uri: &Uri) -> Result<Option<ProxyAddr>, BoxErr> {
             Ok(Some(proxy))
         }
         UpstreamMode::Pac => {
-            let code = std::fs::read_to_string(&up.pac_path).map_err(|e| format!("PAC file: {e}"))?;
+            let code =
+                std::fs::read_to_string(&up.pac_path).map_err(|e| format!("PAC file: {e}"))?;
             let host = uri.host().unwrap_or("");
             let url = match uri.scheme_str() {
-                Some("https") => format!("https://{}{}", uri.authority().map(|a| a.as_str()).unwrap_or(host), uri.path_and_query().map(|p| p.as_str()).unwrap_or("/")),
+                Some("https") => format!(
+                    "https://{}{}",
+                    uri.authority().map(|a| a.as_str()).unwrap_or(host),
+                    uri.path_and_query().map(|p| p.as_str()).unwrap_or("/")
+                ),
                 _ => uri.to_string(),
             };
             let r = eval_pac(&code, &url, host).map_err(|e| format!("PAC: {e}"))?;
@@ -166,13 +204,21 @@ pub struct Conn {
 }
 
 impl rt::Read for Conn {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut TaskCx<'_>, buf: rt::ReadBufCursor<'_>) -> Poll<std::io::Result<()>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskCx<'_>,
+        buf: rt::ReadBufCursor<'_>,
+    ) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.io).poll_read(cx, buf)
     }
 }
 
 impl rt::Write for Conn {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut TaskCx<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskCx<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
         Pin::new(&mut self.io).poll_write(cx, buf)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut TaskCx<'_>) -> Poll<std::io::Result<()>> {
@@ -205,8 +251,13 @@ impl UpstreamConnector {
 }
 
 async fn tunnel(io: &mut TcpStream, target: &str, p: &ProxyAddr) -> Result<(), BoxErr> {
-    let auth = p.auth.as_ref().map(|a| format!("Proxy-Authorization: {a}\r\n")).unwrap_or_default();
-    io.write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n{auth}\r\n").as_bytes()).await?;
+    let auth = p
+        .auth
+        .as_ref()
+        .map(|a| format!("Proxy-Authorization: {a}\r\n"))
+        .unwrap_or_default();
+    io.write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n{auth}\r\n").as_bytes())
+        .await?;
     let mut buf = Vec::with_capacity(256);
     while !buf.ends_with(b"\r\n\r\n") {
         if buf.len() > 16 * 1024 {
@@ -218,15 +269,28 @@ async fn tunnel(io: &mut TcpStream, target: &str, p: &ProxyAddr) -> Result<(), B
         }
         buf.push(b[0]);
     }
-    let line = String::from_utf8_lossy(&buf).lines().next().unwrap_or("").to_string();
+    let line = String::from_utf8_lossy(&buf)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_string();
     match line.split_whitespace().nth(1) {
         Some("200") => Ok(()),
         _ => Err(format!("proxy CONNECT refused: {line}").into()),
     }
 }
 
-async fn socks5(io: &mut TcpStream, host: &str, port: u16, auth: Option<&str>) -> Result<(), BoxErr> {
-    let methods = if auth.is_some() { &[0, 2][..] } else { &[0][..] };
+async fn socks5(
+    io: &mut TcpStream,
+    host: &str,
+    port: u16,
+    auth: Option<&str>,
+) -> Result<(), BoxErr> {
+    let methods = if auth.is_some() {
+        &[0, 2][..]
+    } else {
+        &[0][..]
+    };
     io.write_all(&[5, methods.len() as u8]).await?;
     io.write_all(methods).await?;
     let mut response = [0; 2];
@@ -236,7 +300,9 @@ async fn socks5(io: &mut TcpStream, host: &str, port: u16, auth: Option<&str>) -
     }
     if response[1] == 2 {
         let credentials = auth.ok_or("SOCKS5 proxy requested authentication")?;
-        let (user, password) = credentials.split_once(':').ok_or("SOCKS5 credentials must be user:password")?;
+        let (user, password) = credentials
+            .split_once(':')
+            .ok_or("SOCKS5 credentials must be user:password")?;
         if user.len() > u8::MAX as usize || password.len() > u8::MAX as usize {
             return Err("SOCKS5 credentials are too long".into());
         }
@@ -295,7 +361,9 @@ impl Service<Uri> for UpstreamConnector {
         Box::pin(async move {
             let chosen = {
                 let u = uri.clone();
-                tokio::task::spawn_blocking(move || pick(&cfg, &u)).await.map_err(|e| e.to_string())??
+                tokio::task::spawn_blocking(move || pick(&cfg, &u))
+                    .await
+                    .map_err(|e| e.to_string())??
             };
             let Some(p) = chosen else {
                 let io = inner.call(uri).await?;
@@ -307,11 +375,16 @@ impl Service<Uri> for UpstreamConnector {
             let host = uri.host().ok_or("missing host")?;
             let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
             match p.kind {
-                ProxyKind::Http if tls => tunnel(io.inner_mut(), &format!("{host}:{port}"), &p).await?,
+                ProxyKind::Http if tls => {
+                    tunnel(io.inner_mut(), &format!("{host}:{port}"), &p).await?
+                }
                 ProxyKind::Http => {}
                 ProxyKind::Socks5 => socks5(io.inner_mut(), host, port, p.auth.as_deref()).await?,
             }
-            Ok(Conn { io, proxied: matches!(p.kind, ProxyKind::Http) && !tls })
+            Ok(Conn {
+                io,
+                proxied: matches!(p.kind, ProxyKind::Http) && !tls,
+            })
         })
     }
 }
@@ -324,13 +397,32 @@ mod tests {
 
     #[test]
     fn manual_parse() {
-        let a = |kind, h: &str, p| Some(ProxyAddr { kind, host: h.into(), port: p, auth: None });
-        assert_eq!(parse_proxy("http://127.0.0.1:8888/"), a(ProxyKind::Http, "127.0.0.1", 8888));
-        assert_eq!(parse_proxy(" proxy.local "), a(ProxyKind::Http, "proxy.local", 8080));
+        let a = |kind, h: &str, p| {
+            Some(ProxyAddr {
+                kind,
+                host: h.into(),
+                port: p,
+                auth: None,
+            })
+        };
+        assert_eq!(
+            parse_proxy("http://127.0.0.1:8888/"),
+            a(ProxyKind::Http, "127.0.0.1", 8888)
+        );
+        assert_eq!(
+            parse_proxy(" proxy.local "),
+            a(ProxyKind::Http, "proxy.local", 8080)
+        );
         assert_eq!(parse_proxy("proxy:3128"), a(ProxyKind::Http, "proxy", 3128));
-        assert_eq!(parse_proxy("u:p@h:1").unwrap().auth.as_deref(), Some("Basic dTpw"));
+        assert_eq!(
+            parse_proxy("u:p@h:1").unwrap().auth.as_deref(),
+            Some("Basic dTpw")
+        );
         assert_eq!(parse_proxy("socks5://h:1").unwrap().kind, ProxyKind::Socks5);
-        assert_eq!(parse_proxy("socks5://u:p@h:1").unwrap().auth.as_deref(), Some("u:p"));
+        assert_eq!(
+            parse_proxy("socks5://u:p@h:1").unwrap().auth.as_deref(),
+            Some("u:p")
+        );
         assert_eq!(parse_proxy(""), None);
         assert_eq!(parse_proxy("h:notaport"), None);
     }
@@ -339,7 +431,10 @@ mod tests {
     fn pac_result_parse() {
         assert_eq!(parse_pac_result("DIRECT"), None);
         assert_eq!(parse_pac_result("PROXY a:1; DIRECT").unwrap().port, 1);
-        assert_eq!(parse_pac_result("SOCKS s:9").unwrap().kind, ProxyKind::Socks5);
+        assert_eq!(
+            parse_pac_result("SOCKS s:9").unwrap().kind,
+            ProxyKind::Socks5
+        );
         assert_eq!(parse_pac_result("proxy b:2").unwrap().host, "b");
         assert_eq!(parse_pac_result("DIRECT; PROXY a:1"), None);
         assert_eq!(parse_pac_result(""), None);
@@ -357,11 +452,28 @@ mod tests {
         let f = |u: &str, h: &str| parse_pac_result(&eval_pac(PAC, u, h).unwrap());
         assert_eq!(f("http://intranet/", "intranet"), None);
         assert_eq!(f("http://a.internal.test/", "a.internal.test"), None);
-        assert_eq!(f("https://x.corp.test/p", "x.corp.test").unwrap().host, "corp");
+        assert_eq!(
+            f("https://x.corp.test/p", "x.corp.test").unwrap().host,
+            "corp"
+        );
         assert_eq!(f("http://10.2.3.4/", "10.2.3.4").unwrap().host, "ten");
         assert_eq!(f("http://8.8.8.8/", "8.8.8.8").unwrap().host, "def");
-        assert!(eval_pac("function FindProxyForURL(){ throw new Error('x') }", "http://a/", "a").is_err());
-        assert!(eval_pac("function FindProxyForURL(){ while(true){} }", "http://a/", "a").is_err());
+        assert!(
+            eval_pac(
+                "function FindProxyForURL(){ throw new Error('x') }",
+                "http://a/",
+                "a"
+            )
+            .is_err()
+        );
+        assert!(
+            eval_pac(
+                "function FindProxyForURL(){ while(true){} }",
+                "http://a/",
+                "a"
+            )
+            .is_err()
+        );
     }
 
     #[tokio::test]
@@ -372,16 +484,30 @@ mod tests {
             let (mut s, _) = l.accept().await.unwrap();
             let mut buf = vec![0u8; 512];
             let n = s.read(&mut buf).await.unwrap();
-            s.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+            s.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
             String::from_utf8_lossy(&buf[..n]).into_owned()
         });
         let cfg: Shared = Arc::new(Mutex::new(Config {
-            upstream: Upstream { mode: UpstreamMode::Manual, url: format!("127.0.0.1:{port}"), ..Default::default() },
+            upstream: Upstream {
+                mode: UpstreamMode::Manual,
+                url: format!("127.0.0.1:{port}"),
+                ..Default::default()
+            },
             ..Default::default()
         }));
         let mut c = UpstreamConnector::new(cfg);
-        assert!(c.call("https://example.test".parse().unwrap()).await.is_ok());
-        assert!(srv.await.unwrap().starts_with("CONNECT example.test:443 HTTP/1.1\r\n"));
+        assert!(
+            c.call("https://example.test".parse().unwrap())
+                .await
+                .is_ok()
+        );
+        assert!(
+            srv.await
+                .unwrap()
+                .starts_with("CONNECT example.test:443 HTTP/1.1\r\n")
+        );
     }
 
     #[tokio::test]
@@ -408,15 +534,28 @@ mod tests {
             let mut host = vec![0; host_len + 2];
             s.read_exact(&mut host).await.unwrap();
             assert_eq!(&host[..host_len], b"example.test");
-            assert_eq!(u16::from_be_bytes([host[host_len], host[host_len + 1]]), 8443);
-            s.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 80]).await.unwrap();
+            assert_eq!(
+                u16::from_be_bytes([host[host_len], host[host_len + 1]]),
+                8443
+            );
+            s.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 80])
+                .await
+                .unwrap();
         });
         let cfg: Shared = Arc::new(Mutex::new(Config {
-            upstream: Upstream { mode: UpstreamMode::Socks, url: format!("socks5://u:p@127.0.0.1:{port}"), ..Default::default() },
+            upstream: Upstream {
+                mode: UpstreamMode::Socks,
+                url: format!("socks5://u:p@127.0.0.1:{port}"),
+                ..Default::default()
+            },
             ..Default::default()
         }));
         let mut c = UpstreamConnector::new(cfg);
-        assert!(c.call("https://example.test:8443".parse().unwrap()).await.is_ok());
+        assert!(
+            c.call("https://example.test:8443".parse().unwrap())
+                .await
+                .is_ok()
+        );
         srv.await.unwrap();
     }
 }

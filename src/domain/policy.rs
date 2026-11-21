@@ -10,7 +10,12 @@ impl Config {
         let h = host.to_lowercase();
         list.iter().any(|p| {
             let p = p.trim().to_lowercase();
-            !p.is_empty() && if p.contains('*') { glob(p.as_bytes(), h.as_bytes()) } else { h == p || h.ends_with(&format!(".{p}")) }
+            !p.is_empty()
+                && if p.contains('*') {
+                    glob(p.as_bytes(), h.as_bytes())
+                } else {
+                    h == p || h.ends_with(&format!(".{p}"))
+                }
         })
     }
 
@@ -18,7 +23,11 @@ impl Config {
         if self.capture_paused {
             return false;
         }
-        let h = host.rsplit_once(':').filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit())).map(|(h, _)| h).unwrap_or(host);
+        let h = host
+            .rsplit_once(':')
+            .filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit()))
+            .map(|(h, _)| h)
+            .unwrap_or(host);
         if Self::host_in(&self.muted, h) {
             return false;
         }
@@ -43,7 +52,8 @@ impl Config {
 }
 
 pub fn rule_matches(r: &Rule, method: &str, url: &str) -> bool {
-    (r.method.trim().is_empty() || r.method.trim().eq_ignore_ascii_case(method)) && url_matches(&r.pattern, url)
+    (r.method.trim().is_empty() || r.method.trim().eq_ignore_ascii_case(method))
+        && url_matches(&r.pattern, url)
 }
 
 pub fn glob(p: &[u8], t: &[u8]) -> bool {
@@ -76,26 +86,37 @@ pub fn url_matches(pattern: &str, url: &str) -> bool {
         return u.contains(&p);
     }
     // scheme-less globs match from the host onward
-    let p = if p.contains("://") || p.starts_with('*') { p } else { format!("*://{p}") };
+    let p = if p.contains("://") || p.starts_with('*') {
+        p
+    } else {
+        format!("*://{p}")
+    };
     glob(p.as_bytes(), u.as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::rule::{Action, Rule};
     use crate::domain::config::Shared;
+    use crate::domain::rule::{Action, Rule};
     use std::sync::{Arc, Mutex};
 
     #[test]
     fn globs_and_hosts() {
-        assert!(url_matches("api.example.com/users*", "https://api.example.com/users/1"));
+        assert!(url_matches(
+            "api.example.com/users*",
+            "https://api.example.com/users/1"
+        ));
         assert!(url_matches("example", "https://api.example.com/x"));
         assert!(!url_matches("https://a.com/*", "https://b.com/x"));
         assert!(url_matches("https://a?.com/*", "https://ab.com/x"));
         assert!(Config::host_in(&["example.com".into()], "api.example.com"));
         assert!(!Config::host_in(&["example.com".into()], "notexample.com"));
-        let mut c = Config { scope_only: true, scope: vec!["a.com".into()], ..Default::default() };
+        let mut c = Config {
+            scope_only: true,
+            scope: vec!["a.com".into()],
+            ..Default::default()
+        };
         assert!(c.captured("a.com:443") && !c.captured("b.com"));
         c.muted.push("a.com".into());
         assert!(!c.captured("a.com"));
@@ -103,8 +124,21 @@ mod tests {
 
     #[test]
     fn mute_and_scope_only_affect_recording() {
-        let mut c = Config { scope_only: true, scope: vec!["a.com".into()], muted: vec!["a.com".into()], ..Default::default() };
-        c.rules.push(Rule { id: 1, enabled: true, name: String::new(), pattern: "b.com".into(), method: String::new(), action: Action::Block { status: 403 }, hits: 0 });
+        let mut c = Config {
+            scope_only: true,
+            scope: vec!["a.com".into()],
+            muted: vec!["a.com".into()],
+            ..Default::default()
+        };
+        c.rules.push(Rule {
+            id: 1,
+            enabled: true,
+            name: String::new(),
+            pattern: "b.com".into(),
+            method: String::new(),
+            action: Action::Block { status: 403 },
+            hits: 0,
+        });
         assert!(!c.captured("b.com"));
         // rules stay evaluable; the proxy just skips them for uncaptured hosts
         assert_eq!(c.matching("GET", "https://b.com/x").len(), 1);
@@ -115,11 +149,38 @@ mod tests {
     #[test]
     fn rule_edits_apply_immediately() {
         let shared: Shared = Arc::new(Mutex::new(Config::default()));
-        assert!(shared.lock().unwrap().matching("GET", "https://a.com/").is_empty());
-        shared.lock().unwrap().rules.push(Rule { id: 1, enabled: true, name: String::new(), pattern: "a.com".into(), method: String::new(), action: Action::Block { status: 403 }, hits: 0 });
-        assert_eq!(shared.lock().unwrap().matching("GET", "https://a.com/").len(), 1);
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .matching("GET", "https://a.com/")
+                .is_empty()
+        );
+        shared.lock().unwrap().rules.push(Rule {
+            id: 1,
+            enabled: true,
+            name: String::new(),
+            pattern: "a.com".into(),
+            method: String::new(),
+            action: Action::Block { status: 403 },
+            hits: 0,
+        });
+        assert_eq!(
+            shared
+                .lock()
+                .unwrap()
+                .matching("GET", "https://a.com/")
+                .len(),
+            1
+        );
         shared.lock().unwrap().rules[0].enabled = false;
-        assert!(shared.lock().unwrap().matching("GET", "https://a.com/").is_empty());
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .matching("GET", "https://a.com/")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -137,14 +198,34 @@ mod characterization {
     use super::*;
 
     fn rule(id: u64, pattern: &str, method: &str, enabled: bool) -> Rule {
-        Rule { id, enabled, name: String::new(), pattern: pattern.into(), method: method.into(), action: Action::Block { status: 403 }, hits: 0 }
+        Rule {
+            id,
+            enabled,
+            name: String::new(),
+            pattern: pattern.into(),
+            method: method.into(),
+            action: Action::Block { status: 403 },
+            hits: 0,
+        }
     }
 
     #[test]
     fn method_filter_is_case_insensitive_and_blank_matches_all() {
-        assert!(rule_matches(&rule(1, "a.com", "get", true), "GET", "https://a.com/"));
-        assert!(!rule_matches(&rule(1, "a.com", "POST", true), "GET", "https://a.com/"));
-        assert!(rule_matches(&rule(1, "a.com", " ", true), "DELETE", "https://a.com/"));
+        assert!(rule_matches(
+            &rule(1, "a.com", "get", true),
+            "GET",
+            "https://a.com/"
+        ));
+        assert!(!rule_matches(
+            &rule(1, "a.com", "POST", true),
+            "GET",
+            "https://a.com/"
+        ));
+        assert!(rule_matches(
+            &rule(1, "a.com", " ", true),
+            "DELETE",
+            "https://a.com/"
+        ));
     }
 
     #[test]
@@ -163,16 +244,26 @@ mod characterization {
 
     #[test]
     fn host_in_supports_wildcards_and_ignores_blank_entries() {
-        assert!(Config::host_in(&["*.example.com".into()], "api.example.com"));
+        assert!(Config::host_in(
+            &["*.example.com".into()],
+            "api.example.com"
+        ));
         assert!(!Config::host_in(&["".into(), "  ".into()], "a.com"));
         assert!(Config::host_in(&["A.COM".into()], "b.a.com"));
     }
 
     #[test]
     fn scope_is_ignored_when_empty_or_disabled() {
-        let c = Config { scope_only: true, ..Default::default() };
+        let c = Config {
+            scope_only: true,
+            ..Default::default()
+        };
         assert!(c.captured("any.com"));
-        let c = Config { scope_only: false, scope: vec!["a.com".into()], ..Default::default() };
+        let c = Config {
+            scope_only: false,
+            scope: vec!["a.com".into()],
+            ..Default::default()
+        };
         assert!(c.captured("b.com"));
     }
 

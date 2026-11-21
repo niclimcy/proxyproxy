@@ -35,7 +35,9 @@ pub fn load(paths: &[String]) -> (Option<DescriptorPool>, Vec<(String, String)>)
     for p in paths {
         let r = std::fs::read(p)
             .map_err(|e| e.to_string())
-            .and_then(|b| prost_types::FileDescriptorSet::decode(b.as_slice()).map_err(|e| e.to_string()))
+            .and_then(|b| {
+                prost_types::FileDescriptorSet::decode(b.as_slice()).map_err(|e| e.to_string())
+            })
             .and_then(|set| pool.add_file_descriptor_set(set).map_err(|e| e.to_string()));
         match r {
             Ok(()) => any = true,
@@ -77,13 +79,26 @@ pub fn is_loaded() -> bool {
 }
 
 pub fn message_types() -> Vec<String> {
-    let mut v: Vec<String> = lock().pool.as_ref().map(|p| p.all_messages().filter(|m| !m.is_map_entry()).map(|m| m.full_name().to_string()).collect()).unwrap_or_default();
+    let mut v: Vec<String> = lock()
+        .pool
+        .as_ref()
+        .map(|p| {
+            p.all_messages()
+                .filter(|m| !m.is_map_entry())
+                .map(|m| m.full_name().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
     v.sort();
     v
 }
 
 pub fn stats() -> (usize, usize) {
-    lock().pool.as_ref().map(|p| (p.all_messages().count(), p.services().count())).unwrap_or((0, 0))
+    lock()
+        .pool
+        .as_ref()
+        .map(|p| (p.all_messages().count(), p.services().count()))
+        .unwrap_or((0, 0))
 }
 
 fn has_unknown(m: &DynamicMessage) -> bool {
@@ -112,8 +127,14 @@ fn best_guess(pool: &DescriptorPool, data: &[u8]) -> Option<(MessageDescriptor, 
         return None;
     }
     let mut best: Option<(usize, MessageDescriptor, DynamicMessage)> = None;
-    for d in pool.all_messages().filter(|d| !d.is_map_entry()).take(MAX_TRY) {
-        let Some(m) = decode_as(&d, data) else { continue };
+    for d in pool
+        .all_messages()
+        .filter(|d| !d.is_map_entry())
+        .take(MAX_TRY)
+    {
+        let Some(m) = decode_as(&d, data) else {
+            continue;
+        };
         let score = m.fields().count();
         if score == 0 || has_unknown(&m) {
             continue;
@@ -144,11 +165,21 @@ pub fn grpc_frames(body: &[u8]) -> Option<Vec<(u8, &[u8])>> {
 fn grpc_method(pool: &DescriptorPool, path: &str, response: bool) -> Option<MessageDescriptor> {
     let path = path.split('?').next()?.strip_prefix('/')?;
     let (svc, method) = path.split_once('/')?;
-    let m = pool.get_service_by_name(svc)?.methods().find(|m| m.name() == method)?;
+    let m = pool
+        .get_service_by_name(svc)?
+        .methods()
+        .find(|m| m.name() == method)?;
     Some(if response { m.output() } else { m.input() })
 }
 
-fn decode_with(pool: &DescriptorPool, ct: &str, body: &[u8], path: &str, response: bool, forced: Option<&str>) -> Option<Decoded> {
+fn decode_with(
+    pool: &DescriptorPool,
+    ct: &str,
+    body: &[u8],
+    path: &str,
+    response: bool,
+    forced: Option<&str>,
+) -> Option<Decoded> {
     let forced = forced.and_then(|n| pool.get_message_by_name(n));
     let grpc = ct.contains("grpc");
     let frames: Vec<&[u8]> = match grpc.then(|| grpc_frames(body)).flatten() {
@@ -156,7 +187,10 @@ fn decode_with(pool: &DescriptorPool, ct: &str, body: &[u8], path: &str, respons
             if f.iter().any(|(flag, _)| flag & 1 != 0) {
                 return None;
             }
-            f.into_iter().filter(|(flag, _)| flag & 0x80 == 0).map(|(_, d)| d).collect()
+            f.into_iter()
+                .filter(|(flag, _)| flag & 0x80 == 0)
+                .map(|(_, d)| d)
+                .collect()
         }
         None => vec![body],
     };
@@ -168,8 +202,20 @@ fn decode_with(pool: &DescriptorPool, ct: &str, body: &[u8], path: &str, respons
     for f in &frames {
         parts.push(to_text(&decode_as(&desc, f)?)?);
     }
-    let text = if parts.len() == 1 { parts.remove(0) } else { parts.iter().enumerate().map(|(i, p)| format!("// message {}\n{p}", i + 1)).collect::<Vec<_>>().join("\n") };
-    Some(Decoded { type_name: desc.full_name().to_string(), text })
+    let text = if parts.len() == 1 {
+        parts.remove(0)
+    } else {
+        parts
+            .iter()
+            .enumerate()
+            .map(|(i, p)| format!("// message {}\n{p}", i + 1))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Some(Decoded {
+        type_name: desc.full_name().to_string(),
+        text,
+    })
 }
 
 // Cached per (body, direction, path, forced type, pool generation)
@@ -180,7 +226,15 @@ pub fn decode(m: &Message, path: &str, response: bool, forced: Option<&str>) -> 
     let s = lock();
     let pool = s.pool.clone()?;
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    (&m.body, m.content_type(), path.split('?').next(), response, forced, s.generation).hash(&mut h);
+    (
+        &m.body,
+        m.content_type(),
+        path.split('?').next(),
+        response,
+        forced,
+        s.generation,
+    )
+        .hash(&mut h);
     let key = h.finish();
     if let Some(c) = s.cache.get(&key) {
         return c.clone();
@@ -200,23 +254,55 @@ mod tests {
     use super::*;
     use prost_reflect::Value;
     use prost_types::{
-        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto, ServiceDescriptorProto,
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MethodDescriptorProto, ServiceDescriptorProto,
         field_descriptor_proto::{Label, Type},
     };
 
     fn field(name: &str, n: i32, t: Type) -> FieldDescriptorProto {
-        FieldDescriptorProto { name: Some(name.into()), number: Some(n), label: Some(Label::Optional as i32), r#type: Some(t as i32), json_name: Some(name.into()), ..Default::default() }
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(n),
+            label: Some(Label::Optional as i32),
+            r#type: Some(t as i32),
+            json_name: Some(name.into()),
+            ..Default::default()
+        }
     }
 
     fn pool() -> DescriptorPool {
-        let req = DescriptorProto { name: Some("HelloRequest".into()), field: vec![field("name", 1, Type::String), field("age", 2, Type::Int32)], ..Default::default() };
-        let rep = DescriptorProto { name: Some("HelloReply".into()), field: vec![field("greeting", 1, Type::String), field("ok", 2, Type::Bool), field("code", 3, Type::Int64)], ..Default::default() };
-        let svc = ServiceDescriptorProto {
-            name: Some("Greeter".into()),
-            method: vec![MethodDescriptorProto { name: Some("SayHello".into()), input_type: Some(".demo.HelloRequest".into()), output_type: Some(".demo.HelloReply".into()), ..Default::default() }],
+        let req = DescriptorProto {
+            name: Some("HelloRequest".into()),
+            field: vec![field("name", 1, Type::String), field("age", 2, Type::Int32)],
             ..Default::default()
         };
-        let file = FileDescriptorProto { name: Some("demo.proto".into()), package: Some("demo".into()), syntax: Some("proto3".into()), message_type: vec![req, rep], service: vec![svc], ..Default::default() };
+        let rep = DescriptorProto {
+            name: Some("HelloReply".into()),
+            field: vec![
+                field("greeting", 1, Type::String),
+                field("ok", 2, Type::Bool),
+                field("code", 3, Type::Int64),
+            ],
+            ..Default::default()
+        };
+        let svc = ServiceDescriptorProto {
+            name: Some("Greeter".into()),
+            method: vec![MethodDescriptorProto {
+                name: Some("SayHello".into()),
+                input_type: Some(".demo.HelloRequest".into()),
+                output_type: Some(".demo.HelloReply".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let file = FileDescriptorProto {
+            name: Some("demo.proto".into()),
+            package: Some("demo".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![req, rep],
+            service: vec![svc],
+            ..Default::default()
+        };
         let set = FileDescriptorSet { file: vec![file] };
         DescriptorPool::decode(set.encode_to_vec().as_slice()).unwrap()
     }
@@ -239,19 +325,59 @@ mod tests {
     #[test]
     fn raw_forced_and_auto() {
         let p = pool();
-        let body = encode(&p, "demo.HelloRequest", &[("name", Value::String("bob".into())), ("age", Value::I32(7))]);
-        let d = decode_with(&p, "application/x-protobuf", &body, "/", false, Some("demo.HelloRequest")).unwrap();
-        assert!(d.text.contains("\"name\": \"bob\"") && d.text.contains("\"age\": 7"), "{}", d.text);
+        let body = encode(
+            &p,
+            "demo.HelloRequest",
+            &[
+                ("name", Value::String("bob".into())),
+                ("age", Value::I32(7)),
+            ],
+        );
+        let d = decode_with(
+            &p,
+            "application/x-protobuf",
+            &body,
+            "/",
+            false,
+            Some("demo.HelloRequest"),
+        )
+        .unwrap();
+        assert!(
+            d.text.contains("\"name\": \"bob\"") && d.text.contains("\"age\": 7"),
+            "{}",
+            d.text
+        );
         let d = decode_with(&p, "application/x-protobuf", &body, "/", false, None).unwrap();
         assert_eq!(d.type_name, "demo.HelloRequest");
-        assert!(decode_with(&p, "application/x-protobuf", &[0xff, 0xff], "/", false, None).is_none());
+        assert!(
+            decode_with(
+                &p,
+                "application/x-protobuf",
+                &[0xff, 0xff],
+                "/",
+                false,
+                None
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn grpc_direction_aware() {
         let p = pool();
-        let req = frame(&encode(&p, "demo.HelloRequest", &[("name", Value::String("a".into()))]));
-        let res = frame(&encode(&p, "demo.HelloReply", &[("greeting", Value::String("hi".into())), ("ok", Value::Bool(true))]));
+        let req = frame(&encode(
+            &p,
+            "demo.HelloRequest",
+            &[("name", Value::String("a".into()))],
+        ));
+        let res = frame(&encode(
+            &p,
+            "demo.HelloReply",
+            &[
+                ("greeting", Value::String("hi".into())),
+                ("ok", Value::Bool(true)),
+            ],
+        ));
         let path = "/demo.Greeter/SayHello";
         let d = decode_with(&p, "application/grpc", &req, path, false, None).unwrap();
         assert_eq!(d.type_name, "demo.HelloRequest");
@@ -270,11 +396,26 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pp-desc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let ok = dir.join("a.desc");
-        let file = prost_types::FileDescriptorProto { name: Some("x.proto".into()), message_type: vec![prost_types::DescriptorProto { name: Some("X".into()), ..Default::default() }], ..Default::default() };
-        std::fs::write(&ok, prost_types::FileDescriptorSet { file: vec![file] }.encode_to_vec()).unwrap();
+        let file = prost_types::FileDescriptorProto {
+            name: Some("x.proto".into()),
+            message_type: vec![prost_types::DescriptorProto {
+                name: Some("X".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        std::fs::write(
+            &ok,
+            prost_types::FileDescriptorSet { file: vec![file] }.encode_to_vec(),
+        )
+        .unwrap();
         let bad = dir.join("b.desc");
         std::fs::write(&bad, b"\xff\xff\xff").unwrap();
-        let (pool, errs) = load(&[ok.display().to_string(), bad.display().to_string(), "/nonexistent.desc".into()]);
+        let (pool, errs) = load(&[
+            ok.display().to_string(),
+            bad.display().to_string(),
+            "/nonexistent.desc".into(),
+        ]);
         assert!(pool.unwrap().get_message_by_name("X").is_some());
         assert_eq!(errs.len(), 2);
         std::fs::remove_dir_all(dir).ok();

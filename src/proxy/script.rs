@@ -13,7 +13,11 @@ pub struct Ctx {
 
 impl Ctx {
     fn to_json(&self) -> Value {
-        let h: serde_json::Map<String, Value> = self.headers.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
+        let h: serde_json::Map<String, Value> = self
+            .headers
+            .iter()
+            .map(|(k, v)| (k.clone(), json!(v)))
+            .collect();
         json!({"method": self.method, "url": self.url, "status": self.status, "headers": h, "body": self.body})
     }
 
@@ -28,7 +32,10 @@ impl Ctx {
             self.status = s as u16;
         }
         if let Some(h) = v.get("headers").and_then(|x| x.as_object()) {
-            self.headers = h.iter().filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string()))).collect();
+            self.headers = h
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+                .collect();
         }
         match v.get("body") {
             Some(Value::String(s)) => self.body = s.clone(),
@@ -83,13 +90,36 @@ mod tests {
     #[test]
     fn hooks_mutate_ctx() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut c = Ctx { method: "GET".into(), url: "http://a/".into(), status: 200, headers: vec![], body: "{}".into() };
+        let mut c = Ctx {
+            method: "GET".into(),
+            url: "http://a/".into(),
+            status: 200,
+            headers: vec![],
+            body: "{}".into(),
+        };
         let code = "function onRequest(c){ c.headers['x']='1'; console.log('hi', c.method); c.body = JSON.stringify({a:1}); return c; }";
         run(code, "onRequest", &mut c, &tx).unwrap();
         assert_eq!(c.headers, vec![("x".to_string(), "1".to_string())]);
         assert_eq!(c.body, r#"{"a":1}"#);
         assert_eq!(rx.try_recv().unwrap(), "hi GET");
-        assert!(run("while(true){}; function onRequest(){}", "onRequest", &mut c, &tx).is_err());
-        assert!(run("function onRequest(){ throw new Error('boom') }", "onRequest", &mut c, &tx).unwrap_err().contains("boom"));
+        assert!(
+            run(
+                "while(true){}; function onRequest(){}",
+                "onRequest",
+                &mut c,
+                &tx
+            )
+            .is_err()
+        );
+        assert!(
+            run(
+                "function onRequest(){ throw new Error('boom') }",
+                "onRequest",
+                &mut c,
+                &tx
+            )
+            .unwrap_err()
+            .contains("boom")
+        );
     }
 }

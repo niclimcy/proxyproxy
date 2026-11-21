@@ -18,7 +18,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub async fn run(port: u16, sink: Arc<dyn FlowSink>, cfg: Shared) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    port: u16,
+    sink: Arc<dyn FlowSink>,
+    cfg: Shared,
+) -> Result<(), Box<dyn std::error::Error>> {
     use hudsucker::{rustls::ClientConfig, tokio_tungstenite::Connector};
     use hyper_rustls::{ConfigBuilderExt, HttpsConnectorBuilder};
     let keylog: Arc<tls::KeyLogger> = Arc::new(tls::KeyLogger(cfg.clone()));

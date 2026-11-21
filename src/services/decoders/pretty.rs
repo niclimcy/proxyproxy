@@ -18,7 +18,10 @@ impl BodyDecoder for Pretty {
     }
 
     fn render(&self, m: &Message, _: &Ctx, _: Option<&str>) -> Rendered {
-        Rendered::Text { text: pretty_text(m), caption: None }
+        Rendered::Text {
+            text: pretty_text(m),
+            caption: None,
+        }
     }
 
     fn default_rank(&self) -> Option<u8> {

@@ -16,9 +16,23 @@ pub struct Props<'a> {
     pub show_help: bool,
 }
 
-pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, vm: &mut CaptureVm, p: Props) -> Vec<ToolbarIntent> {
+pub fn show(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &mut CaptureVm,
+    p: Props,
+) -> Vec<ToolbarIntent> {
     let mut out = vec![];
-    let Props { port, cert, show_rules, active_rules, status, api_port, paused_breakpoints, show_help } = p;
+    let Props {
+        port,
+        cert,
+        show_rules,
+        active_rules,
+        status,
+        api_port,
+        paused_breakpoints,
+        show_help,
+    } = p;
     egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
         let compact = ui.available_width() < 900.0;
         if compact {
@@ -128,17 +142,31 @@ fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<Tool
     ui.horizontal(|ui| {
         let controls_width = 250.0;
         let filters_width = (ui.available_width() - controls_width).max(180.0);
-        egui::ScrollArea::horizontal().auto_shrink([false, true]).max_width(filters_width).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for (label, tok, c) in [("Errors", "is:error", danger()), ("Pinned", "is:pinned", warning()), ("JSON", "is:json", success()), ("WebSocket", "is:ws", violet()), ("Modified", "is:modified", info()), ("Pending", "is:pending", fg_muted())] {
-                if chip(ui, label, vm.token_on(tok), c).clicked() {
-                    out.push(ToolbarIntent::ToggleToken(tok));
+        egui::ScrollArea::horizontal()
+            .auto_shrink([false, true])
+            .max_width(filters_width)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for (label, tok, c) in [
+                    ("Errors", "is:error", danger()),
+                    ("Pinned", "is:pinned", warning()),
+                    ("JSON", "is:json", success()),
+                    ("WebSocket", "is:ws", violet()),
+                    ("Modified", "is:modified", info()),
+                    ("Pending", "is:pending", fg_muted()),
+                ] {
+                    if chip(ui, label, vm.token_on(tok), c).clicked() {
+                        out.push(ToolbarIntent::ToggleToken(tok));
+                    }
                 }
-            }
-            if let Some(e) = &vm.query.error {
-                ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()).size(FS_CAPTION));
-            }
-        });
+                if let Some(e) = &vm.query.error {
+                    ui.label(
+                        RichText::new(format!("{} {e}", ph::WARNING))
+                            .color(danger())
+                            .size(FS_CAPTION),
+                    );
+                }
+            });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.checkbox(&mut vm.follow, "Follow");
             toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
@@ -149,7 +177,11 @@ fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<Tool
                     }
                 }
             });
-            ui.label(muted(format!("{} of {}", vm.visible.len(), vm.flow_count())));
+            ui.label(muted(format!(
+                "{} of {}",
+                vm.visible.len(),
+                vm.flow_count()
+            )));
         });
     });
 }
@@ -200,7 +232,10 @@ fn compact_primary_rows(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         saved_menu(ui, vm, out);
-        if icon_button(ui, ph::TRASH, "Clear").on_hover_text("Remove all requests (including pinned)").clicked() {
+        if icon_button(ui, ph::TRASH, "Clear")
+            .on_hover_text("Remove all requests (including pinned)")
+            .clicked()
+        {
             out.push(ToolbarIntent::ClearAll);
         }
         if icon_button(ui, ph::PLUS, "Compose").clicked() {
@@ -220,11 +255,25 @@ fn compact_primary_rows(
             pill(ui, &format!("{paused_breakpoints} paused"), warning());
         }
         if !status.is_empty() {
-            ui.add(egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate()).on_hover_text(status);
+            ui.add(
+                egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate(),
+            )
+            .on_hover_text(status);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
-            if right_panel_toggle(ui, *show_rules, &label, format!("{} rules panel", if *show_rules { "Hide" } else { "Show" })).clicked() {
+            let label = if active_rules > 0 {
+                format!("Rules ({active_rules})")
+            } else {
+                "Rules".into()
+            };
+            if right_panel_toggle(
+                ui,
+                *show_rules,
+                &label,
+                format!("{} rules panel", if *show_rules { "Hide" } else { "Show" }),
+            )
+            .clicked()
+            {
                 *show_rules = !*show_rules;
             }
         });
@@ -232,104 +281,176 @@ fn compact_primary_rows(
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
-    let menu = flat(ui, |ui| ui.menu_button(RichText::new(ph::STAR).size(FS_BODY), |ui| {
-        if !vm.filter.trim().is_empty() && ui.button(ico(ph::PLUS, "Save current query")).clicked() {
-            out.push(ToolbarIntent::SaveQuery);
-            ui.close();
-            return;
-        }
-        let saved = vm.saved_queries();
-        if saved.is_empty() {
-            ui.label(muted("No saved queries"));
-        }
-        for (i, (name, q)) in saved.iter().enumerate() {
-            ui.horizontal(|ui| {
-                if ui.button(name).on_hover_text(q).clicked() {
-                    out.push(ToolbarIntent::LoadQuery(q.clone()));
-                    ui.close();
-                }
-                if ui.small_button(ph::X).clicked() {
-                    out.push(ToolbarIntent::DeleteQuery(i));
-                }
-            });
-        }
-    }));
+    let menu = flat(ui, |ui| {
+        ui.menu_button(RichText::new(ph::STAR).size(FS_BODY), |ui| {
+            if !vm.filter.trim().is_empty()
+                && ui.button(ico(ph::PLUS, "Save current query")).clicked()
+            {
+                out.push(ToolbarIntent::SaveQuery);
+                ui.close();
+                return;
+            }
+            let saved = vm.saved_queries();
+            if saved.is_empty() {
+                ui.label(muted("No saved queries"));
+            }
+            for (i, (name, q)) in saved.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    if ui.button(name).on_hover_text(q).clicked() {
+                        out.push(ToolbarIntent::LoadQuery(q.clone()));
+                        ui.close();
+                    }
+                    if ui.small_button(ph::X).clicked() {
+                        out.push(ToolbarIntent::DeleteQuery(i));
+                    }
+                });
+            }
+        })
+    });
     menu.response.on_hover_text("Saved queries");
 }
 
 fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) {
-    toolbar_menu(ui, ph::FOLDER_OPEN, if compact { "" } else { "Session" }, |ui| {
-        let mut act = None::<u8>;
-        for (i, l) in ["New session", "Open session…", "Save session as…", "-", "Import HAR / Charles JSON…", "-", "Export HAR (visible)", "Export CSV (visible)", "Export rules…", "Import rules…", "-", "Clear unpinned requests"].iter().enumerate() {
-            if *l == "-" {
-                ui.separator();
-            } else if ui.button(*l).clicked() {
-                act = Some(i as u8);
-                ui.close();
+    toolbar_menu(
+        ui,
+        ph::FOLDER_OPEN,
+        if compact { "" } else { "Session" },
+        |ui| {
+            let mut act = None::<u8>;
+            for (i, l) in [
+                "New session",
+                "Open session…",
+                "Save session as…",
+                "-",
+                "Import HAR / Charles JSON…",
+                "-",
+                "Export HAR (visible)",
+                "Export CSV (visible)",
+                "Export rules…",
+                "Import rules…",
+                "-",
+                "Clear unpinned requests",
+            ]
+            .iter()
+            .enumerate()
+            {
+                if *l == "-" {
+                    ui.separator();
+                } else if ui.button(*l).clicked() {
+                    act = Some(i as u8);
+                    ui.close();
+                }
             }
-        }
-        let Some(a) = act else { return };
-        let dlg = rfd::FileDialog::new;
-        let intent = match a {
-            0 => Some(SessionIntent::New),
-            1 => dlg().add_filter("proxyproxy session", &["pxp"]).pick_file().map(SessionIntent::Open),
-            2 => dlg().add_filter("proxyproxy session", &["pxp"]).set_file_name("session.pxp").save_file().map(SessionIntent::SaveAs),
-            4 => dlg().add_filter("HAR / Charles JSON", &["har", "json", "chlsj"]).pick_file().map(SessionIntent::ImportFlows),
-            6 => dlg().set_file_name("export.har").save_file().map(SessionIntent::ExportHar),
-            7 => dlg().set_file_name("export.csv").save_file().map(SessionIntent::ExportCsv),
-            8 => dlg().set_file_name("proxyproxy-rules.json").save_file().map(SessionIntent::ExportRules),
-            9 => dlg().add_filter("rules", &["json"]).pick_file().map(SessionIntent::ImportRules),
-            11 => {
-                out.push(ToolbarIntent::ClearUnpinned);
-                None
+            let Some(a) = act else { return };
+            let dlg = rfd::FileDialog::new;
+            let intent = match a {
+                0 => Some(SessionIntent::New),
+                1 => dlg()
+                    .add_filter("proxyproxy session", &["pxp"])
+                    .pick_file()
+                    .map(SessionIntent::Open),
+                2 => dlg()
+                    .add_filter("proxyproxy session", &["pxp"])
+                    .set_file_name("session.pxp")
+                    .save_file()
+                    .map(SessionIntent::SaveAs),
+                4 => dlg()
+                    .add_filter("HAR / Charles JSON", &["har", "json", "chlsj"])
+                    .pick_file()
+                    .map(SessionIntent::ImportFlows),
+                6 => dlg()
+                    .set_file_name("export.har")
+                    .save_file()
+                    .map(SessionIntent::ExportHar),
+                7 => dlg()
+                    .set_file_name("export.csv")
+                    .save_file()
+                    .map(SessionIntent::ExportCsv),
+                8 => dlg()
+                    .set_file_name("proxyproxy-rules.json")
+                    .save_file()
+                    .map(SessionIntent::ExportRules),
+                9 => dlg()
+                    .add_filter("rules", &["json"])
+                    .pick_file()
+                    .map(SessionIntent::ImportRules),
+                11 => {
+                    out.push(ToolbarIntent::ClearUnpinned);
+                    None
+                }
+                _ => None,
+            };
+            if let Some(i) = intent {
+                out.push(ToolbarIntent::Session(i));
             }
-            _ => None,
-        };
-        if let Some(i) = intent {
-            out.push(ToolbarIntent::Session(i));
-        }
-    });
+        },
+    );
 }
 
-fn devices_menu(ui: &mut egui::Ui, ctx: &egui::Context, port: u16, api_port: u16, cert: &str, out: &mut Vec<ToolbarIntent>, compact: bool) {
-    toolbar_menu(ui, ph::DEVICE_MOBILE, if compact { "" } else { "Capture" }, |ui| {
-        let item = |ui: &mut egui::Ui, label: &str| {
-            let c = ui.button(label).clicked();
-            if c {
-                ui.close();
+fn devices_menu(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    port: u16,
+    api_port: u16,
+    cert: &str,
+    out: &mut Vec<ToolbarIntent>,
+    compact: bool,
+) {
+    toolbar_menu(
+        ui,
+        ph::DEVICE_MOBILE,
+        if compact { "" } else { "Capture" },
+        |ui| {
+            let item = |ui: &mut egui::Ui, label: &str| {
+                let c = ui.button(label).clicked();
+                if c {
+                    ui.close();
+                }
+                c
+            };
+            let mut device = |ui: &mut egui::Ui, label: &str, a: DeviceAction| {
+                if item(ui, label) {
+                    out.push(ToolbarIntent::Device(a));
+                }
+            };
+            ui.label(muted("This computer"));
+            device(ui, "Trust CA on this computer", DeviceAction::TrustCa);
+            device(ui, "Set system proxy", DeviceAction::SetSystemProxy);
+            device(ui, "Clear system proxy", DeviceAction::ClearSystemProxy);
+            device(
+                ui,
+                "Launch Chrome with proxy (clean profile)",
+                DeviceAction::LaunchChrome,
+            );
+            ui.separator();
+            ui.label(muted("Terminal & scripts"));
+            if item(ui, "Copy `proxyproxy run -- <cmd>` hint") {
+                ctx.copy_text(format!("proxyproxy run --port {port} -- "));
             }
-            c
-        };
-        let mut device = |ui: &mut egui::Ui, label: &str, a: DeviceAction| {
-            if item(ui, label) {
-                out.push(ToolbarIntent::Device(a));
+            if item(ui, "Copy shell env snippet") {
+                ctx.copy_text(crate::services::devices::env_snippet(port, cert));
             }
-        };
-        ui.label(muted("This computer"));
-        device(ui, "Trust CA on this computer", DeviceAction::TrustCa);
-        device(ui, "Set system proxy", DeviceAction::SetSystemProxy);
-        device(ui, "Clear system proxy", DeviceAction::ClearSystemProxy);
-        device(ui, "Launch Chrome with proxy (clean profile)", DeviceAction::LaunchChrome);
-        ui.separator();
-        ui.label(muted("Terminal & scripts"));
-        if item(ui, "Copy `proxyproxy run -- <cmd>` hint") {
-            ctx.copy_text(format!("proxyproxy run --port {port} -- "));
-        }
-        if item(ui, "Copy shell env snippet") {
-            ctx.copy_text(crate::services::devices::env_snippet(port, cert));
-        }
-        ui.separator();
-        ui.label(muted("Devices"));
-        device(ui, "iOS Simulator: install CA", DeviceAction::IosSimInstallCa);
-        device(ui, "Android: set proxy (adb)", DeviceAction::AndroidSetProxy);
-        device(ui, "Android: clear proxy", DeviceAction::AndroidClearProxy);
-        device(ui, "Android: push CA", DeviceAction::AndroidInstallCa);
-        ui.separator();
-        if item(ui, "Copy CA path") {
-            ctx.copy_text(cert.to_string());
-        }
-        if item(ui, &format!("Copy REST API URL (127.0.0.1:{api_port})")) {
-            ctx.copy_text(format!("http://127.0.0.1:{api_port}"));
-        }
-    });
+            ui.separator();
+            ui.label(muted("Devices"));
+            device(
+                ui,
+                "iOS Simulator: install CA",
+                DeviceAction::IosSimInstallCa,
+            );
+            device(
+                ui,
+                "Android: set proxy (adb)",
+                DeviceAction::AndroidSetProxy,
+            );
+            device(ui, "Android: clear proxy", DeviceAction::AndroidClearProxy);
+            device(ui, "Android: push CA", DeviceAction::AndroidInstallCa);
+            ui.separator();
+            if item(ui, "Copy CA path") {
+                ctx.copy_text(cert.to_string());
+            }
+            if item(ui, &format!("Copy REST API URL (127.0.0.1:{api_port})")) {
+                ctx.copy_text(format!("http://127.0.0.1:{api_port}"));
+            }
+        },
+    );
 }

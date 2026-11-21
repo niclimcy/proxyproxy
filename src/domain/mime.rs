@@ -1,5 +1,11 @@
 pub fn content_type(path: &str) -> &'static str {
-    match path.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
+    match path
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
         "json" => "application/json",
         "html" | "htm" => "text/html; charset=utf-8",
         "js" | "mjs" => "application/javascript",

@@ -30,7 +30,9 @@ enum Tok {
 fn tokenize(s: &str) -> Vec<Tok> {
     let c: Vec<char> = s.chars().collect();
     let (mut i, mut out) = (0, vec![]);
-    let spread_at = |i: usize| c.get(i) == Some(&'.') && c.get(i + 1) == Some(&'.') && c.get(i + 2) == Some(&'.');
+    let spread_at = |i: usize| {
+        c.get(i) == Some(&'.') && c.get(i + 1) == Some(&'.') && c.get(i + 2) == Some(&'.')
+    };
     while i < c.len() {
         let ch = c[i];
         if ch.is_whitespace() {
@@ -43,7 +45,12 @@ fn tokenize(s: &str) -> Vec<Tok> {
             let start = i;
             if c.get(i + 1) == Some(&'"') && c.get(i + 2) == Some(&'"') {
                 i += 3;
-                while i < c.len() && !(c[i] == '"' && c.get(i + 1) == Some(&'"') && c.get(i + 2) == Some(&'"') && c[i - 1] != '\\') {
+                while i < c.len()
+                    && !(c[i] == '"'
+                        && c.get(i + 1) == Some(&'"')
+                        && c.get(i + 2) == Some(&'"')
+                        && c[i - 1] != '\\')
+                {
                     i += 1;
                 }
                 i = (i + 3).min(c.len());
@@ -63,7 +70,11 @@ fn tokenize(s: &str) -> Vec<Tok> {
             i += 1;
         } else {
             let start = i;
-            while i < c.len() && !c[i].is_whitespace() && !"{}()[]:!=@$|&,\"#".contains(c[i]) && !spread_at(i) {
+            while i < c.len()
+                && !c[i].is_whitespace()
+                && !"{}()[]:!=@$|&,\"#".contains(c[i])
+                && !spread_at(i)
+            {
                 i += 1;
             }
             out.push(Tok::Name(c[start..i].iter().collect()));
@@ -84,7 +95,9 @@ fn scan_ops(query: &str) -> Vec<(String, Option<String>)> {
                 depth += 1;
             }
             Tok::P('}' | ')' | ']') => depth -= 1,
-            Tok::Name(n) if depth == 0 && matches!(n.as_str(), "query" | "mutation" | "subscription") => {
+            Tok::Name(n)
+                if depth == 0 && matches!(n.as_str(), "query" | "mutation" | "subscription") =>
+            {
                 let name = match toks.get(i + 1) {
                     Some(Tok::Name(x)) => Some(x.clone()),
                     _ => None,
@@ -100,38 +113,66 @@ fn scan_ops(query: &str) -> Vec<(String, Option<String>)> {
 fn looks_graphql(q: &str) -> bool {
     match tokenize(q).first() {
         Some(Tok::P('{')) => true,
-        Some(Tok::Name(n)) => matches!(n.as_str(), "query" | "mutation" | "subscription" | "fragment"),
+        Some(Tok::Name(n)) => matches!(
+            n.as_str(),
+            "query" | "mutation" | "subscription" | "fragment"
+        ),
         _ => false,
     }
 }
 
-fn make_op(query: &str, op_name: Option<&str>, variables: Option<Value>, extensions: Option<Value>) -> Op {
+fn make_op(
+    query: &str,
+    op_name: Option<&str>,
+    variables: Option<Value>,
+    extensions: Option<Value>,
+) -> Op {
     let ops = scan_ops(query);
-    let picked = op_name.and_then(|n| ops.iter().find(|(_, x)| x.as_deref() == Some(n))).or(ops.first());
+    let picked = op_name
+        .and_then(|n| ops.iter().find(|(_, x)| x.as_deref() == Some(n)))
+        .or(ops.first());
     let (kind, name) = match picked {
         Some((k, n)) => (k.clone(), n.clone().or(op_name.map(String::from))),
         None => ("persisted".to_string(), op_name.map(String::from)),
     };
-    Op { kind, name, query: query.to_string(), variables, extensions }
+    Op {
+        kind,
+        name,
+        query: query.to_string(),
+        variables,
+        extensions,
+    }
 }
 
 fn from_obj(o: &Value) -> Option<Op> {
     let o = o.as_object()?;
     let q = o.get("query").and_then(|q| q.as_str()).unwrap_or("");
     let ext = o.get("extensions").filter(|e| !e.is_null()).cloned();
-    let persisted = q.is_empty() && ext.as_ref().is_some_and(|e| e.get("persistedQuery").is_some());
+    let persisted = q.is_empty()
+        && ext
+            .as_ref()
+            .is_some_and(|e| e.get("persistedQuery").is_some());
     if !persisted && !looks_graphql(q) {
         return None;
     }
     let vars = o.get("variables").filter(|v| !v.is_null()).cloned();
-    Some(make_op(q, o.get("operationName").and_then(|n| n.as_str()), vars, ext))
+    Some(make_op(
+        q,
+        o.get("operationName").and_then(|n| n.as_str()),
+        vars,
+        ext,
+    ))
 }
 
 pub fn parse_request(method: &str, path: &str, m: &Message) -> Option<Vec<Op>> {
     if method.eq_ignore_ascii_case("GET") {
         let params = crate::services::decode::query_params(path);
         let get = |k: &str| params.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
-        let json = |k: &str| get(k).and_then(|v| serde_json::from_str::<Value>(v).ok()).filter(|v| !v.is_null());
+        let json = |k: &str| {
+            get(k)
+                .and_then(|v| serde_json::from_str::<Value>(v).ok())
+                .filter(|v| !v.is_null())
+        };
         let mut o = serde_json::Map::new();
         o.insert("query".into(), get("query")?.into());
         if let Some(n) = get("operationName") {
@@ -160,7 +201,11 @@ pub fn parse_request(method: &str, path: &str, m: &Message) -> Option<Vec<Op>> {
 
 pub fn pretty_query(q: &str) -> String {
     let toks = tokenize(q);
-    let mut w = Writer { out: String::new(), indent: 0, stack: vec![] };
+    let mut w = Writer {
+        out: String::new(),
+        indent: 0,
+        stack: vec![],
+    };
     let mut prev: Option<&Tok> = None;
     let mut prev2: Option<&Tok> = None;
     for t in &toks {
@@ -262,7 +307,8 @@ impl Writer {
     // inside a selection set: decide whether t starts a new line
     fn block_item(&mut self, t: &Tok, prev: Option<&Tok>, prev2: Option<&Tok>) {
         let starts = matches!(t, Tok::Name(_) | Tok::Spread);
-        let after_on = matches!(prev, Some(Tok::Name(n)) if n == "on") && matches!(prev2, Some(Tok::Spread));
+        let after_on =
+            matches!(prev, Some(Tok::Name(n)) if n == "on") && matches!(prev2, Some(Tok::Spread));
         let ended = matches!(prev, Some(Tok::Name(_) | Tok::P(')' | '}')));
         if matches!(prev, Some(Tok::P('{'))) {
             // '{' already opened a fresh line
@@ -293,7 +339,10 @@ pub fn request_report(ops: &[Op]) -> String {
         }
         for (label, v) in [("variables", &op.variables), ("extensions", &op.extensions)] {
             if let Some(v) = v {
-                s.push_str(&format!("\n# {label}\n{}\n", serde_json::to_string_pretty(v).unwrap_or_default()));
+                s.push_str(&format!(
+                    "\n# {label}\n{}\n",
+                    serde_json::to_string_pretty(v).unwrap_or_default()
+                ));
             }
         }
     }
@@ -308,7 +357,14 @@ fn one_response(v: &Value, s: &mut String) -> bool {
     match o.get("data") {
         Some(Value::Object(d)) => {
             let keys: Vec<&str> = d.keys().map(String::as_str).collect();
-            s.push_str(&format!("# data: {}\n", if keys.is_empty() { "{}".to_string() } else { keys.join(", ") }));
+            s.push_str(&format!(
+                "# data: {}\n",
+                if keys.is_empty() {
+                    "{}".to_string()
+                } else {
+                    keys.join(", ")
+                }
+            ));
         }
         Some(Value::Null) => s.push_str("# data: null\n"),
         Some(_) => s.push_str("# data\n"),
@@ -317,10 +373,20 @@ fn one_response(v: &Value, s: &mut String) -> bool {
     if let Some(Value::Array(errs)) = o.get("errors") {
         s.push_str(&format!("# errors ({})\n", errs.len()));
         for e in errs {
-            let msg = e.get("message").and_then(|m| m.as_str()).unwrap_or("(no message)");
+            let msg = e
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("(no message)");
             let mut line = format!("#   - {msg}");
             if let Some(p) = e.get("path").and_then(|p| p.as_array()) {
-                let p: Vec<String> = p.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect();
+                let p: Vec<String> = p
+                    .iter()
+                    .map(|x| {
+                        x.as_str()
+                            .map(String::from)
+                            .unwrap_or_else(|| x.to_string())
+                    })
+                    .collect();
                 line.push_str(&format!("  (path: {})", p.join(".")));
             }
             if let Some(c) = e.pointer("/extensions/code").and_then(|c| c.as_str()) {
@@ -331,7 +397,10 @@ fn one_response(v: &Value, s: &mut String) -> bool {
         }
     }
     if let Some(d) = o.get("data").filter(|d| !d.is_null()) {
-        s.push_str(&format!("\n{}\n", serde_json::to_string_pretty(d).unwrap_or_default()));
+        s.push_str(&format!(
+            "\n{}\n",
+            serde_json::to_string_pretty(d).unwrap_or_default()
+        ));
     }
     true
 }
@@ -363,24 +432,39 @@ mod tests {
     use super::*;
 
     fn msg(ct: &str, body: &str) -> Message {
-        Message { headers: vec![("Content-Type".into(), ct.into())], body: body.as_bytes().to_vec() }
+        Message {
+            headers: vec![("Content-Type".into(), ct.into())],
+            body: body.as_bytes().to_vec(),
+        }
     }
 
     #[test]
     fn single_post() {
-        let m = msg("application/json", r#"{"query":"query GetUser($id: ID!){user(id:$id){name ...F}}","operationName":"GetUser","variables":{"id":"1"}}"#);
+        let m = msg(
+            "application/json",
+            r#"{"query":"query GetUser($id: ID!){user(id:$id){name ...F}}","operationName":"GetUser","variables":{"id":"1"}}"#,
+        );
         let ops = parse_request("POST", "/graphql", &m).unwrap();
         assert_eq!(ops.len(), 1);
-        assert_eq!((ops[0].kind.as_str(), ops[0].name.as_deref()), ("query", Some("GetUser")));
+        assert_eq!(
+            (ops[0].kind.as_str(), ops[0].name.as_deref()),
+            ("query", Some("GetUser"))
+        );
         assert_eq!(ops[0].variables.as_ref().unwrap()["id"], "1");
         let r = request_report(&ops);
-        assert!(r.contains("user(id: $id) {\n    name\n    ...F\n  }"), "{r}");
+        assert!(
+            r.contains("user(id: $id) {\n    name\n    ...F\n  }"),
+            "{r}"
+        );
         assert!(r.contains("# variables"), "{r}");
     }
 
     #[test]
     fn batch() {
-        let m = msg("application/json", r#"[{"query":"mutation M { a }"},{"query":"{ b }"}]"#);
+        let m = msg(
+            "application/json",
+            r#"[{"query":"mutation M { a }"},{"query":"{ b }"}]"#,
+        );
         let ops = parse_request("POST", "/g", &m).unwrap();
         assert_eq!(ops.len(), 2);
         assert_eq!(ops[0].summary(), "mutation M");
@@ -401,15 +485,29 @@ mod tests {
         let ops = parse_request("POST", "/", &msg("application/graphql", "{ me { id } }")).unwrap();
         assert_eq!((ops[0].kind.as_str(), ops[0].name.clone()), ("query", None));
         assert_eq!(pretty_query("{ me { id } }"), "{\n  me {\n    id\n  }\n}");
-        assert_eq!(pretty_query("query Q($a: Int = 1, $b: [Int!]!) { f(x: {a: [1, 2]}) @skip(if: true) { ... on T { z } } }"),
-            "query Q($a: Int = 1, $b: [Int!]!) {\n  f(x: { a: [1, 2] }) @skip(if: true) {\n    ... on T {\n      z\n    }\n  }\n}");
+        assert_eq!(
+            pretty_query(
+                "query Q($a: Int = 1, $b: [Int!]!) { f(x: {a: [1, 2]}) @skip(if: true) { ... on T { z } } }"
+            ),
+            "query Q($a: Int = 1, $b: [Int!]!) {\n  f(x: { a: [1, 2] }) @skip(if: true) {\n    ... on T {\n      z\n    }\n  }\n}"
+        );
     }
 
     #[test]
     fn errors_response() {
-        let m = msg("application/json", r#"{"data":null,"errors":[{"message":"boom","path":["user",0,"name"],"extensions":{"code":"BAD"}}]}"#);
+        let m = msg(
+            "application/json",
+            r#"{"data":null,"errors":[{"message":"boom","path":["user",0,"name"],"extensions":{"code":"BAD"}}]}"#,
+        );
         let r = response_report(&m).unwrap();
-        assert!(r.contains("data: null") && r.contains("errors (1)") && r.contains("boom") && r.contains("user.0.name") && r.contains("[BAD]"), "{r}");
+        assert!(
+            r.contains("data: null")
+                && r.contains("errors (1)")
+                && r.contains("boom")
+                && r.contains("user.0.name")
+                && r.contains("[BAD]"),
+            "{r}"
+        );
         let ok = msg("application/json", r#"{"data":{"a":1,"b":2}}"#);
         assert!(response_report(&ok).unwrap().contains("data: a, b"));
     }
@@ -417,12 +515,29 @@ mod tests {
     #[test]
     fn malformed_and_non_graphql() {
         assert!(parse_request("POST", "/", &msg("application/json", "{not json")).is_none());
-        assert!(parse_request("POST", "/", &msg("application/json", r#"{"query":"hello world"}"#)).is_none());
-        assert!(parse_request("POST", "/", &msg("application/json", r#"{"query":{"match":{}}}"#)).is_none());
+        assert!(
+            parse_request(
+                "POST",
+                "/",
+                &msg("application/json", r#"{"query":"hello world"}"#)
+            )
+            .is_none()
+        );
+        assert!(
+            parse_request(
+                "POST",
+                "/",
+                &msg("application/json", r#"{"query":{"match":{}}}"#)
+            )
+            .is_none()
+        );
         assert!(parse_request("POST", "/", &msg("application/json", "[]")).is_none());
         assert!(parse_request("GET", "/x", &Message::default()).is_none());
         assert!(response_report(&msg("application/json", r#"{"foo":1}"#)).is_none());
         assert!(response_report(&msg("application/json", "oops")).is_none());
-        assert_eq!(pretty_query("{ unterminated \"str"), "{\n  unterminated \"str");
+        assert_eq!(
+            pretty_query("{ unterminated \"str"),
+            "{\n  unterminated \"str"
+        );
     }
 }

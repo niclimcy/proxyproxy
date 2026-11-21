@@ -72,13 +72,21 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
 
     let window = Submenu::new("Window", true);
     window
-        .append_items(&[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(None), &PredefinedMenuItem::fullscreen(None)])
+        .append_items(&[
+            &PredefinedMenuItem::minimize(None),
+            &PredefinedMenuItem::maximize(None),
+            &PredefinedMenuItem::fullscreen(None),
+        ])
         .ok()?;
     menu.append(&window).ok()?;
     window.set_as_windows_menu_for_nsapp();
 
     let help = Submenu::new("Help", true);
-    help.append(&PredefinedMenuItem::about(Some("About proxyproxy"), Some(meta()))).ok()?;
+    help.append(&PredefinedMenuItem::about(
+        Some("About proxyproxy"),
+        Some(meta()),
+    ))
+    .ok()?;
     menu.append(&help).ok()?;
     help.set_as_help_menu_for_nsapp();
 
@@ -93,7 +101,11 @@ fn install(hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<In
     let menu = Menu::new();
     let icon = Icon::from_rgba(icon_rgba, icon_size, icon_size).ok();
     let help = Submenu::new("Help", true);
-    help.append(&PredefinedMenuItem::about(Some("About proxyproxy"), Some(metadata(icon)))).ok()?;
+    help.append(&PredefinedMenuItem::about(
+        Some("About proxyproxy"),
+        Some(metadata(icon)),
+    ))
+    .ok()?;
     menu.append(&help).ok()?;
     // SAFETY: hwnd belongs to the live app window and the menu outlives it (held by App)
     unsafe { menu.init_for_hwnd(hwnd) }.ok()?;

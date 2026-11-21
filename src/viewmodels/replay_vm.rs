@@ -35,17 +35,27 @@ pub struct ReplayVm {
 }
 
 pub fn hdr_text(h: &[(String, String)]) -> String {
-    h.iter().filter(|(k, _)| !matches!(k.to_ascii_lowercase().as_str(), "content-length" | "host")).map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n")
+    h.iter()
+        .filter(|(k, _)| !matches!(k.to_ascii_lowercase().as_str(), "content-length" | "host"))
+        .map(|(k, v)| format!("{k}: {v}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn parse_headers(text: &str) -> Vec<(String, String)> {
-    text.lines().filter_map(|l| l.split_once(':')).map(|(k, v)| (k.trim().into(), v.trim().into())).collect()
+    text.lines()
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.trim().into(), v.trim().into()))
+        .collect()
 }
 
 fn split_url(url: &str) -> (&str, &str, &str) {
     let url = url.trim();
     let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
-    let (host, path) = rest.find('/').map(|i| (&rest[..i], &rest[i..])).unwrap_or((rest, "/"));
+    let (host, path) = rest
+        .find('/')
+        .map(|i| (&rest[..i], &rest[i..]))
+        .unwrap_or((rest, "/"));
     (scheme, host, path)
 }
 
@@ -60,7 +70,10 @@ fn flow_from_draft(d: &ReplayDraft, s: &Sent) -> Flow {
         version: "HTTP/1.1".into(),
         started: std::time::SystemTime::now(),
         started_at: std::time::Instant::now(),
-        request: Message { headers: parse_headers(&d.headers), body: d.body.clone().into_bytes() },
+        request: Message {
+            headers: parse_headers(&d.headers),
+            body: d.body.clone().into_bytes(),
+        },
         status: Some(s.status),
         response: Some(s.response.clone()),
         duration_ms: Some(s.ms),
@@ -78,7 +91,14 @@ fn flow_from_draft(d: &ReplayDraft, s: &Sent) -> Flow {
 impl ReplayVm {
     pub fn new(store: FlowStore, repaint: Arc<dyn Repaint>) -> Self {
         let (tx, rx) = channel();
-        Self { store, drafts: vec![], next_win: 1, tx, rx, repaint }
+        Self {
+            store,
+            drafts: vec![],
+            next_win: 1,
+            tx,
+            rx,
+            repaint,
+        }
     }
 
     fn push(&mut self, mut d: ReplayDraft) {
@@ -88,7 +108,9 @@ impl ReplayVm {
     }
 
     pub fn open_replay(&mut self, id: u64) {
-        let Some(f) = self.store.lock().find(id).cloned() else { return };
+        let Some(f) = self.store.lock().find(id).cloned() else {
+            return;
+        };
         self.push(ReplayDraft {
             id: 0,
             method: f.method.clone(),
@@ -123,10 +145,17 @@ impl ReplayVm {
     }
 
     pub fn send(&mut self, id: u64) {
-        let Some(d) = self.drafts.iter_mut().find(|d| d.id == id) else { return };
+        let Some(d) = self.drafts.iter_mut().find(|d| d.id == id) else {
+            return;
+        };
         d.sending = true;
         d.result = None;
-        let (m, u, h, b) = (d.method.clone(), d.url.clone(), parse_headers(&d.headers), d.body.clone().into_bytes());
+        let (m, u, h, b) = (
+            d.method.clone(),
+            d.url.clone(),
+            parse_headers(&d.headers),
+            d.body.clone().into_bytes(),
+        );
         let (tx, repaint) = (self.tx.clone(), self.repaint.clone());
         std::thread::spawn(move || {
             let _ = tx.send((id, replay::send(&m, &u, &h, &b)));
@@ -142,7 +171,9 @@ impl ReplayVm {
     }
 
     fn finish(&mut self, id: u64, res: Result<Sent, String>) {
-        let Some(d) = self.drafts.iter_mut().find(|d| d.id == id) else { return };
+        let Some(d) = self.drafts.iter_mut().find(|d| d.id == id) else {
+            return;
+        };
         d.sending = false;
         if let Ok(s) = &res {
             self.store.lock().push(flow_from_draft(d, s));
@@ -165,7 +196,14 @@ mod tests {
     }
 
     fn sent(status: u16) -> Sent {
-        Sent { status, ms: 7, response: Message { headers: vec![], body: b"ok".to_vec() } }
+        Sent {
+            status,
+            ms: 7,
+            response: Message {
+                headers: vec![],
+                body: b"ok".to_vec(),
+            },
+        }
     }
 
     #[test]
@@ -174,12 +212,27 @@ mod tests {
         let mut f = Flow::sample(5);
         f.method = "POST".into();
         f.path = "/p?q=1".into();
-        f.request = Message { headers: vec![("Host".into(), "a.com".into()), ("Content-Length".into(), "2".into()), ("X-A".into(), "1".into())], body: b"hi".to_vec() };
+        f.request = Message {
+            headers: vec![
+                ("Host".into(), "a.com".into()),
+                ("Content-Length".into(), "2".into()),
+                ("X-A".into(), "1".into()),
+            ],
+            body: b"hi".to_vec(),
+        };
         f.response = Some(Message::default());
         vm.store.lock().push(f);
         vm.open_replay(5);
         let d = &vm.drafts[0];
-        assert_eq!((d.method.as_str(), d.url.as_str(), d.headers.as_str(), d.body.as_str()), ("POST", "https://a.com/p?q=1", "X-A: 1", "hi"));
+        assert_eq!(
+            (
+                d.method.as_str(),
+                d.url.as_str(),
+                d.headers.as_str(),
+                d.body.as_str()
+            ),
+            ("POST", "https://a.com/p?q=1", "X-A: 1", "hi")
+        );
         assert_eq!(d.source, Some(5));
         assert!(d.prev.is_some() && d.open);
         vm.open_replay(99);
@@ -207,8 +260,19 @@ mod tests {
         vm.finish(id, Ok(sent(201)));
         let st = vm.store.lock();
         let f = &st.flows[0];
-        assert_eq!((f.method.as_str(), f.scheme.as_str(), f.host.as_str(), f.path.as_str()), ("POST", "http", "b.com:8080", "/x?y=2"));
-        assert_eq!((f.tag.as_str(), f.app.as_str(), f.status), ("Replayed", "proxyproxy", Some(201)));
+        assert_eq!(
+            (
+                f.method.as_str(),
+                f.scheme.as_str(),
+                f.host.as_str(),
+                f.path.as_str()
+            ),
+            ("POST", "http", "b.com:8080", "/x?y=2")
+        );
+        assert_eq!(
+            (f.tag.as_str(), f.app.as_str(), f.status),
+            ("Replayed", "proxyproxy", Some(201))
+        );
         assert_eq!(f.request.headers, vec![("A".to_string(), "1".to_string())]);
         drop(st);
         assert!(!vm.drafts[0].sending && matches!(vm.drafts[0].result, Some(Ok(_))));

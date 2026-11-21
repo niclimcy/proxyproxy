@@ -46,16 +46,29 @@ mod tests {
     use super::*;
 
     fn rule(response: bool) -> ReplaceBody {
-        ReplaceBody { response, find: "world".into(), replace: "there".into(), regex: false }
+        ReplaceBody {
+            response,
+            find: "world".into(),
+            replace: "there".into(),
+            regex: false,
+        }
     }
 
     #[test]
     fn rewrites_request_body_only_when_configured_for_requests() {
         let mut b = Bytes::from_static(b"hello world");
-        assert!(rule(false).apply_request(&mut req_parts("http://a/"), &mut b, &TestSink::default()));
+        assert!(rule(false).apply_request(
+            &mut req_parts("http://a/"),
+            &mut b,
+            &TestSink::default()
+        ));
         assert_eq!(&b[..], b"hello there");
         let mut b = Bytes::from_static(b"hello world");
-        assert!(!rule(true).apply_request(&mut req_parts("http://a/"), &mut b, &TestSink::default()));
+        assert!(!rule(true).apply_request(
+            &mut req_parts("http://a/"),
+            &mut b,
+            &TestSink::default()
+        ));
         assert_eq!(&b[..], b"hello world");
     }
 

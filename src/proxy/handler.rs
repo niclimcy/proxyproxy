@@ -1,19 +1,21 @@
-use super::app_lookup::lookup_app;
 use super::actions::{self, Rule};
+use super::app_lookup::lookup_app;
 use super::http_util::{header_map, headers, strip_default_port, text_response};
-use super::pipeline::{self, apply_request_actions, apply_response_actions, request_delay, short_circuit};
+use super::pipeline::{
+    self, apply_request_actions, apply_response_actions, request_delay, short_circuit,
+};
 use super::sink::FlowSink;
 use crate::domain::config::Shared;
-use crate::domain::flow::{self, BpEdit, Decision, Dir, Event, Flow, Message, Paused, Stage, WsMsg};
+use crate::domain::flow::{
+    self, BpEdit, Decision, Dir, Event, Flow, Message, Paused, Stage, WsMsg,
+};
 use bytes::Bytes;
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use http_body_util::{BodyExt, Full};
 use hudsucker::{
-    Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler, decode_request, decode_response,
-    hyper::{
-        Method, Request, Response, StatusCode, Uri,
-        header::CONTENT_LENGTH,
-    },
+    Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
+    decode_request, decode_response,
+    hyper::{Method, Request, Response, StatusCode, Uri, header::CONTENT_LENGTH},
     tokio_tungstenite::tungstenite::Message as WsMessage,
 };
 use std::{
@@ -41,7 +43,12 @@ impl Capture {
     async fn pause(&self, id: u64, stage: Stage, edit: BpEdit) -> Decision {
         let (reply, rx) = oneshot::channel();
         let orig = edit.clone();
-        self.sink.emit(Event::Paused(Paused { id, stage, edit, reply }));
+        self.sink.emit(Event::Paused(Paused {
+            id,
+            stage,
+            edit,
+            reply,
+        }));
         rx.await.unwrap_or(Decision::Resume(orig))
     }
 
@@ -56,7 +63,11 @@ impl HttpHandler for Capture {
         self.cfg.lock().unwrap().should_decrypt(host)
     }
 
-    async fn handle_request(&mut self, hctx: &HttpContext, req: Request<Body>) -> RequestOrResponse {
+    async fn handle_request(
+        &mut self,
+        hctx: &HttpContext,
+        req: Request<Body>,
+    ) -> RequestOrResponse {
         self.current = None;
         self.res_actions.clear();
         self.bp_response = false;
@@ -65,28 +76,53 @@ impl HttpHandler for Capture {
             return req.into();
         }
 
-        let is_ws = req.headers().get("upgrade").and_then(|v| v.to_str().ok()).is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
+        let is_ws = req
+            .headers()
+            .get("upgrade")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
 
         let req = decode_request(req).unwrap_or_else(|_| Request::new(Body::empty()));
         let (mut parts, body) = req.into_parts();
-        let mut bytes = body.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+        let mut bytes = body
+            .collect()
+            .await
+            .map(|b| b.to_bytes())
+            .unwrap_or_default();
 
         let scheme = parts.uri.scheme_str().unwrap_or("https").to_string();
         let host = parts
             .uri
             .authority()
             .map(|a| a.to_string())
-            .or_else(|| parts.headers.get("host").and_then(|h| h.to_str().ok()).map(String::from))
+            .or_else(|| {
+                parts
+                    .headers
+                    .get("host")
+                    .and_then(|h| h.to_str().ok())
+                    .map(String::from)
+            })
             .unwrap_or_default();
         let host = strip_default_port(&scheme, host);
-        let path = parts.uri.path_and_query().map(|p| p.to_string()).unwrap_or_else(|| "/".into());
+        let path = parts
+            .uri
+            .path_and_query()
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "/".into());
         let url = format!("{scheme}://{host}{path}");
         let method = parts.method.to_string();
 
         let (captured, actions) = {
             let mut cfg = self.cfg.lock().unwrap();
             let c = cfg.captured(&host);
-            (c, if c { cfg.matching(&method, &url) } else { vec![] })
+            (
+                c,
+                if c {
+                    cfg.matching(&method, &url)
+                } else {
+                    vec![]
+                },
+            )
         };
         if !captured {
             return Request::from_parts(parts, Body::from(Full::new(bytes))).into();
@@ -98,7 +134,11 @@ impl HttpHandler for Capture {
 
         if !self.app_checked {
             self.app_checked = true;
-            let (sink, port, own) = (self.sink.clone(), hctx.client_addr.port(), std::process::id());
+            let (sink, port, own) = (
+                self.sink.clone(),
+                hctx.client_addr.port(),
+                std::process::id(),
+            );
             std::thread::spawn(move || {
                 if let Some(app) = lookup_app(port, own) {
                     sink.emit(Event::App { id, app });
@@ -120,7 +160,10 @@ impl HttpHandler for Capture {
             version: format!("{:?}", parts.version),
             started: SystemTime::now(),
             started_at: Instant::now(),
-            request: Message { headers: headers(&parts.headers), body: bytes.to_vec() },
+            request: Message {
+                headers: headers(&parts.headers),
+                body: bytes.to_vec(),
+            },
             status: None,
             response: None,
             duration_ms: None,
@@ -135,7 +178,10 @@ impl HttpHandler for Capture {
         };
         if is_ws {
             f.status = Some(101);
-            self.ws.lock().unwrap().insert(format!("{}{}", f.host, f.path), id);
+            self.ws
+                .lock()
+                .unwrap()
+                .insert(format!("{}{}", f.host, f.path), id);
         }
         self.sink.emit(Event::Request(f));
         if is_ws {
@@ -151,17 +197,27 @@ impl HttpHandler for Capture {
             self.sink.emit(Event::Response {
                 id,
                 status: p.status.as_u16(),
-                response: Message { headers: headers(&p.headers), body: data.to_vec() },
+                response: Message {
+                    headers: headers(&p.headers),
+                    body: data.to_vec(),
+                },
                 duration_ms: self.elapsed(),
             });
             self.current = None;
             return Response::from_parts(p, Body::from(Full::new(data))).into();
         }
 
-        let mut edited = apply_request_actions(&actions, &mut parts, &mut bytes, self.sink.as_ref());
+        let mut edited =
+            apply_request_actions(&actions, &mut parts, &mut bytes, self.sink.as_ref());
 
         if plan.break_request {
-            let edit = BpEdit { method: parts.method.to_string(), url: parts.uri.to_string(), status: 0, headers: headers(&parts.headers), body: bytes.to_vec() };
+            let edit = BpEdit {
+                method: parts.method.to_string(),
+                url: parts.uri.to_string(),
+                status: 0,
+                headers: headers(&parts.headers),
+                body: bytes.to_vec(),
+            };
             match self.pause(id, Stage::Request, edit).await {
                 Decision::Resume(e) => {
                     if let Ok(m) = e.method.trim().parse::<Method>() {
@@ -179,7 +235,10 @@ impl HttpHandler for Capture {
                     self.sink.emit(Event::Response {
                         id,
                         status: 499,
-                        response: Message { headers: vec![], body: b"Aborted by breakpoint".to_vec() },
+                        response: Message {
+                            headers: vec![],
+                            body: b"Aborted by breakpoint".to_vec(),
+                        },
                         duration_ms: self.elapsed(),
                     });
                     return text_response(499, "Aborted by proxyproxy breakpoint".into()).into();
@@ -195,8 +254,15 @@ impl HttpHandler for Capture {
                 id,
                 method: parts.method.to_string(),
                 host: auth,
-                path: parts.uri.path_and_query().map(|p| p.to_string()).unwrap_or_else(|| "/".into()),
-                request: Message { headers: headers(&parts.headers), body: bytes.to_vec() },
+                path: parts
+                    .uri
+                    .path_and_query()
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "/".into()),
+                request: Message {
+                    headers: headers(&parts.headers),
+                    body: bytes.to_vec(),
+                },
             });
         }
         Request::from_parts(parts, Body::from(Full::new(bytes))).into()
@@ -207,15 +273,31 @@ impl HttpHandler for Capture {
             return Response::new(Body::empty());
         };
         let (mut parts, body) = res.into_parts();
-        let mut bytes = body.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+        let mut bytes = body
+            .collect()
+            .await
+            .map(|b| b.to_bytes())
+            .unwrap_or_default();
         let Some(id) = self.current.take() else {
             return Response::from_parts(parts, Body::from(Full::new(bytes)));
         };
 
-        apply_response_actions(std::mem::take(&mut self.res_actions), &mut parts, &mut bytes, self.sink.as_ref()).await;
+        apply_response_actions(
+            std::mem::take(&mut self.res_actions),
+            &mut parts,
+            &mut bytes,
+            self.sink.as_ref(),
+        )
+        .await;
 
         if std::mem::take(&mut self.bp_response) {
-            let edit = BpEdit { method: String::new(), url: String::new(), status: parts.status.as_u16(), headers: headers(&parts.headers), body: bytes.to_vec() };
+            let edit = BpEdit {
+                method: String::new(),
+                url: String::new(),
+                status: parts.status.as_u16(),
+                headers: headers(&parts.headers),
+                body: bytes.to_vec(),
+            };
             match self.pause(id, Stage::Response, edit).await {
                 Decision::Resume(e) => {
                     if let Ok(s) = StatusCode::from_u16(e.status) {
@@ -225,7 +307,12 @@ impl HttpHandler for Capture {
                     bytes = Bytes::from(e.body);
                 }
                 Decision::Abort => {
-                    self.sink.emit(Event::Response { id, status: 499, response: Message::default(), duration_ms: self.elapsed() });
+                    self.sink.emit(Event::Response {
+                        id,
+                        status: 499,
+                        response: Message::default(),
+                        duration_ms: self.elapsed(),
+                    });
                     return text_response(499, "Aborted by proxyproxy breakpoint".into());
                 }
             }
@@ -234,16 +321,31 @@ impl HttpHandler for Capture {
         self.sink.emit(Event::Response {
             id,
             status: parts.status.as_u16(),
-            response: Message { headers: headers(&parts.headers), body: bytes.to_vec() },
+            response: Message {
+                headers: headers(&parts.headers),
+                body: bytes.to_vec(),
+            },
             duration_ms: self.elapsed(),
         });
         Response::from_parts(parts, Body::from(Full::new(bytes)))
     }
 
-    async fn handle_error(&mut self, _: &HttpContext, err: hudsucker::hyper_util::client::legacy::Error) -> Response<Body> {
-        let msg = format!("{err}: {}", std::error::Error::source(&err).map(|s| s.to_string()).unwrap_or_default());
+    async fn handle_error(
+        &mut self,
+        _: &HttpContext,
+        err: hudsucker::hyper_util::client::legacy::Error,
+    ) -> Response<Body> {
+        let msg = format!(
+            "{err}: {}",
+            std::error::Error::source(&err)
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        );
         if let Some(id) = self.current.take() {
-            self.sink.emit(Event::Failed { id, error: msg.clone() });
+            self.sink.emit(Event::Failed {
+                id,
+                error: msg.clone(),
+            });
         }
         text_response(502, format!("proxyproxy: upstream failed: {msg}"))
     }
@@ -259,14 +361,25 @@ impl WebSocketHandler for WsCap {
     async fn handle_websocket(
         self,
         ctx: WebSocketContext,
-        mut stream: impl Stream<Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
-        mut sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
+        mut stream: impl Stream<
+            Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>,
+        > + Unpin
+        + Send
+        + 'static,
+        mut sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error>
+        + Unpin
+        + Send
+        + 'static,
     ) {
         let (dir, uri) = match &ctx {
             WebSocketContext::ClientToServer { dst, .. } => (Dir::Out, dst.clone()),
             WebSocketContext::ServerToClient { src, .. } => (Dir::In, src.clone()),
         };
-        let key = format!("{}{}", uri.authority().map(|a| a.as_str()).unwrap_or(""), uri.path_and_query().map(|p| p.as_str()).unwrap_or("/"));
+        let key = format!(
+            "{}{}",
+            uri.authority().map(|a| a.as_str()).unwrap_or(""),
+            uri.path_and_query().map(|p| p.as_str()).unwrap_or("/")
+        );
         while let Some(m) = stream.next().await {
             let Ok(m) = m else {
                 let _ = sink.send(WsMessage::Close(None)).await;
@@ -278,8 +391,19 @@ impl WebSocketHandler for WsCap {
                 _ => (false, None),
             };
             if let (Some(data), Some(id)) = (data, self.map.lock().unwrap().get(&key).copied()) {
-                let ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-                self.sink.emit(Event::Ws { id, msg: WsMsg { dir, binary, ms, data } });
+                let ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis();
+                self.sink.emit(Event::Ws {
+                    id,
+                    msg: WsMsg {
+                        dir,
+                        binary,
+                        ms,
+                        data,
+                    },
+                });
             }
             if sink.send(m).await.is_err() {
                 break;

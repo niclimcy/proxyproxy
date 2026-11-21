@@ -18,7 +18,10 @@ impl BodyDecoder for GraphQl {
     }
 
     fn render(&self, m: &Message, c: &Ctx, _: Option<&str>) -> Rendered {
-        Rendered::Text { text: gql_report(m, c).unwrap_or_default(), caption: None }
+        Rendered::Text {
+            text: gql_report(m, c).unwrap_or_default(),
+            caption: None,
+        }
     }
 
     fn default_rank(&self) -> Option<u8> {

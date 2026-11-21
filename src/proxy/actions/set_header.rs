@@ -38,7 +38,12 @@ mod tests {
     use super::*;
 
     fn rule(response: bool) -> SetHeader {
-        SetHeader { response, name: "x-a".into(), value: "1".into(), remove: false }
+        SetHeader {
+            response,
+            name: "x-a".into(),
+            value: "1".into(),
+            remove: false,
+        }
     }
 
     #[test]
@@ -56,7 +61,11 @@ mod tests {
         let mut p = res_parts(200);
         rule(true).apply_response(&mut p, &mut Bytes::new(), &TestSink::default());
         assert_eq!(p.headers.get("x-a").unwrap(), "1");
-        SetHeader { remove: true, ..rule(true) }.apply_response(&mut p, &mut Bytes::new(), &TestSink::default());
+        SetHeader {
+            remove: true,
+            ..rule(true)
+        }
+        .apply_response(&mut p, &mut Bytes::new(), &TestSink::default());
         assert!(p.headers.is_empty());
     }
 }

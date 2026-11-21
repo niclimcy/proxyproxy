@@ -83,7 +83,8 @@ mod tests {
     async fn request_hook_logs_and_mutates() {
         let sink = TestSink::default();
         let mut parts = req_parts("https://a.com/");
-        let code = "function onRequest(c){ c.headers['x-s']='1'; console.log('hi', c.method); return c; }";
+        let code =
+            "function onRequest(c){ c.headers['x-s']='1'; console.log('hi', c.method); return c; }";
         assert!(Script { code: code.into() }.apply_request(&mut parts, &mut Bytes::new(), &sink));
         assert_eq!(*sink.0.lock().unwrap(), vec!["hi GET".to_string()]);
         assert_eq!(parts.headers.get("x-s").unwrap(), "1");
@@ -103,7 +104,11 @@ mod tests {
     async fn script_errors_are_reported_not_panicked() {
         let sink = TestSink::default();
         let code = "function onRequest(){ throw new Error('boom') }";
-        Script { code: code.into() }.apply_request(&mut req_parts("http://a/"), &mut Bytes::new(), &sink);
+        Script { code: code.into() }.apply_request(
+            &mut req_parts("http://a/"),
+            &mut Bytes::new(),
+            &sink,
+        );
         assert!(sink.0.lock().unwrap()[0].starts_with("[error] onRequest"));
     }
 }
