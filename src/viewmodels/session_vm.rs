@@ -99,9 +99,12 @@ impl SessionVm {
         self.last_save = Instant::now();
     }
 
-    pub fn shutdown(&mut self) {
+    pub fn shutdown(&mut self, port: u16) {
         self.save_now();
         config_store::save(&self.cfg.lock().unwrap());
+        if let Err(e) = devices::system_proxy(false, port) {
+            eprintln!("failed to clear system proxy: {e}");
+        }
     }
 
     pub fn handle(
