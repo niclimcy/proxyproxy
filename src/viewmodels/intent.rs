@@ -12,6 +12,7 @@ pub enum OnboardingTarget {
 pub enum OnboardingIntent {
     ChooseProfile(OnboardingProfile),
     ChooseTarget(OnboardingTarget),
+    SelectIosSimulator(String),
     Back,
     Device(DeviceAction),
     ImportFlows(PathBuf),
@@ -64,13 +65,14 @@ pub enum SessionIntent {
     ImportRules(PathBuf),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DeviceAction {
     TrustCa,
     SetSystemProxy,
     ClearSystemProxy,
     LaunchChrome,
-    IosSimInstallCa,
+    IosSimInstallCa(String),
+    IosSimReboot(String),
     AndroidSetProxy,
     AndroidClearProxy,
     AndroidInstallCa,

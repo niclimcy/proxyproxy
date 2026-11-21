@@ -131,6 +131,23 @@ pub struct IosSimulator {
     pub udid: String,
     pub name: String,
     pub runtime: String,
+    pub state: IosSimulatorState,
+    pub ca_status: IosCaStatus,
+    pub data_path: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum IosSimulatorState {
+    Booted,
+    Shutdown,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum IosCaStatus {
+    Installed,
+    Missing,
+    Unknown,
 }
 
 #[cfg(target_os = "macos")]
@@ -155,23 +172,23 @@ fn parse_ios_simulators(json: &str) -> Result<Vec<IosSimulator>, String> {
                 .get("isAvailable")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let state = entry
-                .get("state")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let udid = entry
-                .get("udid")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let name = entry
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if is_available && state == "Booted" && !udid.is_empty() {
+            let state = entry.get("state").and_then(|v| v.as_str()).unwrap_or("");
+            let simulator_state = match state {
+                "Booted" => IosSimulatorState::Booted,
+                "Shutdown" => IosSimulatorState::Shutdown,
+                _ => IosSimulatorState::Other,
+            };
+            let udid = entry.get("udid").and_then(|v| v.as_str()).unwrap_or("");
+            let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let data_path = entry.get("dataPath").and_then(|v| v.as_str()).unwrap_or("");
+            if is_available && !udid.is_empty() {
                 sims.push(IosSimulator {
                     udid: udid.to_string(),
                     name: name.to_string(),
                     runtime: runtime_name.to_string(),
+                    state: simulator_state,
+                    ca_status: IosCaStatus::Unknown,
+                    data_path: data_path.to_string(),
                 });
             }
         }
@@ -187,37 +204,81 @@ pub fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn ios_sim_install_ca(cert: &str) -> Res {
-    let sims = ios_simulators()?;
-    if sims.is_empty() {
-        return Err("no booted iOS simulators available".into());
-    }
+pub fn ios_sim_install_ca(udid: &str, cert: &str) -> Res {
+    run(
+        "xcrun",
+        &["simctl", "keychain", udid, "add-root-cert", cert],
+    )?;
+    Ok("CA installed".into())
+}
 
-    let mut errs = vec![];
-    for sim in &sims {
-        if let Err(e) = run(
-            "xcrun",
-            &["simctl", "keychain", &sim.udid, "add-root-cert", cert],
-        ) {
-            errs.push(format!("{}: {e}", sim.name));
+#[cfg(target_os = "macos")]
+pub fn ios_sim_reboot(udid: &str) -> Res {
+    run("xcrun", &["simctl", "reboot", udid])?;
+    Ok("Simulator reboot started".into())
+}
+
+#[cfg(target_os = "macos")]
+fn truststore_contains(rows: &str, sha256: &str) -> bool {
+    rows.lines()
+        .any(|row| row.trim().eq_ignore_ascii_case(sha256))
+}
+
+#[cfg(target_os = "macos")]
+pub fn refresh_ios_ca_status(simulators: &mut [IosSimulator], cert: &str) {
+    let fingerprint = match run(
+        "openssl",
+        &["x509", "-in", cert, "-noout", "-fingerprint", "-sha256"],
+    ) {
+        Ok(text) => text
+            .split_once('=')
+            .map(|(_, value)| value.replace(':', "").trim().to_ascii_uppercase()),
+        Err(_) => None,
+    };
+
+    let Some(fingerprint) = fingerprint else {
+        for sim in simulators {
+            sim.ca_status = IosCaStatus::Unknown;
         }
-    }
-    if errs.is_empty() {
-        let names = sims
-            .iter()
-            .map(|sim| sim.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        Ok(format!("CA installed on {names}"))
-    } else {
-        Err(errs.join("; "))
+        return;
+    };
+
+    for sim in simulators {
+        if sim.state != IosSimulatorState::Booted || sim.data_path.is_empty() {
+            sim.ca_status = IosCaStatus::Unknown;
+            continue;
+        }
+        let db = std::path::Path::new(&sim.data_path)
+            .join("private/var/protected/trustd/private/TrustStore.sqlite3");
+        let db = db.to_string_lossy();
+        match run(
+            "sqlite3",
+            &[&db, "select upper(hex(sha256)) from tsettings;"],
+        ) {
+            Ok(rows) => {
+                sim.ca_status = if truststore_contains(&rows, &fingerprint) {
+                    IosCaStatus::Installed
+                } else {
+                    IosCaStatus::Missing
+                };
+            }
+            Err(_) => sim.ca_status = IosCaStatus::Unknown,
+        }
     }
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn ios_sim_install_ca(_: &str) -> Res {
+pub fn ios_sim_install_ca(_: &str, _: &str) -> Res {
     Err("iOS simulator requires macOS".into())
 }
+
+#[cfg(not(target_os = "macos"))]
+pub fn ios_sim_reboot(_: &str) -> Res {
+    Err("iOS simulator requires macOS".into())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn refresh_ios_ca_status(_: &mut [IosSimulator], _: &str) {}
 
 #[cfg(not(target_os = "macos"))]
 pub fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
@@ -232,6 +293,22 @@ fn services() -> Result<Vec<String>, String> {
         .filter(|l| !l.starts_with('*'))
         .map(String::from)
         .collect())
+}
+
+#[cfg(target_os = "macos")]
+pub fn system_proxy_status() -> Result<bool, String> {
+    for service in services()? {
+        let text = run("networksetup", &["-getwebproxy", &service])?;
+        if text.lines().any(|line| line.trim() == "Enabled: Yes") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn system_proxy_status() -> Result<bool, String> {
+    Ok(false)
 }
 
 #[cfg(target_os = "macos")]
@@ -387,25 +464,48 @@ pub fn launch_chrome(port: u16) -> Res {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn truststore_sha256_match_is_case_insensitive() {
+        let sha256 = "D4E842E9A47EB58147DCBAEBC9784FCF5A39C3A642D358754B0DFF7BC8A5B9FB";
+        assert!(truststore_contains(
+            &format!("other\n{sha256}\n"),
+            "d4e842e9a47eb58147dcbaebc9784fcf5a39c3a642d358754b0dff7bc8a5b9fb",
+        ));
+    }
+
     #[test]
     fn parses_only_available_booted_sims() {
         let json = r#"{
           "devices": {
             "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
-              {"name":"iPhone A","udid":"UDID-A","state":"Booted","isAvailable":true},
-              {"name":"iPhone B","udid":"UDID-B","state":"Shutdown","isAvailable":true},
-              {"name":"iPhone C","udid":"UDID-C","state":"Booted","isAvailable":false}
+              {"name":"iPhone A","udid":"UDID-A","state":"Booted","isAvailable":true,"dataPath":"/tmp/A"},
+              {"name":"iPhone B","udid":"UDID-B","state":"Shutdown","isAvailable":true,"dataPath":"/tmp/B"},
+              {"name":"iPhone C","udid":"UDID-C","state":"Booted","isAvailable":false,"dataPath":"/tmp/C"}
             ]
           }
         }"#;
 
         assert_eq!(
             parse_ios_simulators(json).unwrap(),
-            vec![IosSimulator {
-                udid: "UDID-A".into(),
-                name: "iPhone A".into(),
-                runtime: "iOS-27-0".into(),
-            }]
+            vec![
+                IosSimulator {
+                    udid: "UDID-A".into(),
+                    name: "iPhone A".into(),
+                    runtime: "iOS-27-0".into(),
+                    state: IosSimulatorState::Booted,
+                    ca_status: IosCaStatus::Unknown,
+                    data_path: "/tmp/A".into(),
+                },
+                IosSimulator {
+                    udid: "UDID-B".into(),
+                    name: "iPhone B".into(),
+                    runtime: "iOS-27-0".into(),
+                    state: IosSimulatorState::Shutdown,
+                    ca_status: IosCaStatus::Unknown,
+                    data_path: "/tmp/B".into(),
+                },
+            ]
         );
     }
 }

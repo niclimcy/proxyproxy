@@ -9,6 +9,7 @@ pub struct Props<'a> {
     pub port: u16,
     pub cert: &'a str,
     pub ios_simulators: &'a [crate::services::devices::IosSimulator],
+    pub system_proxy_enabled: bool,
     pub show_rules: &'a mut bool,
     pub active_rules: usize,
     pub status: &'a str,
@@ -28,6 +29,7 @@ pub fn show(
         port,
         cert,
         ios_simulators,
+        system_proxy_enabled,
         show_rules,
         active_rules,
         status,
@@ -38,7 +40,7 @@ pub fn show(
     egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
         let compact = ui.available_width() < 900.0;
         if compact {
-            compact_primary_rows(ui, ctx, vm, port, cert, ios_simulators, show_rules, active_rules, status, api_port, paused_breakpoints, show_help, &mut out);
+            compact_primary_rows(ui, ctx, vm, port, cert, ios_simulators, system_proxy_enabled, show_rules, active_rules, status, api_port, paused_breakpoints, show_help, &mut out);
         } else {
             ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
@@ -90,7 +92,7 @@ pub fn show(
                             }
                         });
                     }
-                    devices_menu(ui, ctx, port, api_port, cert, ios_simulators, &mut out, false);
+                    devices_menu(ui, ctx, port, api_port, cert, ios_simulators, system_proxy_enabled, &mut out, false);
                     session_menu(ui, &mut out, false);
                     if icon_button(ui, ph::PLUS, "Compose").clicked() {
                         out.push(ToolbarIntent::Compose);
@@ -200,6 +202,7 @@ fn compact_primary_rows(
     port: u16,
     cert: &str,
     ios_simulators: &[crate::services::devices::IosSimulator],
+    system_proxy_enabled: bool,
     show_rules: &mut bool,
     active_rules: usize,
     status: &str,
@@ -250,7 +253,17 @@ fn compact_primary_rows(
             out.push(ToolbarIntent::Compose);
         }
         session_menu(ui, out, true);
-        devices_menu(ui, ctx, port, api_port, cert, ios_simulators, out, true);
+        devices_menu(
+            ui,
+            ctx,
+            port,
+            api_port,
+            cert,
+            ios_simulators,
+            system_proxy_enabled,
+            out,
+            true,
+        );
         if show_help {
             toolbar_menu(ui, ph::QUESTION, "", |ui| {
                 menu_width(ui, &["Setup guide", "About proxyproxy"]);
@@ -421,6 +434,7 @@ fn devices_menu(
     api_port: u16,
     cert: &str,
     ios_simulators: &[crate::services::devices::IosSimulator],
+    system_proxy_enabled: bool,
     out: &mut Vec<ToolbarIntent>,
     compact: bool,
 ) {
@@ -463,8 +477,13 @@ fn devices_menu(
             };
             ui.label(muted("This computer"));
             device(ui, "Trust CA on this computer", DeviceAction::TrustCa);
-            device(ui, "Set system proxy", DeviceAction::SetSystemProxy);
-            device(ui, "Clear system proxy", DeviceAction::ClearSystemProxy);
+            if system_proxy_enabled {
+                ui.label(muted("System capture: enabled"));
+                device(ui, "Disable system proxy", DeviceAction::ClearSystemProxy);
+            } else {
+                ui.label(muted("System capture: disabled"));
+                device(ui, "Enable system proxy", DeviceAction::SetSystemProxy);
+            }
             device(
                 ui,
                 "Launch Chrome with proxy (clean profile)",
@@ -481,17 +500,35 @@ fn devices_menu(
             ui.separator();
             ui.label(muted("Devices"));
             ui.label(muted("iOS Simulators"));
-            if ios_simulators.is_empty() {
-                ui.label(muted("No running simulators"));
+            let running: Vec<_> = ios_simulators
+                .iter()
+                .filter(|sim| sim.state == crate::services::devices::IosSimulatorState::Booted)
+                .collect();
+            if running.is_empty() {
+                ui.label(muted("No running iOS simulator"));
             } else {
-                for sim in ios_simulators {
-                    ui.label(muted(&format!("{} · {}", sim.name, sim.runtime)));
+                for sim in running {
+                    let ca = match sim.ca_status {
+                        crate::services::devices::IosCaStatus::Installed => "CA installed",
+                        crate::services::devices::IosCaStatus::Missing => "CA missing",
+                        crate::services::devices::IosCaStatus::Unknown => "CA status unknown",
+                    };
+                    ui.label(muted(&format!("{} · {}", sim.name, ca)));
+                    if sim.ca_status != crate::services::devices::IosCaStatus::Installed {
+                        device(
+                            ui,
+                            &format!("Install CA on {}", sim.name),
+                            DeviceAction::IosSimInstallCa(sim.udid.clone()),
+                        );
+                    }
+                    if sim.ca_status == crate::services::devices::IosCaStatus::Installed {
+                        device(
+                            ui,
+                            &format!("Reboot {}", sim.name),
+                            DeviceAction::IosSimReboot(sim.udid.clone()),
+                        );
+                    }
                 }
-                device(
-                    ui,
-                    "Install CA on running simulators",
-                    DeviceAction::IosSimInstallCa,
-                );
             }
             device(
                 ui,

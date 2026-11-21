@@ -157,6 +157,7 @@ impl App {
             port: self.port,
             cert: &self.cert,
             ios_simulators: &self.session.ios_simulators,
+            system_proxy_enabled: self.session.system_proxy_enabled,
             show_rules: &mut self.rules.show,
             active_rules,
             status: &self.status.text,
@@ -235,6 +236,7 @@ impl eframe::App for App {
                 self.port,
                 &self.cert,
                 &self.session.ios_simulators,
+                self.session.system_proxy_enabled,
                 &self.status.text,
                 flow_count,
             ) {
@@ -287,7 +289,7 @@ impl eframe::App for App {
             self.apply(e);
         }
         self.windows(&ctx);
-        self.session.tick();
+        self.session.tick(&self.cert);
         ctx.request_repaint_after(Duration::from_secs(1));
     }
 }

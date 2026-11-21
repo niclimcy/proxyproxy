@@ -13,6 +13,7 @@ pub struct OnboardingVm {
     pub show: bool,
     pub stage: OnboardingStage,
     pub profile: OnboardingProfile,
+    pub selected_ios_udid: Option<String>,
     cfg: Shared,
 }
 
@@ -26,6 +27,7 @@ impl OnboardingVm {
             show: !completed,
             stage: OnboardingStage::ChooseExperience,
             profile,
+            selected_ios_udid: None,
             cfg,
         }
     }
@@ -46,6 +48,9 @@ impl OnboardingVm {
             }
             OnboardingIntent::ChooseTarget(target) => {
                 self.stage = OnboardingStage::Beginner(target);
+            }
+            OnboardingIntent::SelectIosSimulator(udid) => {
+                self.selected_ios_udid = Some(udid);
             }
             OnboardingIntent::Back => {
                 self.stage = match self.stage {
@@ -119,6 +124,13 @@ mod tests {
             OnboardingProfile::Experienced,
         ));
         assert_eq!(vm.stage, OnboardingStage::Experienced);
+    }
+
+    #[test]
+    fn ios_selection_is_persisted() {
+        let mut vm = rig(false);
+        vm.handle(OnboardingIntent::SelectIosSimulator("UDID-A".into()));
+        assert_eq!(vm.selected_ios_udid.as_deref(), Some("UDID-A"));
     }
 
     #[test]

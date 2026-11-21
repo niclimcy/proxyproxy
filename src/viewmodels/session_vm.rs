@@ -11,6 +11,7 @@ pub struct SessionVm {
     pub store: FlowStore,
     pub cfg: Shared,
     pub ios_simulators: Vec<devices::IosSimulator>,
+    pub system_proxy_enabled: bool,
     cfg_saved: String,
     cfg_checked: Instant,
     ios_sim_checked: Instant,
@@ -25,11 +26,15 @@ fn cfg_json(cfg: &Shared) -> String {
 impl SessionVm {
     pub fn new(store: FlowStore, cfg: Shared) -> Self {
         let cfg_saved = cfg_json(&cfg);
-        let ios_simulators = devices::ios_simulators().unwrap_or_default();
+        let mut ios_simulators = devices::ios_simulators().unwrap_or_default();
+        let cert = crate::proxy::tls::dir().join("ca.pem");
+        devices::refresh_ios_ca_status(&mut ios_simulators, &cert.to_string_lossy());
+        let system_proxy_enabled = devices::system_proxy_status().unwrap_or(false);
         Self {
             store,
             cfg,
             ios_simulators,
+            system_proxy_enabled,
             cfg_saved,
             cfg_checked: Instant::now(),
             ios_sim_checked: Instant::now(),
@@ -50,14 +55,14 @@ impl SessionVm {
         }
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, cert: &str) {
         if self.cfg_checked.elapsed() > Duration::from_secs(2) {
             self.cfg_checked = Instant::now();
             self.save_config_if_changed();
         }
-        if self.ios_sim_checked.elapsed() > Duration::from_secs(5) {
+        if self.ios_sim_checked.elapsed() > Duration::from_secs(1) {
             self.ios_sim_checked = Instant::now();
-            self.refresh_ios_simulators();
+            self.refresh_ios_simulators(cert);
         }
         if self.last_save.elapsed() > Duration::from_secs(30)
             && self.saved_rev != self.store.lock().rev()
@@ -66,15 +71,25 @@ impl SessionVm {
         }
     }
 
-    pub fn refresh_ios_simulators(&mut self) -> Option<String> {
+    pub fn refresh_ios_simulators(&mut self, cert: &str) -> Option<String> {
         match devices::ios_simulators() {
-            Ok(sims) => {
+            Ok(mut sims) => {
                 let message = if sims.is_empty() {
-                    Some("No running iOS simulators".into())
+                    Some("No iOS simulators".into())
                 } else {
-                    Some(format!("{} running iOS simulator(s)", sims.len()))
+                    let booted = sims
+                        .iter()
+                        .filter(|sim| sim.state == devices::IosSimulatorState::Booted)
+                        .count();
+                    Some(format!(
+                        "{} iOS simulator(s), {} running",
+                        sims.len(),
+                        booted
+                    ))
                 };
+                devices::refresh_ios_ca_status(&mut sims, cert);
                 self.ios_simulators = sims;
+                self.system_proxy_enabled = devices::system_proxy_status().unwrap_or(false);
                 message
             }
             Err(_) => {
@@ -196,7 +211,10 @@ impl SessionVm {
                 jobs.spawn(move || devices::system_proxy(false, port))
             }
             DeviceAction::LaunchChrome => jobs.spawn(move || devices::launch_chrome(port)),
-            DeviceAction::IosSimInstallCa => jobs.spawn(move || devices::ios_sim_install_ca(&cert)),
+            DeviceAction::IosSimInstallCa(udid) => {
+                jobs.spawn(move || devices::ios_sim_install_ca(&udid, &cert))
+            }
+            DeviceAction::IosSimReboot(udid) => jobs.spawn(move || devices::ios_sim_reboot(&udid)),
             DeviceAction::AndroidSetProxy => jobs.spawn(move || devices::android_set_proxy(port)),
             DeviceAction::AndroidClearProxy => {
                 jobs.spawn(move || devices::android_clear_proxy(port))
