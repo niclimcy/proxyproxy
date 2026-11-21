@@ -77,7 +77,12 @@ pub fn show(
                     // right_to_left parent: add in reverse visual order
                     if show_help {
                         toolbar_menu(ui, ph::QUESTION, "Help", |ui| {
-                            if ui.button("About proxyproxy").clicked() {
+                            menu_width(ui, &["Setup guide", "About proxyproxy"]);
+                            if menu_item(ui, "Setup guide").clicked() {
+                                out.push(ToolbarIntent::Onboarding);
+                                ui.close();
+                            }
+                            if menu_item(ui, "About proxyproxy").clicked() {
                                 out.push(ToolbarIntent::About);
                                 ui.close();
                             }
@@ -245,7 +250,12 @@ fn compact_primary_rows(
         devices_menu(ui, ctx, port, api_port, cert, out, true);
         if show_help {
             toolbar_menu(ui, ph::QUESTION, "", |ui| {
-                if ui.button("About proxyproxy").clicked() {
+                menu_width(ui, &["Setup guide", "About proxyproxy"]);
+                if menu_item(ui, "Setup guide").clicked() {
+                    out.push(ToolbarIntent::Onboarding);
+                    ui.close();
+                }
+                if menu_item(ui, "About proxyproxy").clicked() {
                     out.push(ToolbarIntent::About);
                     ui.close();
                 }

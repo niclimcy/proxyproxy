@@ -213,6 +213,7 @@ impl CaptureVm {
             }
             ToolbarIntent::Compose
             | ToolbarIntent::About
+            | ToolbarIntent::Onboarding
             | ToolbarIntent::Session(_)
             | ToolbarIntent::Device(_) => {}
         }

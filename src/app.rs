@@ -9,6 +9,7 @@ use crate::viewmodels::{
     detail_vm::DetailVm,
     intent::{Effect, ToolbarIntent},
     network_vm::NetworkVm,
+    onboarding_vm::OnboardingVm,
     replay_vm::ReplayVm,
     rules_vm::{RulesTab, RulesVm},
     schemas_vm::SchemasVm,
@@ -59,8 +60,10 @@ struct App {
     port: u16,
     api_port: u16,
     cert: String,
+    #[allow(dead_code)]
     menu: services::app_menu::AppMenu,
     about: AboutVm,
+    onboarding: OnboardingVm,
 }
 
 impl App {
@@ -78,6 +81,7 @@ impl App {
         let repaint: Arc<dyn Repaint> = Arc::new(EguiRepaint(ctx.clone()));
         let cert = proxy::tls::cert_path().display().to_string();
         let session = SessionVm::new(store.clone(), cfg.clone());
+        let onboarding = OnboardingVm::new(cfg.clone());
         let status_text = session.restore().unwrap_or_default();
         Self {
             rx,
@@ -95,11 +99,15 @@ impl App {
             cert,
             menu,
             about: AboutVm::default(),
+            onboarding,
         }
     }
 
     fn drain(&mut self) {
         self.status.poll();
+        if self.menu.take_setup_guide_request() {
+            self.onboarding.open();
+        }
         let rules = &mut self.rules;
         self.store.pump(&self.rx, |ev| match ev {
             Event::Paused(p) => rules.pause(p),
@@ -118,6 +126,31 @@ impl App {
         }
     }
 
+    fn apply_onboarding(&mut self, intent: crate::viewmodels::intent::OnboardingIntent) {
+        use crate::viewmodels::intent::OnboardingIntent;
+        match intent {
+            OnboardingIntent::Device(action) => {
+                self.session
+                    .run_device(action, self.port, self.cert.clone(), &self.status);
+            }
+            OnboardingIntent::ImportFlows(path) => self.session.handle(
+                crate::viewmodels::intent::SessionIntent::ImportFlows(path),
+                &mut self.capture,
+                &mut self.rules,
+                &mut self.status,
+            ),
+            OnboardingIntent::Complete => {
+                self.onboarding.handle(OnboardingIntent::Complete);
+                self.session.save_config_if_changed();
+            }
+            OnboardingIntent::Skip => {
+                self.onboarding.handle(OnboardingIntent::Skip);
+                self.session.save_config_if_changed();
+            }
+            other => self.onboarding.handle(other),
+        }
+    }
+
     fn toolbar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let active_rules = self.rules.active_rule_count();
         let props = views::toolbar::Props {
@@ -128,7 +161,7 @@ impl App {
             status: &self.status.text,
             api_port: self.api_port,
             paused_breakpoints: self.rules.paused.len(),
-            show_help: !self.menu.is_native(),
+            show_help: !cfg!(target_os = "macos") && !cfg!(target_os = "windows"),
         };
         for i in views::toolbar::show(ui, ctx, &mut self.capture, props) {
             match i {
@@ -142,6 +175,7 @@ impl App {
                 }
                 ToolbarIntent::Compose => self.replay.open_compose(),
                 ToolbarIntent::About => self.about.open(),
+                ToolbarIntent::Onboarding => self.onboarding.open(),
                 other => self.capture.handle_toolbar(other),
             }
         }
@@ -191,6 +225,22 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         views::theme::sync(&ctx);
         self.drain();
+        if self.onboarding.show {
+            let flow_count = self.store.lock().flows.len();
+            for i in views::onboarding_window::show(
+                ui,
+                &ctx,
+                &mut self.onboarding,
+                self.port,
+                &self.cert,
+                &self.status.text,
+                flow_count,
+            ) {
+                self.apply_onboarding(i);
+            }
+            ctx.request_repaint_after(Duration::from_secs(1));
+            return;
+        }
         self.capture.refresh_visible();
         for i in views::shortcuts::read(&ctx) {
             let before = self.capture.selected;

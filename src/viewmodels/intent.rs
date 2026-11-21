@@ -1,5 +1,23 @@
 use super::rules_vm::RuleKind;
+use crate::domain::config::OnboardingProfile;
 use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OnboardingTarget {
+    Web,
+    Ios,
+    Android,
+}
+
+pub enum OnboardingIntent {
+    ChooseProfile(OnboardingProfile),
+    ChooseTarget(OnboardingTarget),
+    Back,
+    Device(DeviceAction),
+    ImportFlows(PathBuf),
+    Skip,
+    Complete,
+}
 
 pub enum RowIntent {
     Select(u64),
@@ -71,6 +89,7 @@ pub enum ToolbarIntent {
     Device(DeviceAction),
     Compose,
     About,
+    Onboarding,
     ClearUnpinned,
     ClearAll,
     ToggleCapture,

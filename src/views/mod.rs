@@ -4,6 +4,7 @@ pub mod breakpoint_window;
 pub mod detail;
 pub mod icon;
 pub mod network_tab;
+pub mod onboarding_window;
 pub mod replay_window;
 pub mod rules_panel;
 pub mod schemas_tab;

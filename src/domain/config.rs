@@ -6,6 +6,10 @@ use std::sync::{Arc, Mutex};
 pub struct Config {
     pub rules: Vec<Rule>,
     #[serde(default)]
+    pub onboarding_completed: bool,
+    #[serde(default)]
+    pub onboarding_profile: OnboardingProfile,
+    #[serde(default)]
     pub scope_only: bool,
     #[serde(default)]
     pub scope: Vec<String>,
@@ -30,6 +34,13 @@ pub struct Config {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum OnboardingProfile {
+    Beginner,
+    #[default]
+    Experienced,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum UpstreamMode {
     #[default]
     Off,
@@ -46,3 +57,26 @@ pub struct Upstream {
 }
 
 pub type Shared = Arc<Mutex<Config>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_deserializes_without_onboarding_fields() {
+        let cfg: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
+        assert!(!cfg.onboarding_completed);
+        assert_eq!(cfg.onboarding_profile, OnboardingProfile::Experienced);
+    }
+
+    #[test]
+    fn config_roundtrips_onboarding_profile() {
+        let mut cfg = Config::default();
+        cfg.onboarding_completed = true;
+        cfg.onboarding_profile = OnboardingProfile::Beginner;
+        let json = serde_json::to_string(&cfg).unwrap();
+        let restored: Config = serde_json::from_str(&json).unwrap();
+        assert!(restored.onboarding_completed);
+        assert_eq!(restored.onboarding_profile, OnboardingProfile::Beginner);
+    }
+}

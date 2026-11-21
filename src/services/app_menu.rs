@@ -16,8 +16,21 @@ impl AppMenu {
         Self(install(hwnd, icon_rgba, icon_size))
     }
 
-    pub fn is_native(&self) -> bool {
-        self.0.is_some()
+    pub fn take_setup_guide_request(&self) -> bool {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            let mut found = false;
+            while let Ok(event) = muda::MenuEvent::receiver().try_recv() {
+                if event.id == "proxyproxy.setup-guide" {
+                    found = true;
+                }
+            }
+            found
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            false
+        }
     }
 }
 
@@ -37,7 +50,7 @@ fn metadata(icon: Option<muda::Icon>) -> muda::AboutMetadata {
 
 #[cfg(target_os = "macos")]
 fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<Inner> {
-    use muda::{Icon, Menu, PredefinedMenuItem, Submenu};
+    use muda::{Icon, Menu, MenuItem, PredefinedMenuItem, Submenu};
     let menu = Menu::new();
     let icon = Icon::from_rgba(icon_rgba, icon_size, icon_size).ok();
     let meta = || metadata(icon.clone());
@@ -82,10 +95,11 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
     window.set_as_windows_menu_for_nsapp();
 
     let help = Submenu::new("Help", true);
-    help.append(&PredefinedMenuItem::about(
-        Some("About proxyproxy"),
-        Some(meta()),
-    ))
+    help.append_items(&[
+        &MenuItem::with_id("proxyproxy.setup-guide", "Setup Guide", true, None),
+        &PredefinedMenuItem::separator(),
+        &PredefinedMenuItem::about(Some("About proxyproxy"), Some(meta())),
+    ])
     .ok()?;
     menu.append(&help).ok()?;
     help.set_as_help_menu_for_nsapp();
@@ -96,15 +110,16 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
 
 #[cfg(target_os = "windows")]
 fn install(hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<Inner> {
-    use muda::{Icon, Menu, PredefinedMenuItem, Submenu};
+    use muda::{Icon, Menu, MenuItem, PredefinedMenuItem, Submenu};
     let hwnd = hwnd?;
     let menu = Menu::new();
     let icon = Icon::from_rgba(icon_rgba, icon_size, icon_size).ok();
     let help = Submenu::new("Help", true);
-    help.append(&PredefinedMenuItem::about(
-        Some("About proxyproxy"),
-        Some(metadata(icon)),
-    ))
+    help.append_items(&[
+        &MenuItem::with_id("proxyproxy.setup-guide", "Setup Guide", true, None),
+        &PredefinedMenuItem::separator(),
+        &PredefinedMenuItem::about(Some("About proxyproxy"), Some(metadata(icon))),
+    ])
     .ok()?;
     menu.append(&help).ok()?;
     // SAFETY: hwnd belongs to the live app window and the menu outlives it (held by App)
