@@ -9,7 +9,7 @@ use egui_phosphor::regular as ph;
 pub fn show(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    vm: &CaptureVm,
+    vm: &mut CaptureVm,
     diff_base: Option<u64>,
     port: u16,
 ) -> Vec<RowIntent> {
@@ -37,9 +37,22 @@ pub fn show(
                         ui.label(muted(format!("Proxy is ready on 127.0.0.1:{port}.")));
                         ui.add_space(16.0);
                         ui.horizontal(|ui| {
-                            let copied = ui.add(action_button(ico(ph::COPY, "Copy test command"), accent())).clicked();
+                            let copied = vm.test_command_copied();
                             if copied {
+                                ctx.request_repaint();
+                            }
+                            let (label, color) = if copied {
+                                (ico(ph::CHECK, "Copied"), success())
+                            } else {
+                                (ico(ph::COPY, "Copy test command"), accent())
+                            };
+                            let response =
+                                action_button_sized(ui, &label, color, 188.0)
+                                    .on_hover_text(format!("Copy: proxyproxy run --port {port} -- curl https://example.com"));
+                            let clicked = response.clicked();
+                            if clicked {
                                 ctx.copy_text(format!("proxyproxy run --port {port} -- curl https://example.com"));
+                                vm.mark_test_command_copied();
                             }
                             ui.label(muted("or use Capture → Set system proxy"));
                         });
@@ -92,7 +105,7 @@ pub fn show(
                     };
                     ui.label(overline(format!("{}{arrow}", ALL_COLS[c].to_uppercase())));
                 });
-                let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Click to sort");
+                let r = r.on_hover_text("Click to sort");
                 if r.clicked() {
                     out.push(RowIntent::Sort(c));
                 }

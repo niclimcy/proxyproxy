@@ -220,7 +220,13 @@ impl eframe::App for App {
             let e = self.detail.handle(i);
             self.apply(e);
         }
-        for i in views::table::show(ui, &ctx, &self.capture, self.detail.diff_base, self.port) {
+        for i in views::table::show(
+            ui,
+            &ctx,
+            &mut self.capture,
+            self.detail.diff_base,
+            self.port,
+        ) {
             let before = self.capture.selected;
             let e = self.capture.handle_row(i, &mut self.status);
             if self.capture.selected != before {

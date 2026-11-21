@@ -48,7 +48,7 @@ pub fn show(
             } else {
                 (ph::RECORD, format!("Capturing · :{port}"), success(), format!("Capturing on 127.0.0.1:{port}. Click to pause"))
             };
-            let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).corner_radius(RADIUS_PILL)));
+            let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
             if pill_resp.on_hover_text(tip).clicked() {
                 out.push(ToolbarIntent::ToggleCapture);
             }
@@ -120,12 +120,12 @@ pub fn show(
                 ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()).size(FS_CAPTION));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.checkbox(&mut vm.follow, "Follow");
+                checkbox(ui, &mut vm.follow, "Follow");
                 let hidden = vm.hidden_cols();
                 toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
                     for c in ALL_COLS.iter().skip(1) {
                         let mut on = !hidden.iter().any(|h| h == c);
-                        if ui.checkbox(&mut on, *c).changed() {
+                        if checkbox(ui, &mut on, c).changed() {
                             out.push(ToolbarIntent::SetColumn(c, on));
                         }
                     }
@@ -168,11 +168,11 @@ fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<Tool
                 }
             });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.checkbox(&mut vm.follow, "Follow");
+            checkbox(ui, &mut vm.follow, "Follow");
             toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
                 for c in ALL_COLS.iter().skip(1) {
                     let mut on = !vm.hidden_cols().iter().any(|h| h == c);
-                    if ui.checkbox(&mut on, *c).changed() {
+                    if checkbox(ui, &mut on, c).changed() {
                         out.push(ToolbarIntent::SetColumn(c, on));
                     }
                 }
@@ -210,7 +210,7 @@ fn compact_primary_rows(
         } else {
             (ph::RECORD, format!("Capturing · :{port}"), success(), format!("Capturing on 127.0.0.1:{port}. Click to pause"))
         };
-        let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).corner_radius(RADIUS_PILL)));
+        let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
         if pill_resp.on_hover_text(tip).clicked() {
             out.push(ToolbarIntent::ToggleCapture);
         }
@@ -316,6 +316,20 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
         ph::FOLDER_OPEN,
         if compact { "" } else { "Session" },
         |ui| {
+            menu_width(
+                ui,
+                &[
+                    "New session",
+                    "Open session…",
+                    "Save session as…",
+                    "Import HAR / Charles JSON…",
+                    "Export HAR (visible)",
+                    "Export CSV (visible)",
+                    "Export rules…",
+                    "Import rules…",
+                    "Clear unpinned requests",
+                ],
+            );
             let mut act = None::<u8>;
             for (i, l) in [
                 "New session",
@@ -336,7 +350,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
             {
                 if *l == "-" {
                     ui.separator();
-                } else if ui.button(*l).clicked() {
+                } else if menu_item(ui, *l).clicked() {
                     act = Some(i as u8);
                     ui.close();
                 }
@@ -401,8 +415,28 @@ fn devices_menu(
         ph::DEVICE_MOBILE,
         if compact { "" } else { "Capture" },
         |ui| {
+            menu_width(
+                ui,
+                &[
+                    "This computer",
+                    "Trust CA on this computer",
+                    "Set system proxy",
+                    "Clear system proxy",
+                    "Launch Chrome with proxy (clean profile)",
+                    "Terminal & scripts",
+                    "Copy `proxyproxy run -- <cmd>` hint",
+                    "Copy shell env snippet",
+                    "Devices",
+                    "iOS Simulator: install CA",
+                    "Android: set proxy (adb)",
+                    "Android: clear proxy",
+                    "Android: push CA",
+                    "Copy CA path",
+                    "Copy REST API URL (127.0.0.1:00000)",
+                ],
+            );
             let item = |ui: &mut egui::Ui, label: &str| {
-                let c = ui.button(label).clicked();
+                let c = menu_item(ui, label).clicked();
                 if c {
                     ui.close();
                 }

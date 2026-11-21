@@ -24,7 +24,12 @@ Use `tint(color, Tint::Subtle|Normal|Strong)` for washes, not `gamma_multiply`.
 
 ## Components
 
-`card`, `panel_frame`, `pill`, `badge` (table cells), `status_dot`, `chip` (filter tab), `segmented`, `list_row` (sidebar), `capsule` (grouped toolbar actions), `sidebar_toggle`, `action_button`, `icon_button`, `toolbar_menu`, `flat`, `muted`, `overline`; `body::kv_table` for key/value lists. Shortcut hints use `cmd()` (⌘ on macOS, Ctrl+ elsewhere).
+`card`, `panel_frame`, `pill`, `badge` (table cells), `status_dot`, `chip` (filter tab), `segmented`, `list_row` (sidebar), `capsule` (grouped toolbar actions), `sidebar_toggle`, `action_button`, `icon_button`, `toolbar_menu`, `menu_item`, `menu_width`, `flat`, `muted`, `overline`; `body::kv_table` for key/value lists. Shortcut hints use `cmd()` (⌘ on macOS, Ctrl+ elsewhere).
+
+Button hierarchy:
+- `action_button` is for the primary or destructive action in a view. It uses a strong tint and coloured border.
+- `icon_button` and `flat` are for low-emphasis actions that should not compete with primary actions.
+- `chip` is for multi-select filters and `segmented` is for mutually exclusive tabs. Both reserve stable geometry across selected, hover, and pressed states.
 
 ## Accessibility rules
 

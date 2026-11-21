@@ -373,7 +373,7 @@ fn diff_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow, out: &mut Vec<DetailI
     };
     ui.horizontal(|ui| {
         ui.label(muted(format!("Comparing #{} → #{}", base.id, f.id)));
-        ui.checkbox(&mut vm.diff_only_changes, "Only changes");
+        checkbox(ui, &mut vm.diff_only_changes, "Only changes");
         if vm.diff_base.is_some() && ui.small_button("Clear base").clicked() {
             out.push(DetailIntent::ClearBase);
         }

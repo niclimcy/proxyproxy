@@ -71,7 +71,7 @@ pub fn show(ctx: &egui::Context, vm: &mut ReplayVm) -> Vec<u64> {
                                 fmt_size(s.response.body.len())
                             )));
                             if d.prev.is_some() {
-                                ui.checkbox(&mut show_diff, "Diff against original response");
+                                checkbox(ui, &mut show_diff, "Diff against original response");
                             }
                         });
                         if show_diff {

@@ -5,6 +5,7 @@ use crate::domain::filter::Query;
 use crate::domain::flow::Flow;
 use crate::services::flow_store::FlowStore;
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 pub const ALL_COLS: [&str; 8] = [
     "#", "App", "Method", "Status", "Host", "Path", "Time", "Size",
@@ -28,6 +29,7 @@ pub struct CaptureVm {
     pub show_sidebar: bool,
     pub follow: bool,
     pub focus_search: bool,
+    test_command_copied_until: Option<Instant>,
 }
 
 fn sort_cmp(col: usize, x: &Flow, y: &Flow) -> std::cmp::Ordering {
@@ -60,7 +62,22 @@ impl CaptureVm {
             show_sidebar: true,
             follow: true,
             focus_search: false,
+            test_command_copied_until: None,
         }
+    }
+
+    pub fn mark_test_command_copied(&mut self) {
+        self.test_command_copied_until = Some(Instant::now() + Duration::from_secs(2));
+    }
+
+    pub fn test_command_copied(&mut self) -> bool {
+        let copied = self
+            .test_command_copied_until
+            .is_some_and(|until| Instant::now() < until);
+        if !copied {
+            self.test_command_copied_until = None;
+        }
+        copied
     }
 
     pub fn refresh_visible(&mut self) {
@@ -344,6 +361,14 @@ mod tests {
     fn ids(vm: &CaptureVm) -> Vec<u64> {
         let st = vm.store.lock();
         vm.visible.iter().map(|&i| st.flows[i].id).collect()
+    }
+
+    #[test]
+    fn test_command_copy_feedback_is_visible_after_copy() {
+        let (mut vm, _) = setup(0);
+        assert!(!vm.test_command_copied());
+        vm.mark_test_command_copied();
+        assert!(vm.test_command_copied());
     }
 
     #[test]
