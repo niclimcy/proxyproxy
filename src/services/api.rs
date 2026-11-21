@@ -4,11 +4,11 @@ use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 
-fn summary(f: &Flow) -> Value {
+pub fn summary(f: &Flow) -> Value {
     json!({"id": f.id, "method": f.method, "url": f.url(), "status": f.status, "ms": f.duration_ms, "size": f.res_size(), "app": f.app_label(), "tag": f.tag})
 }
 
-fn detail(f: &Flow) -> Value {
+pub fn detail(f: &Flow) -> Value {
     let m = |m: &crate::domain::flow::Message| json!({"headers": m.headers, "body": m.text()});
     let mut v = summary(f);
     v["request"] = m(&f.request);
@@ -69,7 +69,7 @@ fn handle(store: &FlowStore, target: &str) -> (u16, Value) {
 }
 
 // Read-only JSON API on loopback so scripts and agents can query captured flows.
-pub fn serve(port: u16, store: FlowStore) {
+pub fn serve(port: u16, store: FlowStore, cfg: crate::domain::config::Shared) {
     let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) else {
         return;
     };
@@ -77,21 +77,71 @@ pub fn serve(port: u16, store: FlowStore) {
         for stream in listener.incoming().flatten() {
             let mut stream = stream;
             let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+            let mut request = Vec::new();
             let mut buf = [0u8; 4096];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            let req = String::from_utf8_lossy(&buf[..n]);
+            let mut header_end = None;
+            let mut content_length = 0usize;
+            loop {
+                let n = match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => n,
+                };
+                request.extend_from_slice(&buf[..n]);
+                if header_end.is_none() {
+                    if let Some(i) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        header_end = Some(i + 4);
+                        let header = String::from_utf8_lossy(&request[..i]);
+                        content_length = header
+                            .lines()
+                            .filter_map(|line| line.split_once(':'))
+                            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                            .and_then(|(_, value)| value.trim().parse().ok())
+                            .unwrap_or(0);
+                    }
+                }
+                if let Some(end) = header_end {
+                    if request.len() >= end + content_length {
+                        break;
+                    }
+                } else if n < buf.len() {
+                    break;
+                }
+            }
+            let req = String::from_utf8_lossy(&request);
             let line = req.lines().next().unwrap_or("");
             let mut it = line.split(' ');
             let (method, target) = (it.next().unwrap_or(""), it.next().unwrap_or("/"));
-            let (code, body) = if method == "GET" {
-                handle(&store, target)
+            let (code, content_type, body) = if method == "GET" {
+                let (code, body) = handle(&store, target);
+                (code, "application/json", serde_json::to_string_pretty(&body).unwrap_or_default())
+            } else if method == "POST" && target.split('?').next() == Some("/mcp") {
+                let body_start = req.find("\r\n\r\n").map(|i| i + 4).unwrap_or(req.len());
+                let body_end = body_start.saturating_add(content_length).min(request.len());
+                let response = if let Ok(request) = serde_json::from_slice::<Value>(&request[body_start..body_end]) {
+                    if matches!(request.get("method").and_then(Value::as_str), Some("notifications/initialized")) {
+                        (202, "application/json", String::new())
+                    } else {
+                        let result = crate::services::mcp::handle(&store, &cfg, request);
+                        match result {
+                            Some(result) => (200, "application/json", serde_json::to_string(&result).unwrap_or_default()),
+                            None => (202, "application/json", String::new()),
+                        }
+                    }
+                } else {
+                    (400, "application/json", serde_json::to_string(&json!({
+                        "jsonrpc": "2.0",
+                        "id": Value::Null,
+                        "error": {"code": -32700, "message": "Parse error"}
+                    })).unwrap_or_default())
+                };
+                response
             } else {
-                (405, json!({"error": "GET only"}))
+                (405, "application/json", serde_json::to_string(&json!({"error": "method not allowed"})).unwrap_or_default())
             };
-            let body = serde_json::to_string_pretty(&body).unwrap_or_default();
             let _ = write!(
                 stream,
-                "HTTP/1.1 {code} OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                "HTTP/1.1 {code} {}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                if code == 200 { "OK" } else if code == 202 { "Accepted" } else if code == 400 { "Bad Request" } else if code == 404 { "Not Found" } else if code == 405 { "Method Not Allowed" } else { "OK" },
                 body.len()
             );
         }

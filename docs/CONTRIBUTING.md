@@ -17,6 +17,8 @@ To try it by hand:
 cargo run -- 19090
 curl -x http://127.0.0.1:19090 http://example.com/
 curl -s http://127.0.0.1:19091/flows     # REST API, port + 1
+curl -s -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://127.0.0.1:19091/mcp
+proxyproxy mcp --port 19090               # MCP stdio bridge for a running instance
 ```
 
 After changing `proxy/` or `views/`, check HTTP and HTTPS capture, a breakpoint edit, replay, mute and scope, and HAR and Charles import.

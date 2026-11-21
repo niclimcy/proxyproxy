@@ -240,7 +240,7 @@ pub fn run(port: u16) -> eframe::Result {
     let cfg: Shared = Arc::new(Mutex::new(services::config_store::load()));
     let proxy_cfg = cfg.clone();
     let store = FlowStore::default();
-    services::api::serve(api_port, store.clone());
+    services::api::serve(api_port, store.clone(), cfg.clone());
 
     eframe::run_native(
         "proxyproxy",

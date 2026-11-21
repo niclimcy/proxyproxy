@@ -8,6 +8,7 @@ pub mod exporter;
 pub mod flow_store;
 pub mod graphql;
 pub mod importer;
+pub mod mcp;
 pub mod replay;
 pub mod schemas;
 pub mod session;

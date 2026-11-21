@@ -144,6 +144,10 @@ impl FlowStore {
         self.0.lock().unwrap()
     }
 
+    pub fn push(&self, flow: crate::domain::flow::Flow) {
+        self.0.lock().unwrap().push(flow);
+    }
+
     // `other` runs under the store lock: it must not call back into the store
     pub fn pump(&self, rx: &Receiver<Event>, mut other: impl FnMut(Event)) {
         let mut st = self.lock();

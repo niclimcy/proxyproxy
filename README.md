@@ -42,10 +42,12 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 - TLS key log in NSS format for Wireshark. `proxyproxy run` also honours `SSLKEYLOGFILE`.
 - Export HAR, CSV and rules JSON. Import HAR and Charles JSON sessions (`.chlsj`).
 - REST API: `http://127.0.0.1:<port+1>/flows?q=&limit=`, `/flows/{id}`, `/har`.
+- MCP: HTTP JSON-RPC at `http://127.0.0.1:<port+1>/mcp`, or stdio with `proxyproxy mcp --port 9090`.
+  - Resources: captured traffic and individual flows.
+  - Tools: list/get flows, replay requests, list/add/delete rules, and export HAR.
 
 ## WIP
 
-- MCP connector for exposing proxy data and actions to MCP clients.
 - Settings UI for managing application configuration.
 - Customizable keyboard shortcuts.
 - DNS overrides and upstream proxy support for passthrough CONNECT and WebSocket traffic.

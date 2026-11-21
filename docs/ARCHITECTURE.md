@@ -69,6 +69,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `replay.rs` | send a request without going through the proxy |
 | `devices.rs` | system proxy, CA trust, Chrome, iOS simulator, adb |
 | `api.rs` | read-only REST API on port + 1 |
+| `mcp.rs` | MCP JSON-RPC resources/tools over HTTP and stdio |
 
 ### `proxy/`
 | File | Contents |

@@ -5,6 +5,29 @@ mod services;
 mod viewmodels;
 mod views;
 
+fn run_mcp(args: &[String]) -> ! {
+    let mut port = 9090u16;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--port" | "-p" => {
+                port = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(port);
+                i += 2;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    match services::mcp::serve_stdio(port.wrapping_add(1)) {
+        Ok(()) => std::process::exit(0),
+        Err(error) => {
+            eprintln!("proxyproxy mcp: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn run_cli(args: &[String]) -> ! {
     let mut port = 9090u16;
     let mut i = 0;
@@ -82,6 +105,9 @@ fn run_cli(args: &[String]) -> ! {
 fn main() -> eframe::Result {
     tracing_subscriber::fmt::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(|s| s.as_str()) == Some("mcp") {
+        run_mcp(&args[1..]);
+    }
     if args.first().map(|s| s.as_str()) == Some("run") {
         run_cli(&args[1..]);
     }
