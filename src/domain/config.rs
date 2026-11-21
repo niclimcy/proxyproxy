@@ -34,6 +34,7 @@ pub enum UpstreamMode {
     #[default]
     Off,
     Manual,
+    Socks,
     Pac,
 }
 

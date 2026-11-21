@@ -37,7 +37,7 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
   - Protobuf: load `FileDescriptorSet` files in the Schemas tab of the Rules window. Bodies, including gRPC framing, are decoded with field names.
   - GraphQL: operation name and type, formatted query, variables, response data and errors.
 - DNS overrides: map hosts (globs allowed) to IPs.
-- Upstream proxy: a manual proxy or a PAC file.
+- Upstream proxy: a manual HTTP or SOCKS5 proxy, or a PAC file.
 - Custom CA: import your own certificate and key, then restart.
 - TLS key log in NSS format for Wireshark. `proxyproxy run` also honours `SSLKEYLOGFILE`.
 - Export HAR, CSV and rules JSON. Import HAR and Charles JSON sessions (`.chlsj`).
@@ -49,7 +49,6 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 - Settings UI for managing application configuration.
 - Customizable keyboard shortcuts.
 - DNS overrides and upstream proxy support for passthrough CONNECT and WebSocket traffic.
-- SOCKS proxy support.
 
 ## Notes
 

@@ -49,7 +49,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 |---|---|
 | `flow.rs` | `Flow`, `Message`, `WsMsg`, `Event`, breakpoint types |
 | `rule.rs` | `Rule` and `Action` (data, label, description) |
-| `config.rs` | `Config`, `Upstream`, `UpstreamMode`, `Shared` |
+| `config.rs` | `Config`, `Upstream`, `UpstreamMode` (HTTP, SOCKS5 or PAC), `Shared` |
 | `policy.rs` | `Config::captured`, `should_decrypt`, `matching`; URL and glob matching |
 | `filter.rs` | search query parser |
 | `mime.rs` | file extension to content type |

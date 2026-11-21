@@ -30,13 +30,19 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
 
         ui.separator();
         ui.label(RichText::new("Upstream proxy").strong());
-        segmented(ui, &mut cfg.upstream.mode, &[(UpstreamMode::Off, "Direct"), (UpstreamMode::Manual, "Manual"), (UpstreamMode::Pac, "PAC file")]);
+        segmented(ui, &mut cfg.upstream.mode, &[(UpstreamMode::Off, "Direct"), (UpstreamMode::Manual, "HTTP"), (UpstreamMode::Socks, "SOCKS5"), (UpstreamMode::Pac, "PAC file")]);
         match cfg.upstream.mode {
             UpstreamMode::Off => {}
             UpstreamMode::Manual => {
                 ui.horizontal(|ui| {
                     ui.label("Proxy");
                     ui.add(TextEdit::singleline(&mut cfg.upstream.url).desired_width(280.0).hint_text("host:port or http://user:pass@host:port"));
+                });
+            }
+            UpstreamMode::Socks => {
+                ui.horizontal(|ui| {
+                    ui.label("Proxy");
+                    ui.add(TextEdit::singleline(&mut cfg.upstream.url).desired_width(280.0).hint_text("host:port or socks5://user:pass@host:port"));
                 });
             }
             UpstreamMode::Pac => {
