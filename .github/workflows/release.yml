@@ -108,7 +108,43 @@ jobs:
 
           chmod +x dist/ProxyProxy.app/Contents/MacOS/proxyproxy
           ditto -c -k --sequesterRsrc --keepParent dist/ProxyProxy.app dist/proxyproxy-macos-universal.zip
-          hdiutil create -volname proxyproxy -srcfolder dist/ProxyProxy.app -ov -format UDZO dist/proxyproxy-macos-universal.dmg
+          DMG_DIR="$(mktemp -d)"
+          cp -R dist/ProxyProxy.app "$DMG_DIR/"
+          ln -s /Applications "$DMG_DIR/Applications"
+          mkdir -p "$DMG_DIR/.background"
+          DMG_BG_DIR="$(mktemp -d)"
+          qlmanage -t -s 600 -o "$DMG_BG_DIR" assets/dmg-background.svg >/dev/null
+          DMG_BACKGROUND="$(find "$DMG_BG_DIR" -name '*.png' -print -quit)"
+          cp "$DMG_BACKGROUND" "$DMG_DIR/.background/dmg-background.png"
+
+          RW_DMG="dist/proxyproxy-macos-universal-rw.dmg"
+          hdiutil create -volname proxyproxy -size 200m -fs HFS+ -srcfolder "$DMG_DIR" -ov -format UDRW "$RW_DMG"
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach -nobrowse -mountpoint "$MOUNT_DIR" "$RW_DMG"
+
+          osascript <<'APPLESCRIPT'
+          tell application "Finder"
+            tell disk "proxyproxy"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set the bounds of container window to {100, 100, 700, 500}
+              set viewOptions to icon view options of container window
+              set arrangement of viewOptions to not arranged
+              set icon size of viewOptions to 128
+              set background picture of viewOptions to file ".background:dmg-background.png"
+              set position of item "ProxyProxy.app" to {140, 220}
+              set position of item "Applications" to {460, 220}
+              update without registering applications
+              delay 2
+              close
+            end tell
+          end tell
+          APPLESCRIPT
+
+          hdiutil detach "$MOUNT_DIR"
+          hdiutil convert "$RW_DMG" -ov -format UDZO -o dist/proxyproxy-macos-universal.dmg
 
       - uses: actions/upload-artifact@v7.0.2
         with:
