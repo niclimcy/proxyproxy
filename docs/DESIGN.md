@@ -32,6 +32,12 @@ Button hierarchy:
 - Tertiary: icon-only `icon_button` and `flat` stay borderless for dismiss/copy glyphs that should not compete with other actions.
 - `chip` is for multi-select filters and `segmented` is for mutually exclusive tabs. Both reserve stable geometry across selected, hover, and pressed states.
 
+## Hover affordances
+
+This is a desktop app, so no pointer (hand) cursor anywhere; keep the default arrow. Show hover with a fill change instead, and with a small cue where a fill doesn't fit:
+- Sortable table headers show a `CARET_UP_DOWN` glyph on hover while unsorted; the active column keeps its `▲`/`▼`.
+- App icons in the flow table ease up to 1.25× on hover (about 0.12s) rather than snapping. The sidebar does not zoom.
+
 ## Accessibility rules
 
 - Text colours must reach 4.5:1 on every surface and on their own tint. `theme.rs` tests enforce this for both palettes. Changing a colour means the tests must still pass.

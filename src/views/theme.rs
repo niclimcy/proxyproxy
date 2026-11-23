@@ -172,7 +172,8 @@ fn visuals(p: &Palette) -> egui::Visuals {
     v.hyperlink_color = p.accent;
     v.warn_fg_color = p.warning;
     v.error_fg_color = p.danger;
-    let sel = if p.dark { 0.45 } else { 0.28 };
+    // light enough that badges in a selected row keep their own tint; rows add an edge bar
+    let sel = if p.dark { 0.26 } else { 0.18 };
     v.selection.bg_fill = p.accent.gamma_multiply(sel);
     v.selection.stroke = Stroke::new(1.5, p.fg); // also colours text in selected rows
     let r = CornerRadius::same(RADIUS);

@@ -6,6 +6,47 @@ use eframe::egui::{self, Frame, Margin, RichText};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
 
+const APP: usize = 1;
+const PATH_MIN: f32 = 160.0;
+
+fn fixed_width(name: &str) -> f32 {
+    match name {
+        "#" => 76.0,
+        "Method" => 84.0,
+        "Status" | "Time" => 72.0,
+        _ => 80.0,
+    }
+}
+
+/// Caps for the resizable columns so Path keeps `PATH_MIN` when the table is narrow.
+struct ColumnWidths {
+    show_app: bool,
+    app_max: f32,
+    host_max: f32,
+}
+
+impl ColumnWidths {
+    fn fit(ui: &egui::Ui, cols: &[usize]) -> Self {
+        let gap = ui.spacing().item_spacing.x;
+        let fixed: f32 = cols
+            .iter()
+            .map(|&c| ALL_COLS[c])
+            .filter(|n| !matches!(*n, "App" | "Host" | "Path"))
+            .map(|n| fixed_width(n) + gap)
+            .sum();
+        let flexible = ui.available_width() - fixed - 3.0 * gap;
+        // App is the least useful column, so it goes first when space runs out
+        let show_app = flexible >= 480.0;
+        let app_max = if show_app { (flexible * 0.18).max(60.0) } else { 0.0 };
+        let host_max = (flexible - PATH_MIN - app_max).max(90.0);
+        Self {
+            show_app,
+            app_max,
+            host_max,
+        }
+    }
+}
+
 pub fn show(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
@@ -50,7 +91,7 @@ pub fn show(
                                 ctx.copy_text(command);
                                 out.push(RowIntent::TestCommandCopied);
                             }
-                            ui.label(muted("or use Capture → Set system proxy"));
+                            ui.label(muted("or use Connect → Enable system proxy"));
                         });
                         ui.add_space(12.0);
                         ui.label(muted("The first request will appear here. Select it to inspect the request and response."));
@@ -79,31 +120,32 @@ pub fn show(
         }
         ui.style_mut().interaction.selectable_labels = false;
         ui.style_mut().interaction.multi_widget_text_select = false;
+        let widths = ColumnWidths::fit(ui, &cols);
+        let cols: Vec<usize> = cols.into_iter().filter(|&c| c != APP || widths.show_app).collect();
+        // the dot only stands in for the status badge when that column is hidden
+        let status_dot_on = !cols.iter().any(|&c| ALL_COLS[c] == "Status");
         let mut tb = TableBuilder::new(ui).striped(true).sense(egui::Sense::click()).cell_layout(egui::Layout::left_to_right(egui::Align::Center)).stick_to_bottom(follow);
         for &c in &cols {
             tb = tb.column(match ALL_COLS[c] {
-                "#" => Column::exact(92.0),
-                "App" => Column::initial(110.0).resizable(true).clip(true),
-                "Method" => Column::exact(84.0),
-                "Status" => Column::exact(72.0),
-                "Host" => Column::initial(210.0).resizable(true).clip(true),
-                "Path" => Column::remainder().clip(true),
-                "Time" => Column::exact(72.0),
-                _ => Column::exact(80.0),
+                "App" => Column::initial(110.0).range(60.0..=widths.app_max).resizable(true).clip(true),
+                "Host" => Column::initial(210.0).range(90.0..=widths.host_max).resizable(true).clip(true),
+                "Path" => Column::remainder().at_least(PATH_MIN).clip(true),
+                name => Column::exact(fixed_width(name)).clip(true),
             });
         }
         tb.header(HIT, |mut h| {
             for &c in &cols {
                 let (_, r) = h.col(|ui| {
+                    let hovered = ui.rect_contains_pointer(ui.max_rect());
                     let arrow = match sort {
-                        Some((sc, asc)) if sc == c => if asc { " ▲" } else { " ▼" },
-                        _ => "",
+                        Some((sc, asc)) if sc == c => (if asc { " ▲" } else { " ▼" }).to_string(),
+                        // hover hint that the column is sortable, in place of a pointer cursor
+                        _ if hovered => format!(" {}", egui_phosphor::regular::CARET_UP_DOWN),
+                        _ => String::new(),
                     };
                     ui.label(overline(format!("{}{arrow}", ALL_COLS[c].to_uppercase())));
                 });
-                let r = r
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Click to sort");
+                let r = r.on_hover_text("Click to sort");
                 if r.clicked() {
                     out.push(RowIntent::Sort(c));
                 }
@@ -113,11 +155,21 @@ pub fn show(
             let st = vm.store.lock();
             body.rows(HIT, vm.visible.len(), |mut row| {
                 let f = &st.flows[vm.visible[row.index()]];
-                row.set_selected(vm.selected == Some(f.id));
+                let selected = vm.selected == Some(f.id);
+                row.set_selected(selected);
                 for &c in &cols {
                     row.col(|ui| match ALL_COLS[c] {
                         "#" => {
-                            status_dot(ui, f.status.map(status_color).unwrap_or_else(fg_muted));
+                            if selected {
+                                let r = ui.max_rect();
+                                let bar = egui::Rect::from_min_max(r.left_top(), egui::pos2(r.left() + 3.0, r.bottom()));
+                                ui.painter().rect_filled(bar, 1.5, accent());
+                            }
+                            // room for the selection bar, kept on every row so ids don't shift
+                            ui.add_space(4.0);
+                            if status_dot_on {
+                                status_dot(ui, f.status.map(status_color).unwrap_or_else(fg_muted));
+                            }
                             if let Some(i) = f.color {
                                 ui.label(RichText::new(ph::CIRCLE).color(tag_colors()[i as usize % 5].1).size(FS_CAPTION));
                             }
