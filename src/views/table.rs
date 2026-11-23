@@ -105,7 +105,9 @@ pub fn show(
                     };
                     ui.label(overline(format!("{}{arrow}", ALL_COLS[c].to_uppercase())));
                 });
-                let r = r.on_hover_text("Click to sort");
+                let r = r
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Click to sort");
                 if r.clicked() {
                     out.push(RowIntent::Sort(c));
                 }

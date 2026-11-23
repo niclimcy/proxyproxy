@@ -19,6 +19,7 @@ pub fn show(
 ) -> Vec<RuleIntent> {
     let mut out = vec![];
     let mut open = vm.show;
+    let mut close = false;
     egui::Panel::right("rules")
         .resizable(open)
         .default_size(440.0)
@@ -27,6 +28,14 @@ pub fn show(
         .show_collapsible(ui, &mut open, |ui| {
             ui.horizontal(|ui| {
                 ui.label(overline("RULES & SCOPE"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if icon_button(ui, ph::X, "", true)
+                        .on_hover_text("Close")
+                        .clicked()
+                    {
+                        close = true;
+                    }
+                });
             });
             segmented(
                 ui,
@@ -50,7 +59,7 @@ pub fn show(
                     t @ (RulesTab::Schemas | RulesTab::Network) => tab_body(ui, t),
                 });
         });
-    vm.show = open;
+    vm.show = open && !close;
     out
 }
 

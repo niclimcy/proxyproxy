@@ -783,7 +783,7 @@ pub fn list_row(
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_w.max(0.0));
     let g = p.layout_job(job);
     p.galley(egui::pos2(x, rect.center().y - g.size().y / 2.0), g, ink);
-    resp
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Compact monospace badge for table cells (method, status).
