@@ -212,6 +212,10 @@ fn respond(stream: &mut impl Write, code: u16, body: &str) {
     );
 }
 
+pub fn port_for(proxy_port: u16) -> u16 {
+    proxy_port.wrapping_add(1)
+}
+
 // Loopback JSON API: read-only REST for captured flows, plus `POST /mcp`, which can also
 // replay requests and edit rules.
 pub fn serve(port: u16, store: FlowStore, cfg: Shared) {

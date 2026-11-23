@@ -5,21 +5,20 @@ mod services;
 mod viewmodels;
 mod views;
 
-fn run_mcp(args: &[String]) -> ! {
+// Parses leading `--port N` flags; returns the port and the index of the first other argument.
+fn port_flag(args: &[String]) -> (u16, usize) {
     let mut port = 9090u16;
     let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--port" | "-p" => {
-                port = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(port);
-                i += 2;
-            }
-            _ => {
-                i += 1;
-            }
-        }
+    while let Some("--port" | "-p") = args.get(i).map(String::as_str) {
+        port = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(port);
+        i += 2;
     }
-    match services::mcp::serve_stdio(port.wrapping_add(1)) {
+    (port, i)
+}
+
+fn run_mcp(args: &[String]) -> ! {
+    let (port, _) = port_flag(args);
+    match services::mcp::serve_stdio(services::api::port_for(port)) {
         Ok(()) => std::process::exit(0),
         Err(error) => {
             eprintln!("proxyproxy mcp: {error}");
@@ -29,20 +28,9 @@ fn run_mcp(args: &[String]) -> ! {
 }
 
 fn run_cli(args: &[String]) -> ! {
-    let mut port = 9090u16;
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--port" | "-p" => {
-                port = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(port);
-                i += 2;
-            }
-            "--" => {
-                i += 1;
-                break;
-            }
-            _ => break,
-        }
+    let (port, mut i) = port_flag(args);
+    if args.get(i).map(String::as_str) == Some("--") {
+        i += 1;
     }
     let Some(cmd) = args.get(i) else {
         eprintln!("usage: proxyproxy run [--port N] -- <command> [args...]");

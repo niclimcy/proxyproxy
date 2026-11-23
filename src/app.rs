@@ -295,7 +295,7 @@ impl eframe::App for App {
 }
 
 pub fn run(port: u16) -> eframe::Result {
-    let api_port = port.wrapping_add(1);
+    let api_port = services::api::port_for(port);
     let (tx, rx) = channel();
     let cfg: Shared = Arc::new(Mutex::new(services::config_store::load()));
     let proxy_cfg = cfg.clone();
