@@ -100,11 +100,11 @@ pub fn show(
                     }
                     devices_menu(ui, ctx, setup, &mut out, false);
                     session_menu(ui, &mut out, false);
+                    if icon_button(ui, ph::TRASH, "Clear", true).on_hover_text("Remove all requests except pinned").clicked() {
+                        out.push(ToolbarIntent::ClearUnpinned);
+                    }
                     if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
                         out.push(ToolbarIntent::Compose);
-                    }
-                    if icon_button(ui, ph::TRASH, "Clear", true).on_hover_text("Remove all requests (including pinned)").clicked() {
-                        out.push(ToolbarIntent::ClearAll);
                     }
                 });
                 // remaining space between the search box and the actions
@@ -135,7 +135,12 @@ pub fn show(
                 ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()).size(FS_CAPTION));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                checkbox(ui, &mut vm.follow, "Follow");
+                if chip(ui, &ico(ph::ARROW_LINE_DOWN, "Follow"), vm.follow, accent())
+                    .on_hover_text("Keep the newest request in view")
+                    .clicked()
+                {
+                    vm.follow = !vm.follow;
+                }
                 let hidden = vm.hidden_cols();
                 toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
                     for c in ALL_COLS.iter().skip(1) {
@@ -183,7 +188,12 @@ fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<Tool
                 }
             });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            checkbox(ui, &mut vm.follow, "Follow");
+            if chip(ui, &ico(ph::ARROW_LINE_DOWN, "Follow"), vm.follow, accent())
+                .on_hover_text("Keep the newest request in view")
+                .clicked()
+            {
+                vm.follow = !vm.follow;
+            }
             toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
                 for c in ALL_COLS.iter().skip(1) {
                     let mut on = !vm.hidden_cols().iter().any(|h| h == c);
@@ -257,14 +267,14 @@ fn compact_primary_rows(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         saved_menu(ui, vm, out);
-        if icon_button(ui, ph::TRASH, "Clear", true)
-            .on_hover_text("Remove all requests (including pinned)")
-            .clicked()
-        {
-            out.push(ToolbarIntent::ClearAll);
-        }
         if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
             out.push(ToolbarIntent::Compose);
+        }
+        if icon_button(ui, ph::TRASH, "Clear", true)
+            .on_hover_text("Remove all requests except pinned")
+            .clicked()
+        {
+            out.push(ToolbarIntent::ClearUnpinned);
         }
         session_menu(ui, out, true);
         devices_menu(ui, ctx, setup, out, true);
@@ -348,7 +358,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
                 "Export rules…",
                 "Import rules…",
                 "-",
-                "Clear unpinned requests",
+                "Clear all, including pinned",
             ];
             menu_width(ui, &items);
             let mut act = None::<u8>;
@@ -394,7 +404,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
                     .pick_file()
                     .map(SessionIntent::ImportRules),
                 11 => {
-                    out.push(ToolbarIntent::ClearUnpinned);
+                    out.push(ToolbarIntent::ClearAll);
                     None
                 }
                 _ => None,
@@ -521,7 +531,7 @@ fn devices_menu(
     toolbar_menu(
         ui,
         ph::DEVICE_MOBILE,
-        if compact { "" } else { "Capture" },
+        if compact { "" } else { "Connect" },
         |ui| {
             let rows = device_rows(setup);
             let labels: Vec<&str> = rows

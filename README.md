@@ -23,7 +23,7 @@ proxyproxy run [--port N] -- curl https://example.com
 
 `run` sets the `*_PROXY` variables and the usual CA-bundle variables (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, and others), then execs the command.
 
-The Capture menu can trust the CA on this machine, set or clear the system proxy, launch Chrome with a clean profile, and set up the iOS Simulator and Android (adb).
+The Connect menu can trust the CA on this machine, set or clear the system proxy, launch Chrome with a clean profile, and set up the iOS Simulator and Android (adb).
 
 The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`, `ca.key`, `config.json`).
 

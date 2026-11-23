@@ -551,7 +551,7 @@ pub fn sidebar_toggle(ui: &mut egui::Ui, open: bool) -> egui::Response {
         if open { "Hide" } else { "Show" },
         cmd()
     );
-    panel_toggle(ui, open, false, "Capture", tip)
+    panel_toggle(ui, open, false, "", tip)
 }
 
 /// Mirror of `sidebar_toggle` for the right edge: label first, then icon.
@@ -576,10 +576,12 @@ fn panel_toggle(
         ui.painter()
             .layout_no_wrap(label.to_string(), egui::FontId::proportional(FS_SMALL), ink);
     let icon_size = egui::vec2(18.0, 14.0);
-    let size = egui::vec2(10.0 + icon_size.x + 6.0 + g.size().x + 10.0, 32.0);
+    let gap = if label.is_empty() { 0.0 } else { 6.0 };
+    let size = egui::vec2(10.0 + icon_size.x + gap + g.size().x + 10.0, 32.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let resp = resp.on_hover_text(tip);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, open, label));
+    let name = if label.is_empty() { "Sidebar" } else { label };
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, open, name));
     let fill = if resp.is_pointer_button_down_on() {
         ui.visuals().widgets.active.weak_bg_fill
     } else if resp.hovered() {
@@ -594,7 +596,7 @@ fn panel_toggle(
     } else {
         (
             rect.min.x + 10.0 + icon_size.x / 2.0,
-            rect.min.x + 10.0 + icon_size.x + 6.0,
+            rect.min.x + 10.0 + icon_size.x + gap,
         )
     };
     let icon = egui::Rect::from_center_size(egui::pos2(icon_x, rect.center().y), icon_size);
