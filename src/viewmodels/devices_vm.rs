@@ -17,6 +17,8 @@ const POLL_AFTER_ACTION: Duration = Duration::from_secs(1);
 pub struct DevicesVm {
     pub ios_simulators: Vec<IosSimulator>,
     pub system_proxy_enabled: bool,
+    // set when we turn the system proxy on, so quitting only undoes our own change
+    proxy_ours: bool,
     port: u16,
     cert: String,
     next_poll: Instant,
@@ -32,6 +34,7 @@ impl DevicesVm {
         Self {
             ios_simulators: vec![],
             system_proxy_enabled: false,
+            proxy_ours: false,
             port,
             cert,
             next_poll: Instant::now(),
@@ -51,9 +54,9 @@ impl DevicesVm {
         }
         self.polling = true;
         let (tx, repaint) = (self.tx.clone(), self.repaint.clone());
-        let cert = self.cert.clone();
+        let (cert, port) = (self.cert.clone(), self.port);
         std::thread::spawn(move || {
-            let _ = tx.send(devices::snapshot(&cert));
+            let _ = tx.send(devices::snapshot(&cert, port));
             repaint.request();
         });
     }
@@ -62,8 +65,8 @@ impl DevicesVm {
         self.polling = false;
         self.next_poll = Instant::now() + POLL_EVERY;
         self.ios_simulators = snapshot.ios_simulators;
-        if let Some(enabled) = snapshot.system_proxy {
-            self.system_proxy_enabled = enabled;
+        if let Some(ours) = snapshot.system_proxy_ours {
+            self.system_proxy_enabled = ours;
         }
     }
 
@@ -95,6 +98,7 @@ impl DevicesVm {
                 let enable = !self.system_proxy_enabled;
                 // optimistic, so the label flips now; the next poll confirms it
                 self.system_proxy_enabled = enable;
+                self.proxy_ours = enable;
                 jobs.spawn(move || devices::system_proxy(enable, port));
                 self.next_poll = Instant::now() + POLL_EVERY;
                 return;
@@ -124,8 +128,10 @@ impl DevicesVm {
         self.next_poll = self.next_poll.min(Instant::now() + POLL_AFTER_ACTION);
     }
 
+    /// Turns the system proxy off only if it is ours, never a proxy the user set up.
     pub fn shutdown(&self) {
-        if let Err(e) = devices::system_proxy(false, self.port) {
+        let ours = self.proxy_ours || devices::system_proxy_status(self.port).unwrap_or(false);
+        if ours && let Err(e) = devices::system_proxy(false, self.port) {
             eprintln!("failed to clear system proxy: {e}");
         }
     }
@@ -151,7 +157,7 @@ mod tests {
         let mut vm = DevicesVm::new(9090, String::new(), Arc::new(NoRepaint));
         vm.apply(DeviceSnapshot {
             ios_simulators: sims,
-            system_proxy: Some(false),
+            system_proxy_ours: Some(false),
         });
         vm
     }
@@ -177,7 +183,7 @@ mod tests {
         vm.system_proxy_enabled = true;
         vm.apply(DeviceSnapshot {
             ios_simulators: vec![],
-            system_proxy: None,
+            system_proxy_ours: None,
         });
         assert!(vm.system_proxy_enabled);
     }

@@ -287,25 +287,25 @@ pub fn ios_sim_reboot(_: &str) -> Res {
 pub struct DeviceSnapshot {
     pub ios_simulators: Vec<IosSimulator>,
     /// `None` where we can't read the system proxy setting.
-    pub system_proxy: Option<bool>,
+    pub system_proxy_ours: Option<bool>,
 }
 
 /// Runs several subprocesses; call it off the UI thread.
 #[cfg(target_os = "macos")]
-pub fn snapshot(cert: &str) -> DeviceSnapshot {
+pub fn snapshot(cert: &str, port: u16) -> DeviceSnapshot {
     let mut ios_simulators = ios_simulators().unwrap_or_default();
     refresh_ios_ca_status(&mut ios_simulators, cert);
     DeviceSnapshot {
         ios_simulators,
-        system_proxy: system_proxy_status().ok(),
+        system_proxy_ours: system_proxy_status(port).ok(),
     }
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn snapshot(_: &str) -> DeviceSnapshot {
+pub fn snapshot(_: &str, _: u16) -> DeviceSnapshot {
     DeviceSnapshot {
         ios_simulators: vec![],
-        system_proxy: None,
+        system_proxy_ours: None,
     }
 }
 
@@ -319,11 +319,27 @@ fn services() -> Result<Vec<String>, String> {
         .collect())
 }
 
+// A proxy the user configured themselves (e.g. a corporate one) is not ours.
 #[cfg(target_os = "macos")]
-pub fn system_proxy_status() -> Result<bool, String> {
+fn web_proxy_is_ours(getwebproxy: &str, port: u16) -> bool {
+    let field = |name: &str| {
+        getwebproxy
+            .lines()
+            .filter_map(|l| l.split_once(':'))
+            .find(|(k, _)| k.trim() == name)
+            .map(|(_, v)| v.trim().to_string())
+    };
+    field("Enabled").as_deref() == Some("Yes")
+        && field("Server").as_deref() == Some("127.0.0.1")
+        && field("Port") == Some(port.to_string())
+}
+
+/// Whether the system web proxy points at this proxy on any network service.
+#[cfg(target_os = "macos")]
+pub fn system_proxy_status(port: u16) -> Result<bool, String> {
     for service in services()? {
         let text = run("networksetup", &["-getwebproxy", &service])?;
-        if text.lines().any(|line| line.trim() == "Enabled: Yes") {
+        if web_proxy_is_ours(&text, port) {
             return Ok(true);
         }
     }
@@ -331,7 +347,7 @@ pub fn system_proxy_status() -> Result<bool, String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn system_proxy_status() -> Result<bool, String> {
+pub fn system_proxy_status(_: u16) -> Result<bool, String> {
     Err("reading the system proxy is only supported on macOS".into())
 }
 
@@ -487,6 +503,18 @@ pub fn launch_chrome(port: u16) -> Res {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_web_proxy_on_our_port_counts_as_ours() {
+        let ours = "Enabled: Yes\nServer: 127.0.0.1\nPort: 9090\nAuthenticated Proxy Enabled: 0";
+        assert!(web_proxy_is_ours(ours, 9090));
+        assert!(!web_proxy_is_ours(ours, 9091));
+        assert!(!web_proxy_is_ours(&ours.replace("Yes", "No"), 9090));
+        assert!(!web_proxy_is_ours(
+            &ours.replace("127.0.0.1", "proxy.corp"),
+            9090
+        ));
+    }
 
     #[test]
     fn truststore_sha256_match_is_case_insensitive() {
