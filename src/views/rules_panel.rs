@@ -249,8 +249,7 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                                     ui,
                                     ph::FLOPPY_DISK,
                                     "Save to disk",
-                                    f.map_file_loaded_path == f.file.trim()
-                                        && !f.map_file_loaded_path.is_empty(),
+                                    f.map_file_editable(),
                                 )
                                 .on_hover_text(
                                     "Write this editor's contents to the selected file on disk",
@@ -268,15 +267,18 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                             } else if let Some(status) = &f.map_file_status {
                                 ui.label(RichText::new(status).color(success()));
                             }
-                            if f.map_file_loaded_path == f.file.trim()
-                                && !f.map_file_loaded_path.is_empty()
-                            {
-                                ui.label(muted("JSON file"));
+                            if f.map_file_editable() {
+                                let ext = f.map_file_ext();
+                                ui.label(muted(if ext.is_empty() {
+                                    "Text file".to_string()
+                                } else {
+                                    format!("{} file", ext.to_uppercase())
+                                }));
                                 let mut layouter =
                                     |ui: &egui::Ui,
                                      text: &dyn egui::TextBuffer,
                                      wrap_width: f32| {
-                                        code_layouter(ui, text, wrap_width, "json")
+                                        code_layouter(ui, text, wrap_width, &ext)
                                     };
                                 let editor = TextEdit::multiline(&mut f.map_file_content)
                                     .code_editor()

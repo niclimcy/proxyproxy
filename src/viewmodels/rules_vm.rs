@@ -194,6 +194,19 @@ impl RuleForm {
         s
     }
 
+    /// The editor shows the loaded file only while the path still points at it.
+    pub fn map_file_editable(&self) -> bool {
+        !self.map_file_loaded_path.is_empty() && self.map_file_loaded_path == self.file.trim()
+    }
+
+    /// Lower-case extension of the mapped file; also the highlighter's language name.
+    pub fn map_file_ext(&self) -> String {
+        std::path::Path::new(self.file.trim())
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    }
+
     pub fn valid(&self) -> bool {
         !self.pattern.trim().is_empty()
             && match self.kind {
@@ -349,6 +362,7 @@ pub enum RulesTab {
     Network,
 }
 
+const MAP_FILE_EDIT_LIMIT: u64 = 1 << 20;
 const CONSOLE_MAX: usize = 2000;
 const CONSOLE_DROP: usize = 500;
 
@@ -522,6 +536,19 @@ impl RulesVm {
             self.form.map_file_error = Some("Choose a local file first".into());
             return;
         }
+        // reads run on the UI thread and the editor lays out every line each frame
+        if let Ok(meta) = std::fs::metadata(&path)
+            && meta.len() > MAP_FILE_EDIT_LIMIT
+        {
+            self.form.map_file_loaded_path.clear();
+            self.form.map_file_status = None;
+            self.form.map_file_error = Some(format!(
+                "File is too large to edit here ({} KB; limit {} KB)",
+                meta.len() / 1024,
+                MAP_FILE_EDIT_LIMIT / 1024
+            ));
+            return;
+        }
         match std::fs::read(&path) {
             Ok(data) => match String::from_utf8(data) {
                 Ok(text) => {
@@ -544,12 +571,12 @@ impl RulesVm {
     }
 
     fn save_map_local_file(&mut self) {
-        let path = self.form.file.trim().to_string();
-        if path.is_empty() {
+        if !self.form.map_file_editable() {
             self.form.map_file_status = None;
-            self.form.map_file_error = Some("Choose a local file first".into());
+            self.form.map_file_error = Some("The file path changed — load the file first".into());
             return;
         }
+        let path = self.form.map_file_loaded_path.clone();
         match std::fs::write(&path, &self.form.map_file_content) {
             Ok(_) => {
                 self.form.map_file_loaded_path = path;
@@ -668,6 +695,43 @@ mod tests {
         vm.form.pattern = "a.com".into();
         vm.handle(RuleIntent::Submit);
         assert!(vm.cfg.lock().unwrap().rules.is_empty());
+    }
+
+    #[test]
+    fn map_local_save_refuses_when_path_changed_since_load() {
+        let mut vm = vm();
+        let dir = std::env::temp_dir();
+        let a = dir.join(format!("pxp-map-a-{}.json", std::process::id()));
+        let b = dir.join(format!("pxp-map-b-{}.json", std::process::id()));
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
+        vm.form.file = a.display().to_string();
+        vm.handle(RuleIntent::LoadMapLocalFile);
+        assert_eq!(vm.form.map_file_ext(), "json");
+        vm.form.file = b.display().to_string();
+        vm.handle(RuleIntent::SaveMapLocalFile);
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "b");
+        assert!(vm.form.map_file_error.is_some());
+        std::fs::remove_file(a).ok();
+        std::fs::remove_file(b).ok();
+    }
+
+    #[test]
+    fn map_local_refuses_files_too_large_to_edit() {
+        let mut vm = vm();
+        let p = std::env::temp_dir().join(format!("pxp-map-big-{}.bin", std::process::id()));
+        std::fs::write(&p, vec![b'x'; MAP_FILE_EDIT_LIMIT as usize + 1]).unwrap();
+        vm.form.file = p.display().to_string();
+        vm.handle(RuleIntent::LoadMapLocalFile);
+        assert!(!vm.form.map_file_editable());
+        assert!(
+            vm.form
+                .map_file_error
+                .as_deref()
+                .unwrap()
+                .contains("too large")
+        );
+        std::fs::remove_file(p).ok();
     }
 
     #[test]
