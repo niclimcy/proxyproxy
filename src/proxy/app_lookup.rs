@@ -9,10 +9,11 @@ pub fn lookup_app(port: u16, own_pid: u32) -> Option<String> {
     for l in text.lines() {
         if let Some(p) = l.strip_prefix('p') {
             pid = p.parse().unwrap_or(0);
-        } else if let Some(c) = l.strip_prefix('c') {
-            if pid != own_pid && found.is_none() {
-                found = Some(c.to_string());
-            }
+        } else if let Some(c) = l.strip_prefix('c')
+            && pid != own_pid
+            && found.is_none()
+        {
+            found = Some(c.to_string());
         }
     }
     found

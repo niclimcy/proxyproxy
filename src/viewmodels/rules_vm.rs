@@ -608,10 +608,9 @@ impl RulesVm {
         match serde_json::from_str::<crate::domain::config::Config>(text) {
             Ok(mut c) => {
                 let mut cfg = self.cfg.lock().unwrap();
-                let mut id = cfg.next_rule_id();
-                for r in c.rules.drain(..) {
+                let first = cfg.next_rule_id();
+                for (id, r) in (first..).zip(c.rules.drain(..)) {
                     cfg.rules.push(Rule { id, ..r });
-                    id += 1;
                 }
                 status.set("Rules imported");
             }

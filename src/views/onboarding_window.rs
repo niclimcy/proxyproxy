@@ -413,7 +413,7 @@ pub fn show(
                                         }
                                     });
                                 ui.add_space(6.0);
-                                ui.label(muted(&format!(
+                                ui.label(muted(format!(
                                     "Capture proxy: 127.0.0.1:{port}",
                                 )));
                             }
@@ -474,14 +474,12 @@ pub fn show(
                             220.0,
                         )
                         .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
+                            && let Some(path) = rfd::FileDialog::new()
                                 .add_filter("HAR / Charles JSON", &["har", "json", "chlsj"])
                                 .pick_file()
                             {
                                 out.push(OnboardingIntent::ImportFlows(path));
                             }
-                        }
                         if action_button_icon_sized(
                             ui,
                             ph::SHIELD_CHECK,

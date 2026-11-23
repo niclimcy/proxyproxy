@@ -5,11 +5,7 @@ use crate::services::replay;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 
-pub fn handle(
-    store: &FlowStore,
-    cfg: &Shared,
-    request: Value,
-) -> Option<Value> {
+pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     if request.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return Some(error_response(id, -32600, "Invalid Request"));
@@ -38,18 +34,19 @@ pub fn handle(
                 "description": "Capture summary and current flow count",
                 "mimeType": "application/json"
             })];
-            resources.extend(st.flows.iter().rev().take(200).map(|flow| json!({
-                "uri": format!("proxyproxy://flows/{}", flow.id),
-                "name": format!("{} {}", flow.method, flow.url()),
-                "description": format!("Captured HTTP flow {}", flow.id),
-                "mimeType": "application/json"
-            })));
+            resources.extend(st.flows.iter().rev().take(200).map(|flow| {
+                json!({
+                    "uri": format!("proxyproxy://flows/{}", flow.id),
+                    "name": format!("{} {}", flow.method, flow.url()),
+                    "description": format!("Captured HTTP flow {}", flow.id),
+                    "mimeType": "application/json"
+                })
+            }));
             json!({"resources": resources})
         }
         "resources/read" => {
             let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
-            read_resource(store, uri)
-                .unwrap_or_else(|| return error_value(-32602, "Unknown resource"))
+            read_resource(store, uri).unwrap_or_else(|| error_value(-32602, "Unknown resource"))
         }
         "tools/list" => json!({"tools": tools()}),
         "tools/call" => {
@@ -112,53 +109,81 @@ fn read_resource(store: &FlowStore, uri: &str) -> Option<Value> {
 
 fn tools() -> Vec<Value> {
     vec![
-        tool("proxyproxy_list_flows", "List captured HTTP flows", json!({
-            "type": "object",
-            "properties": {
-                "q": {"type": "string", "description": "Proxyproxy search query"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 20000}
-            }
-        })),
-        tool("proxyproxy_get_flow", "Get one captured HTTP flow", json!({
-            "type": "object",
-            "properties": {"id": {"type": "integer"}},
-            "required": ["id"]
-        })),
-        tool("proxyproxy_replay", "Replay an HTTP request directly", json!({
-            "type": "object",
-            "properties": {
-                "id": {"type": "integer", "description": "Existing flow to replay"},
-                "method": {"type": "string"},
-                "url": {"type": "string"},
-                "headers": {"type": "object", "additionalProperties": {"type": "string"}},
-                "body": {"type": "string"}
-            }
-        })),
-        tool("proxyproxy_list_rules", "List proxy rules", json!({
-            "type": "object",
-            "properties": {}
-        })),
-        tool("proxyproxy_add_rule", "Add or replace a proxy rule", json!({
-            "type": "object",
-            "properties": {
-                "id": {"type": "integer"},
-                "name": {"type": "string"},
-                "pattern": {"type": "string"},
-                "method": {"type": "string"},
-                "enabled": {"type": "boolean"},
-                "action": {"type": "object"}
-            },
-            "required": ["pattern", "action"]
-        })),
-        tool("proxyproxy_delete_rule", "Delete a proxy rule", json!({
-            "type": "object",
-            "properties": {"id": {"type": "integer"}},
-            "required": ["id"]
-        })),
-        tool("proxyproxy_export_har", "Export captured traffic as HAR", json!({
-            "type": "object",
-            "properties": {}
-        })),
+        tool(
+            "proxyproxy_list_flows",
+            "List captured HTTP flows",
+            json!({
+                "type": "object",
+                "properties": {
+                    "q": {"type": "string", "description": "Proxyproxy search query"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20000}
+                }
+            }),
+        ),
+        tool(
+            "proxyproxy_get_flow",
+            "Get one captured HTTP flow",
+            json!({
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+                "required": ["id"]
+            }),
+        ),
+        tool(
+            "proxyproxy_replay",
+            "Replay an HTTP request directly",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "Existing flow to replay"},
+                    "method": {"type": "string"},
+                    "url": {"type": "string"},
+                    "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+                    "body": {"type": "string"}
+                }
+            }),
+        ),
+        tool(
+            "proxyproxy_list_rules",
+            "List proxy rules",
+            json!({
+                "type": "object",
+                "properties": {}
+            }),
+        ),
+        tool(
+            "proxyproxy_add_rule",
+            "Add or replace a proxy rule",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"},
+                    "pattern": {"type": "string"},
+                    "method": {"type": "string"},
+                    "enabled": {"type": "boolean"},
+                    "action": {"type": "object"}
+                },
+                "required": ["pattern", "action"]
+            }),
+        ),
+        tool(
+            "proxyproxy_delete_rule",
+            "Delete a proxy rule",
+            json!({
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+                "required": ["id"]
+            }),
+        ),
+        tool(
+            "proxyproxy_export_har",
+            "Export captured traffic as HAR",
+            json!({
+                "type": "object",
+                "properties": {}
+            }),
+        ),
     ]
 }
 
@@ -265,7 +290,9 @@ fn replay_tool(store: &FlowStore, arguments: Value) -> Result<Value, String> {
                 headers
                     .iter()
                     .filter_map(|(name, value)| {
-                        value.as_str().map(|value| (name.clone(), value.to_string()))
+                        value
+                            .as_str()
+                            .map(|value| (name.clone(), value.to_string()))
                     })
                     .collect()
             })
@@ -378,9 +405,7 @@ pub fn serve_stdio(port: u16) -> Result<(), String> {
         }
         let request: Value =
             serde_json::from_str(&line).map_err(|error| format!("invalid JSON: {error}"))?;
-        if request.get("method").and_then(Value::as_str)
-            == Some("notifications/initialized")
-        {
+        if request.get("method").and_then(Value::as_str) == Some("notifications/initialized") {
             continue;
         }
         let url = format!("http://127.0.0.1:{}/mcp", port);
@@ -395,8 +420,7 @@ pub fn serve_stdio(port: u16) -> Result<(), String> {
         if response.trim().is_empty() {
             continue;
         }
-        writeln!(stdout, "{response}")
-            .map_err(|error| error.to_string())?;
+        writeln!(stdout, "{response}").map_err(|error| error.to_string())?;
         stdout.flush().map_err(|error| error.to_string())?;
     }
     Ok(())
@@ -409,7 +433,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     fn setup() -> (FlowStore, Shared) {
-        (FlowStore::default(), Arc::new(Mutex::new(Config::default())))
+        (
+            FlowStore::default(),
+            Arc::new(Mutex::new(Config::default())),
+        )
     }
 
     #[test]
@@ -435,9 +462,13 @@ mod tests {
             json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
         )
         .unwrap();
-        assert!(tools["result"]["tools"].as_array().unwrap().iter().any(|tool| {
-            tool["name"] == "proxyproxy_list_flows"
-        }));
+        assert!(
+            tools["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| { tool["name"] == "proxyproxy_list_flows" })
+        );
 
         let resources = handle(
             &store,
@@ -445,9 +476,13 @@ mod tests {
             json!({"jsonrpc": "2.0", "id": 3, "method": "resources/list"}),
         )
         .unwrap();
-        assert!(resources["result"]["resources"].as_array().unwrap().iter().any(|resource| {
-            resource["uri"] == "proxyproxy://capture"
-        }));
+        assert!(
+            resources["result"]["resources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|resource| { resource["uri"] == "proxyproxy://capture" })
+        );
     }
 
     #[test]
@@ -504,7 +539,11 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(delete["result"]["structuredContent"]["deleted"].as_bool().unwrap());
+        assert!(
+            delete["result"]["structuredContent"]["deleted"]
+                .as_bool()
+                .unwrap()
+        );
         assert!(cfg.lock().unwrap().rules.is_empty());
     }
 
@@ -517,9 +556,8 @@ mod tests {
             use std::io::{Read, Write};
             let mut request = [0u8; 1024];
             let _ = stream.read(&mut request);
-            let _ = stream.write_all(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-            );
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
         });
 
         let (store, _cfg) = setup();

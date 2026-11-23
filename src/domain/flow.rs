@@ -212,7 +212,7 @@ pub struct Paused {
 }
 
 pub enum Event {
-    Request(Flow),
+    Request(Box<Flow>),
     Edited {
         id: u64,
         method: String,

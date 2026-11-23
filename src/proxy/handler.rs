@@ -183,7 +183,7 @@ impl HttpHandler for Capture {
                 .unwrap()
                 .insert(format!("{}{}", f.host, f.path), id);
         }
-        self.sink.emit(Event::Request(f));
+        self.sink.emit(Event::Request(Box::new(f)));
         if is_ws {
             self.current = None;
             return Request::from_parts(parts, Body::from(Full::new(bytes))).into();

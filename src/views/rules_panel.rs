@@ -144,7 +144,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     form_ui(ui, &mut vm.form, out);
     ui.horizontal(|ui| {
         let label = if editing { "Save rule" } else { "Add rule" };
-        if icon_button_enabled(ui, ph::PLUS, &label, vm.form.valid()).clicked() {
+        if icon_button_enabled(ui, ph::PLUS, label, vm.form.valid()).clicked() {
             out.push(RuleIntent::Submit);
         }
         if !vm.form.pattern.trim().is_empty() {
@@ -247,11 +247,11 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                                     .desired_width((w - 80.0).max(80.0))
                                     .hint_text("/path/to/response.json"),
                             );
-                            if icon_button(ui, ph::FOLDER_OPEN, "Browse…").clicked() {
-                                if let Some(p) = rfd::FileDialog::new().pick_file() {
-                                    f.file = p.display().to_string();
-                                    out.push(RuleIntent::LoadMapLocalFile);
-                                }
+                            if icon_button(ui, ph::FOLDER_OPEN, "Browse…").clicked()
+                                && let Some(p) = rfd::FileDialog::new().pick_file()
+                            {
+                                f.file = p.display().to_string();
+                                out.push(RuleIntent::LoadMapLocalFile);
                             }
                             if path.lost_focus() {
                                 out.push(RuleIntent::LoadMapLocalFile);

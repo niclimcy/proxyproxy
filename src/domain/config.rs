@@ -71,9 +71,11 @@ mod tests {
 
     #[test]
     fn config_roundtrips_onboarding_profile() {
-        let mut cfg = Config::default();
-        cfg.onboarding_completed = true;
-        cfg.onboarding_profile = OnboardingProfile::Beginner;
+        let cfg = Config {
+            onboarding_completed: true,
+            onboarding_profile: OnboardingProfile::Beginner,
+            ..Config::default()
+        };
         let json = serde_json::to_string(&cfg).unwrap();
         let restored: Config = serde_json::from_str(&json).unwrap();
         assert!(restored.onboarding_completed);

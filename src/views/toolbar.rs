@@ -376,7 +376,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
             {
                 if *l == "-" {
                     ui.separator();
-                } else if menu_item(ui, *l).clicked() {
+                } else if menu_item(ui, l).clicked() {
                     act = Some(i as u8);
                     ui.close();
                 }
@@ -513,7 +513,7 @@ fn devices_menu(
                         crate::services::devices::IosCaStatus::Missing => "CA missing",
                         crate::services::devices::IosCaStatus::Unknown => "CA status unknown",
                     };
-                    ui.label(muted(&format!("{} · {}", sim.name, ca)));
+                    ui.label(muted(format!("{} · {}", sim.name, ca)));
                     if sim.ca_status != crate::services::devices::IosCaStatus::Installed {
                         device(
                             ui,

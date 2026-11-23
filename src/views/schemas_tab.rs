@@ -8,15 +8,14 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
     let mut out = vec![];
     ui.label(muted("Protobuf descriptor sets (protoc --descriptor_set_out=x.desc --include_imports ...). Bodies that decode cleanly get a Schema view; gRPC resolves by method path."));
     ui.add_space(6.0);
-    if icon_button(ui, ph::PLUS, "Add .desc file").clicked() {
-        if let Some(files) = rfd::FileDialog::new()
+    if icon_button(ui, ph::PLUS, "Add .desc file").clicked()
+        && let Some(files) = rfd::FileDialog::new()
             .add_filter("descriptor set", &["desc", "pb", "bin", "protoset"])
             .pick_files()
-        {
-            out.push(SchemasIntent::AddFiles(
-                files.iter().map(|f| f.display().to_string()).collect(),
-            ));
-        }
+    {
+        out.push(SchemasIntent::AddFiles(
+            files.iter().map(|f| f.display().to_string()).collect(),
+        ));
     }
     ui.add_space(6.0);
     let v = vm.view();

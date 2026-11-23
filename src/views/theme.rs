@@ -452,9 +452,7 @@ impl egui::Widget for StyledCheckbox<'_> {
         } else {
             pal().surface
         };
-        let stroke = if checked {
-            Stroke::new(1.5, accent())
-        } else if response.hovered() {
+        let stroke = if checked || response.hovered() {
             Stroke::new(1.5, accent())
         } else {
             Stroke::new(1.0, pal().border_strong)

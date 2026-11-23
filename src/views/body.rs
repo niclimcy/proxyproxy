@@ -179,7 +179,7 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
         }
     });
     ui.add_space(4.0);
-    let Some(d) = decoders::find(*mode) else {
+    let Some(d) = decoders::find(mode) else {
         return;
     };
     let rendered = d.render(m, c, forced.as_deref());

@@ -49,10 +49,10 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
             true
         }
         Event::Ws { id, msg } => {
-            if let Some(f) = find(flows, *id) {
-                if f.ws.len() < 5000 {
-                    f.ws.push(msg.clone());
-                }
+            if let Some(f) = find(flows, *id)
+                && f.ws.len() < 5000
+            {
+                f.ws.push(msg.clone());
             }
             true
         }
@@ -153,7 +153,7 @@ impl FlowStore {
         let mut st = self.lock();
         while let Ok(ev) = rx.try_recv() {
             match ev {
-                Event::Request(f) => st.push(f),
+                Event::Request(f) => st.push(*f),
                 ev @ (Event::Paused(_) | Event::Log(_)) => other(ev),
                 ev => {
                     st.ingest(&ev);
@@ -300,7 +300,7 @@ mod tests {
         ));
         assert_eq!(fs[0].status, None);
         assert!(!apply(&mut fs, &Event::Log("hi".into())));
-        assert!(!apply(&mut fs, &Event::Request(flow(3))));
+        assert!(!apply(&mut fs, &Event::Request(Box::new(flow(3)))));
     }
 
     #[test]
@@ -355,7 +355,7 @@ mod tests {
     fn pump_routes_events_and_enforces_cap() {
         let (tx, rx) = std::sync::mpsc::channel();
         let store = FlowStore::default();
-        tx.send(Event::Request(flow(1))).unwrap();
+        tx.send(Event::Request(Box::new(flow(1)))).unwrap();
         tx.send(Event::Log("hi".into())).unwrap();
         tx.send(Event::Failed {
             id: 1,
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(store.lock().find(1).unwrap().status, Some(502));
 
         for id in 2..=(MAX_FLOWS as u64 + 5) {
-            tx.send(Event::Request(flow(id))).unwrap();
+            tx.send(Event::Request(Box::new(flow(id)))).unwrap();
         }
         store.pump(&rx, |_| {});
         assert!(store.lock().flows.len() <= MAX_FLOWS);

@@ -14,8 +14,7 @@ fn msg_view(
     id: &str,
     first: String,
     m: &Message,
-    side: &mut Side,
-    mode: &mut ModeId,
+    (side, mode): (&mut Side, &mut ModeId),
     params: Vec<(String, String)>,
     vc: &decode::Ctx,
 ) {
@@ -207,8 +206,7 @@ fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
             "req",
             format!("{} {} {}", f.method, f.path, f.version),
             &f.request,
-            rs,
-            rm,
+            (rs, rm),
             decode::query_params(&f.path),
             &rc,
         );
@@ -225,8 +223,7 @@ fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
                     "res",
                     format!("{} {s}", f.version),
                     r,
-                    ss,
-                    sm,
+                    (ss, sm),
                     vec![],
                     &sc,
                 );

@@ -75,10 +75,8 @@ pub fn set_header(h: &mut HeaderMap, name: &str, value: &str, remove: bool) {
         return;
     };
     h.remove(&n);
-    if !remove {
-        if let Ok(v) = HeaderValue::try_from(value.trim()) {
-            h.insert(n, v);
-        }
+    if !remove && let Ok(v) = HeaderValue::try_from(value.trim()) {
+        h.insert(n, v);
     }
 }
 

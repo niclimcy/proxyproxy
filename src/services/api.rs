@@ -87,17 +87,17 @@ pub fn serve(port: u16, store: FlowStore, cfg: crate::domain::config::Shared) {
                     Ok(n) => n,
                 };
                 request.extend_from_slice(&buf[..n]);
-                if header_end.is_none() {
-                    if let Some(i) = request.windows(4).position(|w| w == b"\r\n\r\n") {
-                        header_end = Some(i + 4);
-                        let header = String::from_utf8_lossy(&request[..i]);
-                        content_length = header
-                            .lines()
-                            .filter_map(|line| line.split_once(':'))
-                            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                            .and_then(|(_, value)| value.trim().parse().ok())
-                            .unwrap_or(0);
-                    }
+                if header_end.is_none()
+                    && let Some(i) = request.windows(4).position(|w| w == b"\r\n\r\n")
+                {
+                    header_end = Some(i + 4);
+                    let header = String::from_utf8_lossy(&request[..i]);
+                    content_length = header
+                        .lines()
+                        .filter_map(|line| line.split_once(':'))
+                        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                        .and_then(|(_, value)| value.trim().parse().ok())
+                        .unwrap_or(0);
                 }
                 if let Some(end) = header_end {
                     if request.len() >= end + content_length {
@@ -113,35 +113,69 @@ pub fn serve(port: u16, store: FlowStore, cfg: crate::domain::config::Shared) {
             let (method, target) = (it.next().unwrap_or(""), it.next().unwrap_or("/"));
             let (code, content_type, body) = if method == "GET" {
                 let (code, body) = handle(&store, target);
-                (code, "application/json", serde_json::to_string_pretty(&body).unwrap_or_default())
+                (
+                    code,
+                    "application/json",
+                    serde_json::to_string_pretty(&body).unwrap_or_default(),
+                )
             } else if method == "POST" && target.split('?').next() == Some("/mcp") {
                 let body_start = req.find("\r\n\r\n").map(|i| i + 4).unwrap_or(req.len());
                 let body_end = body_start.saturating_add(content_length).min(request.len());
-                let response = if let Ok(request) = serde_json::from_slice::<Value>(&request[body_start..body_end]) {
-                    if matches!(request.get("method").and_then(Value::as_str), Some("notifications/initialized")) {
+
+                if let Ok(request) = serde_json::from_slice::<Value>(&request[body_start..body_end])
+                {
+                    if matches!(
+                        request.get("method").and_then(Value::as_str),
+                        Some("notifications/initialized")
+                    ) {
                         (202, "application/json", String::new())
                     } else {
                         let result = crate::services::mcp::handle(&store, &cfg, request);
                         match result {
-                            Some(result) => (200, "application/json", serde_json::to_string(&result).unwrap_or_default()),
+                            Some(result) => (
+                                200,
+                                "application/json",
+                                serde_json::to_string(&result).unwrap_or_default(),
+                            ),
                             None => (202, "application/json", String::new()),
                         }
                     }
                 } else {
-                    (400, "application/json", serde_json::to_string(&json!({
-                        "jsonrpc": "2.0",
-                        "id": Value::Null,
-                        "error": {"code": -32700, "message": "Parse error"}
-                    })).unwrap_or_default())
-                };
-                response
+                    (
+                        400,
+                        "application/json",
+                        serde_json::to_string(&json!({
+                            "jsonrpc": "2.0",
+                            "id": Value::Null,
+                            "error": {"code": -32700, "message": "Parse error"}
+                        }))
+                        .unwrap_or_default(),
+                    )
+                }
             } else {
-                (405, "application/json", serde_json::to_string(&json!({"error": "method not allowed"})).unwrap_or_default())
+                (
+                    405,
+                    "application/json",
+                    serde_json::to_string(&json!({"error": "method not allowed"}))
+                        .unwrap_or_default(),
+                )
             };
             let _ = write!(
                 stream,
                 "HTTP/1.1 {code} {}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                if code == 200 { "OK" } else if code == 202 { "Accepted" } else if code == 400 { "Bad Request" } else if code == 404 { "Not Found" } else if code == 405 { "Method Not Allowed" } else { "OK" },
+                if code == 200 {
+                    "OK"
+                } else if code == 202 {
+                    "Accepted"
+                } else if code == 400 {
+                    "Bad Request"
+                } else if code == 404 {
+                    "Not Found"
+                } else if code == 405 {
+                    "Method Not Allowed"
+                } else {
+                    "OK"
+                },
                 body.len()
             );
         }
