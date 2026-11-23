@@ -1,3 +1,4 @@
+use crate::domain::config::Shared;
 use crate::domain::flow::Flow;
 use crate::services::flow_store::FlowStore;
 use serde_json::{Value, json};
@@ -68,116 +69,216 @@ fn handle(store: &FlowStore, target: &str) -> (u16, Value) {
     }
 }
 
-// Read-only JSON API on loopback so scripts and agents can query captured flows.
-pub fn serve(port: u16, store: FlowStore, cfg: crate::domain::config::Shared) {
+const MAX_HEADER: usize = 64 << 10;
+const MAX_BODY: usize = 4 << 20;
+
+struct Request {
+    method: String,
+    target: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
+
+impl Request {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
+fn read_request(stream: &mut impl Read) -> Result<Request, (u16, &'static str)> {
+    let mut data = Vec::new();
+    let mut buf = [0u8; 4096];
+    let head_end = loop {
+        if let Some(i) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+            break i;
+        }
+        if data.len() > MAX_HEADER {
+            return Err((431, "request headers too large"));
+        }
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => return Err((400, "incomplete request")),
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+        }
+    };
+    let head = String::from_utf8_lossy(&data[..head_end]).into_owned();
+    let mut lines = head.lines();
+    let mut start = lines.next().unwrap_or("").split(' ');
+    let (method, target) = (start.next().unwrap_or(""), start.next().unwrap_or("/"));
+    let headers: Vec<(String, String)> = lines
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect();
+    let mut req = Request {
+        method: method.to_string(),
+        target: target.to_string(),
+        headers,
+        body: data[head_end + 4..].to_vec(),
+    };
+    let len: usize = req
+        .header("content-length")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    if len > MAX_BODY {
+        return Err((413, "request body too large"));
+    }
+    while req.body.len() < len {
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => return Err((400, "incomplete request body")),
+            Ok(n) => req.body.extend_from_slice(&buf[..n]),
+        }
+    }
+    req.body.truncate(len);
+    Ok(req)
+}
+
+fn is_loopback(authority: &str, port: u16) -> bool {
+    let host = authority
+        .strip_suffix(&format!(":{port}"))
+        .unwrap_or(authority);
+    matches!(host, "127.0.0.1" | "localhost" | "[::1]")
+}
+
+// Any web page can send requests to loopback. The Host check stops DNS rebinding, and
+// requiring JSON with no foreign Origin stops cross-site posts from changing rules.
+fn reject(req: &Request, port: u16) -> Option<(u16, &'static str)> {
+    if req.header("host").is_some_and(|h| !is_loopback(h, port)) {
+        return Some((403, "forbidden host"));
+    }
+    if req.method != "POST" {
+        return None;
+    }
+    if let Some(origin) = req.header("origin")
+        && !origin
+            .strip_prefix("http://")
+            .is_some_and(|a| is_loopback(a, port))
+    {
+        return Some((403, "forbidden origin"));
+    }
+    let json = req.header("content-type").is_some_and(|ct| {
+        ct.split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .eq_ignore_ascii_case("application/json")
+    });
+    if !json {
+        return Some((415, "content-type must be application/json"));
+    }
+    None
+}
+
+fn route(store: &FlowStore, cfg: &Shared, req: &Request) -> (u16, String) {
+    let path = req.target.split('?').next().unwrap_or("");
+    match req.method.as_str() {
+        "GET" => {
+            let (code, body) = handle(store, &req.target);
+            (code, serde_json::to_string_pretty(&body).unwrap_or_default())
+        }
+        "POST" if path == "/mcp" => match serde_json::from_slice::<Value>(&req.body) {
+            Ok(request) => match crate::services::mcp::handle(store, cfg, request) {
+                Some(response) => (200, response.to_string()),
+                None => (202, String::new()),
+            },
+            Err(_) => (
+                400,
+                json!({"jsonrpc": "2.0", "id": Value::Null, "error": {"code": -32700, "message": "Parse error"}})
+                    .to_string(),
+            ),
+        },
+        _ => (405, json!({"error": "method not allowed"}).to_string()),
+    }
+}
+
+fn respond(stream: &mut impl Write, code: u16, body: &str) {
+    let reason = match code {
+        200 => "OK",
+        202 => "Accepted",
+        400 => "Bad Request",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        413 => "Payload Too Large",
+        415 => "Unsupported Media Type",
+        431 => "Request Header Fields Too Large",
+        _ => "Error",
+    };
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {code} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+}
+
+// Loopback JSON API: read-only REST for captured flows, plus `POST /mcp`, which can also
+// replay requests and edit rules.
+pub fn serve(port: u16, store: FlowStore, cfg: Shared) {
     let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) else {
         return;
     };
     std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let mut stream = stream;
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-            let mut request = Vec::new();
-            let mut buf = [0u8; 4096];
-            let mut header_end = None;
-            let mut content_length = 0usize;
-            loop {
-                let n = match stream.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => n,
+        for mut stream in listener.incoming().flatten() {
+            let (store, cfg) = (store.clone(), cfg.clone());
+            // one thread per connection so a slow MCP replay doesn't stall other callers
+            std::thread::spawn(move || {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                let (code, body) = match read_request(&mut stream) {
+                    Ok(req) => match reject(&req, port) {
+                        Some((code, msg)) => (code, json!({"error": msg}).to_string()),
+                        None => route(&store, &cfg, &req),
+                    },
+                    Err((code, msg)) => (code, json!({"error": msg}).to_string()),
                 };
-                request.extend_from_slice(&buf[..n]);
-                if header_end.is_none()
-                    && let Some(i) = request.windows(4).position(|w| w == b"\r\n\r\n")
-                {
-                    header_end = Some(i + 4);
-                    let header = String::from_utf8_lossy(&request[..i]);
-                    content_length = header
-                        .lines()
-                        .filter_map(|line| line.split_once(':'))
-                        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                        .and_then(|(_, value)| value.trim().parse().ok())
-                        .unwrap_or(0);
-                }
-                if let Some(end) = header_end {
-                    if request.len() >= end + content_length {
-                        break;
-                    }
-                } else if n < buf.len() {
-                    break;
-                }
-            }
-            let req = String::from_utf8_lossy(&request);
-            let line = req.lines().next().unwrap_or("");
-            let mut it = line.split(' ');
-            let (method, target) = (it.next().unwrap_or(""), it.next().unwrap_or("/"));
-            let (code, content_type, body) = if method == "GET" {
-                let (code, body) = handle(&store, target);
-                (
-                    code,
-                    "application/json",
-                    serde_json::to_string_pretty(&body).unwrap_or_default(),
-                )
-            } else if method == "POST" && target.split('?').next() == Some("/mcp") {
-                let body_start = req.find("\r\n\r\n").map(|i| i + 4).unwrap_or(req.len());
-                let body_end = body_start.saturating_add(content_length).min(request.len());
-
-                if let Ok(request) = serde_json::from_slice::<Value>(&request[body_start..body_end])
-                {
-                    if matches!(
-                        request.get("method").and_then(Value::as_str),
-                        Some("notifications/initialized")
-                    ) {
-                        (202, "application/json", String::new())
-                    } else {
-                        let result = crate::services::mcp::handle(&store, &cfg, request);
-                        match result {
-                            Some(result) => (
-                                200,
-                                "application/json",
-                                serde_json::to_string(&result).unwrap_or_default(),
-                            ),
-                            None => (202, "application/json", String::new()),
-                        }
-                    }
-                } else {
-                    (
-                        400,
-                        "application/json",
-                        serde_json::to_string(&json!({
-                            "jsonrpc": "2.0",
-                            "id": Value::Null,
-                            "error": {"code": -32700, "message": "Parse error"}
-                        }))
-                        .unwrap_or_default(),
-                    )
-                }
-            } else {
-                (
-                    405,
-                    "application/json",
-                    serde_json::to_string(&json!({"error": "method not allowed"}))
-                        .unwrap_or_default(),
-                )
-            };
-            let _ = write!(
-                stream,
-                "HTTP/1.1 {code} {}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                if code == 200 {
-                    "OK"
-                } else if code == 202 {
-                    "Accepted"
-                } else if code == 400 {
-                    "Bad Request"
-                } else if code == 404 {
-                    "Not Found"
-                } else if code == 405 {
-                    "Method Not Allowed"
-                } else {
-                    "OK"
-                },
-                body.len()
-            );
+                respond(&mut stream, code, &body);
+            });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(raw: &str) -> Result<Request, (u16, &'static str)> {
+        read_request(&mut std::io::Cursor::new(raw.as_bytes().to_vec()))
+    }
+
+    const MCP: &str = "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:9091\r\nContent-Type: application/json\r\nContent-Length: 2\r\n";
+
+    #[test]
+    fn reads_body_up_to_content_length() {
+        let r = req(&format!("{MCP}\r\n{{}}trailing")).unwrap();
+        assert_eq!(r.method, "POST");
+        assert_eq!(r.body, b"{}");
+        assert_eq!(reject(&r, 9091), None);
+    }
+
+    #[test]
+    fn oversized_body_is_refused_before_reading() {
+        let raw = format!(
+            "POST /mcp HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+            MAX_BODY + 1
+        );
+        assert_eq!(req(&raw).err().unwrap().0, 413);
+    }
+
+    #[test]
+    fn cross_site_posts_are_rejected() {
+        let origin = req(&format!("{MCP}Origin: https://evil.test\r\n\r\n{{}}")).unwrap();
+        assert_eq!(reject(&origin, 9091).unwrap().0, 403);
+        let text = req("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:9091\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\n{}").unwrap();
+        assert_eq!(reject(&text, 9091).unwrap().0, 415);
+        let local = req(&format!("{MCP}Origin: http://localhost:9091\r\n\r\n{{}}")).unwrap();
+        assert_eq!(reject(&local, 9091), None);
+    }
+
+    #[test]
+    fn rebound_host_is_rejected_for_reads_too() {
+        let r = req("GET /flows HTTP/1.1\r\nHost: evil.test:9091\r\n\r\n").unwrap();
+        assert_eq!(reject(&r, 9091).unwrap().0, 403);
+        let ok = req("GET /flows HTTP/1.1\r\nHost: localhost:9091\r\n\r\n").unwrap();
+        assert_eq!(reject(&ok, 9091), None);
+    }
 }
