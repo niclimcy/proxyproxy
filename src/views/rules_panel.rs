@@ -152,8 +152,16 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     let live = vm.live_matches();
     form_ui(ui, &mut vm.form, out);
     ui.horizontal(|ui| {
-        let label = if editing { "Save rule" } else { "Add rule" };
-        if icon_button(ui, ph::PLUS, label, vm.form.valid()).clicked() {
+        let (icon, label) = if editing {
+            (ph::CHECK, "Save rule")
+        } else {
+            (ph::PLUS, "Add rule")
+        };
+        if ui
+            .add_enabled(vm.form.valid(), action_button(ico(icon, label), accent()))
+            .on_disabled_hover_text("Fill in the URL pattern and this rule's required fields")
+            .clicked()
+        {
             out.push(RuleIntent::Submit);
         }
         if !vm.form.pattern.trim().is_empty() {
@@ -167,7 +175,20 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
 
 fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
     let w = (ui.available_width() - 100.0).clamp(120.0, 700.0);
-    segmented(ui, &mut f.kind, &KINDS);
+    let kind_picker = |ui: &mut egui::Ui, kind: &mut RuleKind| {
+        let current = KINDS
+            .iter()
+            .find(|(k, _)| k == kind)
+            .map_or("", |(_, l)| l);
+        egui::ComboBox::from_id_salt("rule-kind")
+            .selected_text(current)
+            .width(160.0)
+            .show_ui(ui, |ui| {
+                for (k, l) in KINDS {
+                    ui.selectable_value(kind, k, l);
+                }
+            });
+    };
     let hint = match f.kind {
         RuleKind::Breakpoint => "Pause matching traffic and edit it before it continues",
         RuleKind::Mock => "Reply with a fixed response; the server is never contacted",
@@ -181,11 +202,14 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
         RuleKind::Body => "Find & replace text in the body",
         RuleKind::Script => "JavaScript hooks: onRequest(ctx) / onResponse(ctx)",
     };
-    ui.label(muted(hint));
     egui::Grid::new("rule-form")
         .num_columns(2)
         .spacing([10.0, 8.0])
         .show(ui, |ui| {
+            field(ui, "Type", |ui| kind_picker(ui, &mut f.kind));
+            field(ui, "", |ui| {
+                ui.label(muted(hint));
+            });
             field(ui, "Name", |ui| {
                 ui.add(
                     TextEdit::singleline(&mut f.name)
