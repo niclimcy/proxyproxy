@@ -9,7 +9,7 @@ use egui_phosphor::regular as ph;
 pub fn show(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    vm: &mut CaptureVm,
+    vm: &CaptureVm,
     diff_base: Option<u64>,
     port: u16,
 ) -> Vec<RowIntent> {
@@ -37,22 +37,18 @@ pub fn show(
                         ui.label(muted(format!("Proxy is ready on 127.0.0.1:{port}.")));
                         ui.add_space(16.0);
                         ui.horizontal(|ui| {
-                            let copied = vm.test_command_copied();
-                            if copied {
-                                ctx.request_repaint();
-                            }
-                            let (icon, label, color) = if copied {
+                            let command = format!("proxyproxy run --port {port} -- curl https://example.com");
+                            let (icon, label, color) = if vm.test_command_copied.on() {
                                 (ph::CHECK, "Copied", success())
                             } else {
                                 (ph::COPY, "Copy test command", accent())
                             };
-                            let response =
-                                action_button_sized(ui, icon, label, color, 188.0, true)
-                                    .on_hover_text(format!("Copy: proxyproxy run --port {port} -- curl https://example.com"));
-                            let clicked = response.clicked();
-                            if clicked {
-                                ctx.copy_text(format!("proxyproxy run --port {port} -- curl https://example.com"));
-                                vm.mark_test_command_copied();
+                            if action_button_sized(ui, icon, label, color, 188.0, true)
+                                .on_hover_text(format!("Copy: {command}"))
+                                .clicked()
+                            {
+                                ctx.copy_text(command);
+                                out.push(RowIntent::TestCommandCopied);
                             }
                             ui.label(muted("or use Capture → Set system proxy"));
                         });

@@ -34,6 +34,7 @@ pub enum RowIntent {
     NoTls(String),
     Delete(u64),
     DiffBase(u64),
+    TestCommandCopied,
 }
 
 pub enum SidebarIntent {

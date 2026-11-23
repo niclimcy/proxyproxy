@@ -3,6 +3,21 @@ use std::sync::{
     Arc,
     mpsc::{Receiver, Sender, channel},
 };
+use std::time::{Duration, Instant};
+
+/// Short-lived "Copied" feedback after a copy button is clicked.
+#[derive(Default)]
+pub struct Flash(Option<Instant>);
+
+impl Flash {
+    pub fn mark(&mut self) {
+        self.0 = Some(Instant::now() + Duration::from_secs(2));
+    }
+
+    pub fn on(&self) -> bool {
+        self.0.is_some_and(|until| Instant::now() < until)
+    }
+}
 
 #[derive(Clone)]
 pub struct JobRunner {
@@ -58,6 +73,14 @@ impl Repaint for NoRepaint {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flash_is_on_only_after_mark() {
+        let mut f = Flash::default();
+        assert!(!f.on());
+        f.mark();
+        assert!(f.on());
+    }
 
     #[test]
     fn job_result_lands_in_status_after_poll() {
