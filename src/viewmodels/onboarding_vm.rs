@@ -1,4 +1,5 @@
-use super::intent::{OnboardingIntent, OnboardingTarget};
+use super::intent::{Effect, OnboardingIntent, OnboardingTarget};
+use super::status::Flash;
 use crate::domain::config::{OnboardingProfile, Shared};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14,6 +15,7 @@ pub struct OnboardingVm {
     pub stage: OnboardingStage,
     pub profile: OnboardingProfile,
     pub selected_ios_udid: Option<String>,
+    pub env_copied: Flash,
     cfg: Shared,
 }
 
@@ -28,6 +30,7 @@ impl OnboardingVm {
             stage: OnboardingStage::ChooseExperience,
             profile,
             selected_ios_udid: None,
+            env_copied: Flash::default(),
             cfg,
         }
     }
@@ -37,7 +40,7 @@ impl OnboardingVm {
         self.stage = OnboardingStage::ChooseExperience;
     }
 
-    pub fn handle(&mut self, intent: OnboardingIntent) {
+    pub fn handle(&mut self, intent: OnboardingIntent) -> Option<Effect> {
         match intent {
             OnboardingIntent::ChooseProfile(profile) => {
                 self.profile = profile;
@@ -61,9 +64,12 @@ impl OnboardingVm {
                     OnboardingStage::ChooseExperience => OnboardingStage::ChooseExperience,
                 };
             }
-            OnboardingIntent::Skip | OnboardingIntent::Complete => self.complete(),
-            OnboardingIntent::Device(_) | OnboardingIntent::ImportFlows(_) => {}
+            OnboardingIntent::EnvCopied => self.env_copied.mark(),
+            OnboardingIntent::Finish => self.complete(),
+            OnboardingIntent::Device(action) => return Some(Effect::Device(action)),
+            OnboardingIntent::ImportFlows(path) => return Some(Effect::ImportFlows(path)),
         }
+        None
     }
 
     fn complete(&mut self) {
@@ -127,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn ios_selection_is_persisted() {
+    fn ios_selection_is_remembered() {
         let mut vm = rig(false);
         vm.handle(OnboardingIntent::SelectIosSimulator("UDID-A".into()));
         assert_eq!(vm.selected_ios_udid.as_deref(), Some("UDID-A"));
@@ -138,7 +144,23 @@ mod tests {
         let mut vm = rig(true);
         vm.open();
         assert!(vm.show);
-        vm.handle(OnboardingIntent::Complete);
+        assert!(vm.handle(OnboardingIntent::Finish).is_none());
         assert!(!vm.show);
+        assert!(vm.cfg.lock().unwrap().onboarding_completed);
+    }
+
+    #[test]
+    fn device_and_import_intents_become_effects() {
+        let mut vm = rig(false);
+        assert!(matches!(
+            vm.handle(OnboardingIntent::Device(
+                crate::viewmodels::intent::DeviceAction::TrustCa
+            )),
+            Some(Effect::Device(_))
+        ));
+        assert!(matches!(
+            vm.handle(OnboardingIntent::ImportFlows("a.har".into())),
+            Some(Effect::ImportFlows(_))
+        ));
     }
 }

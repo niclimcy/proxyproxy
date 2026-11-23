@@ -16,8 +16,8 @@ pub enum OnboardingIntent {
     Back,
     Device(DeviceAction),
     ImportFlows(PathBuf),
-    Skip,
-    Complete,
+    EnvCopied,
+    Finish,
 }
 
 pub enum RowIntent {
@@ -85,6 +85,8 @@ pub enum Effect {
     RuleFromFlow(u64, RuleKind),
     ShowOverview,
     DiffBase(u64),
+    Device(DeviceAction),
+    ImportFlows(PathBuf),
 }
 
 pub enum ToolbarIntent {

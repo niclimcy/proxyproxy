@@ -8,7 +8,7 @@ use crate::viewmodels::{
     capture_vm::CaptureVm,
     detail_vm::DetailVm,
     devices_vm::DevicesVm,
-    intent::{Effect, ToolbarIntent},
+    intent::{Effect, SessionIntent, ToolbarIntent},
     network_vm::NetworkVm,
     onboarding_vm::OnboardingVm,
     replay_vm::ReplayVm,
@@ -124,29 +124,14 @@ impl App {
             Some(Effect::RuleFromFlow(id, kind)) => self.rules.open_from_flow(id, kind),
             Some(Effect::ShowOverview) => self.detail.show_overview(),
             Some(Effect::DiffBase(id)) => self.detail.use_as_base(id),
-            None => {}
-        }
-    }
-
-    fn apply_onboarding(&mut self, intent: crate::viewmodels::intent::OnboardingIntent) {
-        use crate::viewmodels::intent::OnboardingIntent;
-        match intent {
-            OnboardingIntent::Device(action) => self.devices.run(action, &self.status),
-            OnboardingIntent::ImportFlows(path) => self.session.handle(
-                crate::viewmodels::intent::SessionIntent::ImportFlows(path),
+            Some(Effect::Device(action)) => self.devices.run(action, &self.status),
+            Some(Effect::ImportFlows(path)) => self.session.handle(
+                SessionIntent::ImportFlows(path),
                 &mut self.capture,
                 &mut self.rules,
                 &mut self.status,
             ),
-            OnboardingIntent::Complete => {
-                self.onboarding.handle(OnboardingIntent::Complete);
-                self.session.save_config_if_changed();
-            }
-            OnboardingIntent::Skip => {
-                self.onboarding.handle(OnboardingIntent::Skip);
-                self.session.save_config_if_changed();
-            }
-            other => self.onboarding.handle(other),
+            None => {}
         }
     }
 
@@ -218,31 +203,25 @@ impl Drop for App {
     }
 }
 
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx().clone();
-        views::theme::sync(&ctx);
-        self.drain();
-        self.devices.tick();
-        if self.onboarding.show {
-            let flow_count = self.store.lock().flows.len();
-            for i in views::onboarding_window::show(
-                ui,
-                &ctx,
-                &mut self.onboarding,
-                self.port,
-                &self.cert,
-                &self.devices,
-                &self.status.text,
-                flow_count,
-            ) {
-                self.apply_onboarding(i);
-            }
-            ctx.request_repaint_after(Duration::from_secs(1));
-            return;
+impl App {
+    fn onboarding(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let flow_count = self.store.lock().flows.len();
+        let props = views::onboarding_window::Props {
+            devices: &self.devices,
+            port: self.port,
+            cert: &self.cert,
+            status: &self.status.text,
+            flow_count,
+        };
+        for i in views::onboarding_window::show(ui, ctx, &mut self.onboarding, props) {
+            let e = self.onboarding.handle(i);
+            self.apply(e);
         }
+    }
+
+    fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.capture.refresh_visible();
-        for i in views::shortcuts::read(&ctx) {
+        for i in views::shortcuts::read(ctx) {
             let before = self.capture.selected;
             let e = self.capture.handle_shortcut(i);
             if self.capture.selected != before {
@@ -250,9 +229,8 @@ impl eframe::App for App {
             }
             self.apply(e);
         }
-        self.replay.poll();
 
-        self.toolbar(ui, &ctx);
+        self.toolbar(ui, ctx);
 
         self.schemas.sync();
         self.capture.refresh_tree();
@@ -262,7 +240,7 @@ impl eframe::App for App {
         self.rules_panel(ui);
         for i in views::detail::show(
             ui,
-            &ctx,
+            ctx,
             &mut self.detail,
             self.capture.selected,
             self.capture.has_flows(),
@@ -270,13 +248,28 @@ impl eframe::App for App {
             let e = self.detail.handle(i);
             self.apply(e);
         }
-        for i in views::table::show(ui, &ctx, &self.capture, self.detail.diff_base, self.port) {
+        for i in views::table::show(ui, ctx, &self.capture, self.detail.diff_base, self.port) {
             let before = self.capture.selected;
             let e = self.capture.handle_row(i, &mut self.status);
             if self.capture.selected != before {
                 self.detail.on_select();
             }
             self.apply(e);
+        }
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        views::theme::sync(&ctx);
+        self.drain();
+        self.devices.tick();
+        self.replay.poll();
+        if self.onboarding.show {
+            self.onboarding(ui, &ctx);
+        } else {
+            self.workspace(ui, &ctx);
         }
         self.windows(&ctx);
         self.session.tick();

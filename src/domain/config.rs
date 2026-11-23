@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub rules: Vec<Rule>,
-    #[serde(default)]
+    // configs from before onboarding existed belong to users who are already set up;
+    // first runs have no config file and get `Default` (false)
+    #[serde(default = "already_onboarded")]
     pub onboarding_completed: bool,
     #[serde(default)]
     pub onboarding_profile: OnboardingProfile,
@@ -58,14 +60,19 @@ pub struct Upstream {
 
 pub type Shared = Arc<Mutex<Config>>;
 
+fn already_onboarded() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn config_deserializes_without_onboarding_fields() {
+    fn existing_config_skips_onboarding_but_first_run_does_not() {
         let cfg: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
-        assert!(!cfg.onboarding_completed);
+        assert!(cfg.onboarding_completed);
+        assert!(!Config::default().onboarding_completed);
         assert_eq!(cfg.onboarding_profile, OnboardingProfile::Experienced);
     }
 
