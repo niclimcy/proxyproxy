@@ -98,6 +98,7 @@ pub enum ToolbarIntent {
     About,
     Onboarding,
     Settings,
+    ShowBreakpoint,
     ClearUnpinned,
     ClearAll,
     ToggleCapture,

@@ -165,6 +165,7 @@ impl App {
                 ToolbarIntent::Compose => self.replay.open_compose(),
                 ToolbarIntent::About => self.about.open(),
                 ToolbarIntent::Settings => self.settings.open(),
+                ToolbarIntent::ShowBreakpoint => self.rules.focus_breakpoint = true,
                 ToolbarIntent::Onboarding => self.onboarding.open(),
                 other => self.capture.handle_toolbar(other),
             }

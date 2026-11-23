@@ -110,8 +110,8 @@ pub fn show(
                 // remaining space between the search box and the actions
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add_space(8.0);
-                    if paused_breakpoints > 0 {
-                        pill(ui, &format!("{paused_breakpoints} paused"), warning());
+                    if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
+                        out.push(ToolbarIntent::ShowBreakpoint);
                     }
                     if !status.is_empty() {
                         ui.add(egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate()).on_hover_text(status);
@@ -281,8 +281,8 @@ fn compact_primary_rows(
         if show_help {
             help_menu(ui, "", out);
         }
-        if paused_breakpoints > 0 {
-            pill(ui, &format!("{paused_breakpoints} paused"), warning());
+        if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
+            out.push(ToolbarIntent::ShowBreakpoint);
         }
         if !status.is_empty() {
             ui.add(
@@ -308,6 +308,22 @@ fn compact_primary_rows(
             }
         });
     });
+}
+
+fn paused_pill(ui: &mut egui::Ui, n: usize) -> egui::Response {
+    flat(ui, |ui| {
+        ui.add(
+            egui::Button::new(
+                RichText::new(ico(ph::PAUSE_CIRCLE, &format!("{n} paused")))
+                    .size(FS_SMALL)
+                    .color(warning()),
+            )
+            .fill(tint(warning(), Tint::Normal))
+            .min_size(egui::vec2(0.0, HIT))
+            .corner_radius(RADIUS_PILL),
+        )
+    })
+    .on_hover_text("Show the breakpoint editor")
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {

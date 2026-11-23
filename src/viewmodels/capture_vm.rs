@@ -199,6 +199,7 @@ impl CaptureVm {
             ToolbarIntent::Compose
             | ToolbarIntent::About
             | ToolbarIntent::Settings
+            | ToolbarIntent::ShowBreakpoint
             | ToolbarIntent::Onboarding
             | ToolbarIntent::Session(_)
             | ToolbarIntent::Device(_) => {}
