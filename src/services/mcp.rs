@@ -23,7 +23,7 @@ pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> 
                 "resources": {"subscribe": false, "listChanged": false},
                 "tools": {"listChanged": false}
             },
-            "serverInfo": {"name": "proxyproxy", "version": "0.1.0"}
+            "serverInfo": {"name": "proxyproxy", "version": env!("CARGO_PKG_VERSION")}
         }),
         "ping" => json!({}),
         "resources/list" => {
@@ -46,7 +46,10 @@ pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> 
         }
         "resources/read" => {
             let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
-            read_resource(store, uri).unwrap_or_else(|| error_value(-32602, "Unknown resource"))
+            match read_resource(store, uri) {
+                Some(contents) => contents,
+                None => return Some(error_response(id, -32602, "Unknown resource")),
+            }
         }
         "tools/list" => json!({"tools": tools()}),
         "tools/call" => {
@@ -68,10 +71,6 @@ pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> 
     };
 
     Some(json!({"jsonrpc": "2.0", "id": id, "result": result}))
-}
-
-fn error_value(code: i32, message: &str) -> Value {
-    json!({"code": code, "message": message})
 }
 
 fn error_response(id: Value, code: i32, message: &str) -> Value {
@@ -244,7 +243,6 @@ fn call_tool(
             let mut cfg = cfg.lock().unwrap();
             let old_len = cfg.rules.len();
             cfg.rules.retain(|rule| rule.id != id);
-            crate::services::config_store::save(&cfg);
             Ok(json!({"deleted": cfg.rules.len() != old_len}))
         }
         "proxyproxy_export_har" => {
@@ -306,37 +304,7 @@ fn replay_tool(store: &FlowStore, arguments: Value) -> Result<Value, String> {
         (method, url, headers, body)
     };
     let sent = replay::send(&method, &url, &headers, &body)?;
-    let flow = crate::domain::flow::Flow {
-        id: crate::domain::flow::next_id(),
-        method,
-        scheme: url.split("://").next().unwrap_or("https").to_string(),
-        host: url
-            .split("://")
-            .nth(1)
-            .and_then(|rest| rest.split('/').next())
-            .unwrap_or("")
-            .to_string(),
-        path: url
-            .split("://")
-            .nth(1)
-            .and_then(|rest| rest.find('/').map(|i| rest[i..].to_string()))
-            .unwrap_or_else(|| "/".to_string()),
-        version: "HTTP/1.1".to_string(),
-        started: std::time::SystemTime::now(),
-        started_at: std::time::Instant::now(),
-        request: crate::domain::flow::Message { headers, body },
-        status: Some(sent.status),
-        response: Some(sent.response),
-        duration_ms: Some(sent.ms),
-        tag: "Replayed".to_string(),
-        app: "proxyproxy".to_string(),
-        pinned: false,
-        comment: String::new(),
-        color: None,
-        is_ws: false,
-        ws: Vec::new(),
-        error: None,
-    };
+    let flow = replay::replayed_flow(&method, &url, headers, body, &sent);
     store.push(flow.clone());
     Ok(crate::services::api::detail(&flow))
 }
@@ -358,14 +326,7 @@ fn add_rule(cfg: &Shared, arguments: Value) -> Result<Value, String> {
     let id = arguments
         .get("id")
         .and_then(Value::as_u64)
-        .unwrap_or_else(|| {
-            cfg.rules
-                .iter()
-                .map(|rule| rule.id)
-                .max()
-                .unwrap_or(0)
-                .saturating_add(1)
-        });
+        .unwrap_or_else(|| cfg.next_rule_id());
     let rule = Rule {
         id,
         enabled: arguments
@@ -391,11 +352,13 @@ fn add_rule(cfg: &Shared, arguments: Value) -> Result<Value, String> {
     } else {
         cfg.rules.push(rule.clone());
     }
-    crate::services::config_store::save(&cfg);
     Ok(serde_json::to_value(rule).unwrap_or(Value::Null))
 }
 
+// Bridges stdio MCP clients to the running app's HTTP endpoint, so both share one capture.
 pub fn serve_stdio(port: u16) -> Result<(), String> {
+    let client = reqwest::blocking::Client::new();
+    let url = format!("http://127.0.0.1:{port}/mcp");
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -403,20 +366,16 @@ pub fn serve_stdio(port: u16) -> Result<(), String> {
         if line.trim().is_empty() {
             continue;
         }
-        let request: Value =
-            serde_json::from_str(&line).map_err(|error| format!("invalid JSON: {error}"))?;
-        if request.get("method").and_then(Value::as_str) == Some("notifications/initialized") {
-            continue;
-        }
-        let url = format!("http://127.0.0.1:{}/mcp", port);
-        let response = reqwest::blocking::Client::new()
-            .post(url)
-            .header("content-type", "application/json")
-            .body(serde_json::to_string(&request).map_err(|error| error.to_string())?)
-            .send()
-            .and_then(|response| response.error_for_status())
-            .and_then(|response| response.text())
-            .map_err(|error| error.to_string())?;
+        let response = match serde_json::from_str::<Value>(&line) {
+            Ok(request) => client
+                .post(&url)
+                .header("content-type", "application/json")
+                .body(request.to_string())
+                .send()
+                .and_then(|response| response.text())
+                .map_err(|error| format!("cannot reach proxyproxy on port {port}: {error}"))?,
+            Err(_) => error_response(Value::Null, -32700, "Parse error").to_string(),
+        };
         if response.trim().is_empty() {
             continue;
         }
@@ -483,6 +442,19 @@ mod tests {
                 .iter()
                 .any(|resource| { resource["uri"] == "proxyproxy://capture" })
         );
+    }
+
+    #[test]
+    fn unknown_resource_is_a_json_rpc_error() {
+        let (store, cfg) = setup();
+        let response = handle(
+            &store,
+            &cfg,
+            json!({"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": {"uri": "proxyproxy://nope"}}),
+        )
+        .unwrap();
+        assert_eq!(response["error"]["code"], -32602);
+        assert!(response.get("result").is_none());
     }
 
     #[test]

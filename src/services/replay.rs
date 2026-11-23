@@ -1,4 +1,4 @@
-use crate::domain::flow::Message;
+use crate::domain::flow::{self, Flow, Message};
 use reqwest::{
     Method,
     blocking::Client,
@@ -63,4 +63,59 @@ pub fn send(
         response: Message { headers, body },
         ms: t.elapsed().as_millis(),
     })
+}
+
+fn split_url(url: &str) -> (&str, &str, &str) {
+    let url = url.trim();
+    let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
+    let (host, path) = rest
+        .find(['/', '?'])
+        .map(|i| (&rest[..i], &rest[i..]))
+        .unwrap_or((rest, "/"));
+    (scheme, host, path)
+}
+
+// Successful replays are recorded as flows so they show up next to captured traffic.
+pub fn replayed_flow(
+    method: &str,
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+    sent: &Sent,
+) -> Flow {
+    let (scheme, host, path) = split_url(url);
+    Flow {
+        id: flow::next_id(),
+        method: method.trim().to_uppercase(),
+        scheme: scheme.into(),
+        host: host.into(),
+        path: path.into(),
+        version: "HTTP/1.1".into(),
+        started: std::time::SystemTime::now(),
+        started_at: std::time::Instant::now(),
+        request: Message { headers, body },
+        status: Some(sent.status),
+        response: Some(sent.response.clone()),
+        duration_ms: Some(sent.ms),
+        tag: "Replayed".into(),
+        app: "proxyproxy".into(),
+        pinned: false,
+        comment: String::new(),
+        color: None,
+        is_ws: false,
+        ws: vec![],
+        error: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schemeless_url_defaults_to_https_and_root_path() {
+        assert_eq!(split_url("a.com"), ("https", "a.com", "/"));
+        assert_eq!(split_url(" http://a.com/p "), ("http", "a.com", "/p"));
+        assert_eq!(split_url("http://a.com?x=1"), ("http", "a.com", "?x=1"));
+    }
 }

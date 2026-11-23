@@ -1,4 +1,4 @@
-use crate::domain::flow::{self, Flow, Message};
+use crate::domain::flow::Message;
 use crate::domain::repaint::Repaint;
 use crate::services::decoders::{ModeId, PRETTY};
 use crate::services::flow_store::FlowStore;
@@ -47,45 +47,6 @@ pub fn parse_headers(text: &str) -> Vec<(String, String)> {
         .filter_map(|l| l.split_once(':'))
         .map(|(k, v)| (k.trim().into(), v.trim().into()))
         .collect()
-}
-
-fn split_url(url: &str) -> (&str, &str, &str) {
-    let url = url.trim();
-    let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
-    let (host, path) = rest
-        .find('/')
-        .map(|i| (&rest[..i], &rest[i..]))
-        .unwrap_or((rest, "/"));
-    (scheme, host, path)
-}
-
-fn flow_from_draft(d: &ReplayDraft, s: &Sent) -> Flow {
-    let (scheme, host, path) = split_url(&d.url);
-    Flow {
-        id: flow::next_id(),
-        method: d.method.trim().to_uppercase(),
-        scheme: scheme.into(),
-        host: host.into(),
-        path: path.into(),
-        version: "HTTP/1.1".into(),
-        started: std::time::SystemTime::now(),
-        started_at: std::time::Instant::now(),
-        request: Message {
-            headers: parse_headers(&d.headers),
-            body: d.body.clone().into_bytes(),
-        },
-        status: Some(s.status),
-        response: Some(s.response.clone()),
-        duration_ms: Some(s.ms),
-        tag: "Replayed".into(),
-        app: "proxyproxy".into(),
-        pinned: false,
-        comment: String::new(),
-        color: None,
-        is_ws: false,
-        ws: vec![],
-        error: None,
-    }
 }
 
 impl ReplayVm {
@@ -176,7 +137,13 @@ impl ReplayVm {
         };
         d.sending = false;
         if let Ok(s) = &res {
-            self.store.lock().push(flow_from_draft(d, s));
+            self.store.lock().push(replay::replayed_flow(
+                &d.method,
+                &d.url,
+                parse_headers(&d.headers),
+                d.body.clone().into_bytes(),
+                s,
+            ));
         }
         d.result = Some(res);
     }
@@ -189,6 +156,7 @@ impl ReplayVm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::flow::Flow;
     use crate::viewmodels::status::NoRepaint;
 
     fn vm() -> ReplayVm {
@@ -286,12 +254,6 @@ mod tests {
         vm.finish(id, Err("refused".into()));
         assert!(vm.store.lock().flows.is_empty());
         assert!(matches!(&vm.drafts[0].result, Some(Err(e)) if e == "refused"));
-    }
-
-    #[test]
-    fn schemeless_url_defaults_to_https_and_root_path() {
-        assert_eq!(split_url("a.com"), ("https", "a.com", "/"));
-        assert_eq!(split_url(" http://a.com/p "), ("http", "a.com", "/p"));
     }
 
     #[test]
