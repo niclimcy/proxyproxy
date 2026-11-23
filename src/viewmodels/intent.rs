@@ -69,10 +69,10 @@ pub enum SessionIntent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeviceAction {
     TrustCa,
-    SetSystemProxy,
-    ClearSystemProxy,
+    ToggleSystemProxy,
     LaunchChrome,
     IosSimInstallCa(String),
+    InstallMissingIosCas,
     IosSimReboot(String),
     AndroidSetProxy,
     AndroidClearProxy,

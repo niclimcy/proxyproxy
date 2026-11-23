@@ -1,4 +1,5 @@
 use crate::domain::config::OnboardingProfile;
+use crate::viewmodels::devices_vm::{DevicesVm, IosCaStatus};
 use crate::viewmodels::intent::DeviceAction;
 use crate::viewmodels::{
     intent::{OnboardingIntent, OnboardingTarget},
@@ -89,8 +90,7 @@ pub fn show(
     vm: &mut OnboardingVm,
     port: u16,
     cert: &str,
-    ios_simulators: &[crate::services::devices::IosSimulator],
-    system_proxy_enabled: bool,
+    devices: &DevicesVm,
     status: &str,
     flow_count: usize,
 ) -> Vec<OnboardingIntent> {
@@ -233,20 +233,16 @@ pub fn show(
                                 out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
                             }
                             ui.add_space(8.0);
-                            if system_proxy_enabled {
-                                ui.label(RichText::new("System capture enabled").color(success()));
-                                if action_button_sized(ui, ph::GEAR_SIX, "Disable system proxy", fg_muted(), 240.0, true)
-                                .clicked()
-                                {
-                                    out.push(OnboardingIntent::Device(DeviceAction::ClearSystemProxy));
-                                }
+                            let (state, color, action) = if devices.system_proxy_enabled {
+                                ("System capture enabled", success(), "Disable system proxy")
                             } else {
-                                ui.label(RichText::new("System capture disabled").color(fg_muted()));
-                                if action_button_sized(ui, ph::GEAR_SIX, "Enable system proxy", accent(), 240.0, true)
+                                ("System capture disabled", fg_muted(), "Enable system proxy")
+                            };
+                            ui.label(RichText::new(state).color(color));
+                            if action_button_sized(ui, ph::GEAR_SIX, action, accent(), 240.0, true)
                                 .clicked()
-                                {
-                                    out.push(OnboardingIntent::Device(DeviceAction::SetSystemProxy));
-                                }
+                            {
+                                out.push(OnboardingIntent::Device(DeviceAction::ToggleSystemProxy));
                             }
                             ui.add_space(8.0);
                             if action_button_sized(ui, ph::BROWSERS, "Launch clean Chrome", accent(), 240.0, true)
@@ -256,60 +252,22 @@ pub fn show(
                             }
                         }
                         OnboardingTarget::Ios => {
-                            let running: Vec<_> = ios_simulators
-                                .iter()
-                                .filter(|sim| {
-                                    sim.state
-                                        == crate::services::devices::IosSimulatorState::Booted
-                                })
-                                .collect();
-                            if running.is_empty() {
-                                ui.label(RichText::new("No running iOS simulator").strong());
-                                ui.add_space(6.0);
-                                ui.label(muted(
-                                    "Boot a simulator in Xcode or the Simulator app, then return here.",
-                                ));
-                            } else {
-                                let selected = running
-                                    .iter()
-                                    .find(|sim| {
-                                        vm.selected_ios_udid.as_deref() == Some(sim.udid.as_str())
-                                    })
-                                    .copied()
-                                    .unwrap_or(running[0]);
-                                if vm.selected_ios_udid.as_deref() != Some(selected.udid.as_str()) {
-                                    out.push(OnboardingIntent::SelectIosSimulator(
-                                        selected.udid.clone(),
-                                    ));
-                                }
-
-                                if running.len() > 1 {
-                                    let mut selected_udid = selected.udid.clone();
+                            if let Some(selected) = devices.selected_sim(vm.selected_ios_udid.as_deref()) {
+                                if devices.running().nth(1).is_some() {
                                     egui::ComboBox::from_id_salt("onboarding-ios-simulator")
                                         .width(360.0)
-                                        .selected_text(format!(
-                                            "{} · {}",
-                                            selected.name, selected.runtime
-                                        ))
+                                        .selected_text(format!("{} · {}", selected.name, selected.runtime))
                                         .show_ui(ui, |ui| {
-                                            for sim in &running {
+                                            for sim in devices.running() {
                                                 let text = format!("{} · {}", sim.name, sim.runtime);
-                                                if ui
-                                                    .selectable_label(
-                                                        selected_udid == sim.udid,
-                                                        text,
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    selected_udid = sim.udid.clone();
+                                                if ui.selectable_label(sim.udid == selected.udid, text).clicked() {
+                                                    out.push(OnboardingIntent::SelectIosSimulator(sim.udid.clone()));
                                                 }
                                             }
                                         });
-                                    if selected_udid != selected.udid {
-                                        out.push(OnboardingIntent::SelectIosSimulator(selected_udid));
-                                    }
                                     ui.add_space(8.0);
                                 }
+
 
                                 egui::Frame::group(ui.style())
                                     .fill(tint(accent(), Tint::Subtle))
@@ -326,41 +284,32 @@ pub fn show(
                                             });
                                         });
                                         ui.add_space(8.0);
-                                        match selected.ca_status {
-                                            crate::services::devices::IosCaStatus::Installed => {
-                                                ui.label(RichText::new("Certificate installed").color(success()));
-                                                ui.add_space(8.0);
-                                                ui.label(muted("Configure the simulator proxy in Settings if needed."));
-                                                ui.add_space(6.0);
-                                                if action_button_sized(ui, ph::ARROWS_CLOCKWISE, "Reboot simulator", accent(), 220.0, true)
+                                        if selected.ca_status == IosCaStatus::Installed {
+                                            ui.label(RichText::new("Certificate installed").color(success()));
+                                            ui.add_space(8.0);
+                                            ui.label(muted("Configure the simulator proxy in Settings if needed."));
+                                            ui.add_space(6.0);
+                                            if action_button_sized(ui, ph::ARROWS_CLOCKWISE, "Reboot simulator", accent(), 220.0, true)
                                                 .clicked()
-                                                {
-                                                    out.push(OnboardingIntent::Device(
-                                                        DeviceAction::IosSimReboot(selected.udid.clone()),
-                                                    ));
-                                                }
+                                            {
+                                                out.push(OnboardingIntent::Device(
+                                                    DeviceAction::IosSimReboot(selected.udid.clone()),
+                                                ));
                                             }
-                                            crate::services::devices::IosCaStatus::Missing => {
-                                                ui.label(RichText::new("Certificate missing").color(warning()));
-                                                ui.add_space(8.0);
-                                                if action_button_sized(ui, ph::SHIELD_CHECK, "Install CA", accent(), 180.0, true)
+                                        } else {
+                                            let (text, color) = if selected.ca_status == IosCaStatus::Missing {
+                                                ("Certificate missing", warning())
+                                            } else {
+                                                ("Certificate status unknown", fg_muted())
+                                            };
+                                            ui.label(RichText::new(text).color(color));
+                                            ui.add_space(8.0);
+                                            if action_button_sized(ui, ph::SHIELD_CHECK, "Install CA", accent(), 180.0, true)
                                                 .clicked()
-                                                {
-                                                    out.push(OnboardingIntent::Device(
-                                                        DeviceAction::IosSimInstallCa(selected.udid.clone()),
-                                                    ));
-                                                }
-                                            }
-                                            crate::services::devices::IosCaStatus::Unknown => {
-                                                ui.label(RichText::new("Certificate status unknown").color(fg_muted()));
-                                                ui.add_space(8.0);
-                                                if action_button_sized(ui, ph::SHIELD_CHECK, "Install CA", accent(), 180.0, true)
-                                                .clicked()
-                                                {
-                                                    out.push(OnboardingIntent::Device(
-                                                        DeviceAction::IosSimInstallCa(selected.udid.clone()),
-                                                    ));
-                                                }
+                                            {
+                                                out.push(OnboardingIntent::Device(
+                                                    DeviceAction::IosSimInstallCa(selected.udid.clone()),
+                                                ));
                                             }
                                         }
                                     });
@@ -368,6 +317,12 @@ pub fn show(
                                 ui.label(muted(format!(
                                     "Capture proxy: 127.0.0.1:{port}",
                                 )));
+                            } else {
+                                ui.label(RichText::new("No running iOS simulator").strong());
+                                ui.add_space(6.0);
+                                ui.label(muted(
+                                    "Boot a simulator in Xcode or the Simulator app, then return here.",
+                                ));
                             }
                         }
                         OnboardingTarget::Android => {
@@ -419,18 +374,15 @@ pub fn show(
                         {
                             out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
                         }
-                        if action_button_sized(ui, ph::GEAR_SIX, if system_proxy_enabled {
-                                "Disable system proxy"
-                            } else {
-                                "Enable system proxy"
-                            }, accent(), 220.0, true)
-                        .clicked()
+                        let proxy_label = if devices.system_proxy_enabled {
+                            "Disable system proxy"
+                        } else {
+                            "Enable system proxy"
+                        };
+                        if action_button_sized(ui, ph::GEAR_SIX, proxy_label, accent(), 220.0, true)
+                            .clicked()
                         {
-                            out.push(OnboardingIntent::Device(if system_proxy_enabled {
-                                DeviceAction::ClearSystemProxy
-                            } else {
-                                DeviceAction::SetSystemProxy
-                            }));
+                            out.push(OnboardingIntent::Device(DeviceAction::ToggleSystemProxy));
                         }
                     });
                     ui.add_space(8.0);
@@ -440,29 +392,16 @@ pub fn show(
                         {
                             out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
                         }
-                        let running_missing: Vec<_> = ios_simulators
-                            .iter()
-                            .filter(|sim| {
-                                sim.state == crate::services::devices::IosSimulatorState::Booted
-                                    && sim.ca_status
-                                        != crate::services::devices::IosCaStatus::Installed
-                            })
-                            .collect();
-                        let mut ios_clicked = false;
-                        ui.scope(|ui| {
-                            ios_clicked = action_button_sized(ui, ph::APPLE_LOGO, if running_missing.len() == 1 {
-                                    "Install iOS Simulator CA"
-                                } else {
-                                    "Install iOS Simulator CAs"
-                                }, accent(), 220.0, !running_missing.is_empty())
-                            .clicked();
-                        });
-                        if ios_clicked {
-                            for sim in running_missing {
-                                out.push(OnboardingIntent::Device(
-                                    DeviceAction::IosSimInstallCa(sim.udid.clone()),
-                                ));
-                            }
+                        let missing = devices.missing_ca().len();
+                        let label = if missing == 1 {
+                            "Install iOS Simulator CA"
+                        } else {
+                            "Install iOS Simulator CAs"
+                        };
+                        if action_button_sized(ui, ph::APPLE_LOGO, label, accent(), 220.0, missing > 0)
+                            .clicked()
+                        {
+                            out.push(OnboardingIntent::Device(DeviceAction::InstallMissingIosCas));
                         }
                         if action_button_sized(ui, ph::ANDROID_LOGO, "Android setup", accent(), 220.0, true)
                         .clicked()
@@ -471,16 +410,9 @@ pub fn show(
                         }
                     });
                 });
-                let running_count = ios_simulators
-                    .iter()
-                    .filter(|sim| sim.state == crate::services::devices::IosSimulatorState::Booted)
-                    .count();
-                ui.label(muted(if running_count == 0 {
-                    "iOS Simulator: no running simulator".to_string()
-                } else if running_count == 1 {
-                    "iOS Simulator: 1 running".to_string()
-                } else {
-                    format!("iOS Simulator: {running_count} running")
+                ui.label(muted(match devices.running().count() {
+                    0 => "iOS Simulator: no running simulator".to_string(),
+                    n => format!("iOS Simulator: {n} running"),
                 }));
                 ui.add_space(12.0);
                 ui.allocate_ui(egui::vec2(content_width, 92.0), |ui| {

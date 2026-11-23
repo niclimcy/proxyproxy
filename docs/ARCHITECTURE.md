@@ -93,7 +93,8 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `rules_vm.rs` | rule form, breakpoints, console, scope lists, `RuleKind` |
 | `replay_vm.rs` | replay and compose drafts |
 | `network_vm.rs`, `schemas_vm.rs` | the Network and Schemas tabs |
-| `session_vm.rs` | autosave, session and rules files, device actions |
+| `session_vm.rs` | autosave, session and rules files |
+| `devices_vm.rs` | device actions; simulator and system-proxy state polled off the UI thread |
 | `status.rs` | status line, `JobRunner` for background jobs |
 | `intent.rs` | intent and effect enums |
 

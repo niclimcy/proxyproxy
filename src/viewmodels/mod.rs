@@ -1,6 +1,7 @@
 pub mod about_vm;
 pub mod capture_vm;
 pub mod detail_vm;
+pub mod devices_vm;
 pub mod intent;
 pub mod network_vm;
 pub mod onboarding_vm;

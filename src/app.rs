@@ -7,6 +7,7 @@ use crate::viewmodels::{
     about_vm::AboutVm,
     capture_vm::CaptureVm,
     detail_vm::DetailVm,
+    devices_vm::DevicesVm,
     intent::{Effect, ToolbarIntent},
     network_vm::NetworkVm,
     onboarding_vm::OnboardingVm,
@@ -61,6 +62,7 @@ struct App {
     api_port: u16,
     cert: String,
     menu: services::app_menu::AppMenu,
+    devices: DevicesVm,
     about: AboutVm,
     onboarding: OnboardingVm,
 }
@@ -91,6 +93,7 @@ impl App {
             network: NetworkVm::new(cfg.clone()),
             schemas: SchemasVm::new(cfg),
             session,
+            devices: DevicesVm::new(port, cert.clone(), repaint.clone()),
             status: Status::new(status_text, repaint),
             store,
             port,
@@ -128,10 +131,7 @@ impl App {
     fn apply_onboarding(&mut self, intent: crate::viewmodels::intent::OnboardingIntent) {
         use crate::viewmodels::intent::OnboardingIntent;
         match intent {
-            OnboardingIntent::Device(action) => {
-                self.session
-                    .run_device(action, self.port, self.cert.clone(), &self.status);
-            }
+            OnboardingIntent::Device(action) => self.devices.run(action, &self.status),
             OnboardingIntent::ImportFlows(path) => self.session.handle(
                 crate::viewmodels::intent::SessionIntent::ImportFlows(path),
                 &mut self.capture,
@@ -155,8 +155,7 @@ impl App {
         let props = views::toolbar::Props {
             port: self.port,
             cert: &self.cert,
-            ios_simulators: &self.session.ios_simulators,
-            system_proxy_enabled: self.session.system_proxy_enabled,
+            devices: &self.devices,
             show_rules: &mut self.rules.show,
             active_rules,
             status: &self.status.text,
@@ -170,10 +169,7 @@ impl App {
                     self.session
                         .handle(s, &mut self.capture, &mut self.rules, &mut self.status)
                 }
-                ToolbarIntent::Device(a) => {
-                    self.session
-                        .run_device(a, self.port, self.cert.clone(), &self.status)
-                }
+                ToolbarIntent::Device(a) => self.devices.run(a, &self.status),
                 ToolbarIntent::Compose => self.replay.open_compose(),
                 ToolbarIntent::About => self.about.open(),
                 ToolbarIntent::Onboarding => self.onboarding.open(),
@@ -217,7 +213,8 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.session.shutdown(self.port);
+        self.session.shutdown();
+        self.devices.shutdown();
     }
 }
 
@@ -226,6 +223,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         views::theme::sync(&ctx);
         self.drain();
+        self.devices.tick();
         if self.onboarding.show {
             let flow_count = self.store.lock().flows.len();
             for i in views::onboarding_window::show(
@@ -234,8 +232,7 @@ impl eframe::App for App {
                 &mut self.onboarding,
                 self.port,
                 &self.cert,
-                &self.session.ios_simulators,
-                self.session.system_proxy_enabled,
+                &self.devices,
                 &self.status.text,
                 flow_count,
             ) {
@@ -282,7 +279,7 @@ impl eframe::App for App {
             self.apply(e);
         }
         self.windows(&ctx);
-        self.session.tick(&self.cert);
+        self.session.tick();
         ctx.request_repaint_after(Duration::from_secs(1));
     }
 }

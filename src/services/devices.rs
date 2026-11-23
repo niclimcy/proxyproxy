@@ -198,7 +198,7 @@ fn parse_ios_simulators(json: &str) -> Result<Vec<IosSimulator>, String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
+fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
     let json = run("xcrun", &["simctl", "list", "-j", "devices"])?;
     parse_ios_simulators(&json)
 }
@@ -224,19 +224,26 @@ fn truststore_contains(rows: &str, sha256: &str) -> bool {
         .any(|row| row.trim().eq_ignore_ascii_case(sha256))
 }
 
+// The CA is created once at startup, so its fingerprint never changes while we run.
 #[cfg(target_os = "macos")]
-pub fn refresh_ios_ca_status(simulators: &mut [IosSimulator], cert: &str) {
-    let fingerprint = match run(
-        "openssl",
-        &["x509", "-in", cert, "-noout", "-fingerprint", "-sha256"],
-    ) {
-        Ok(text) => text
+fn ca_fingerprint(cert: &str) -> Option<&'static str> {
+    static FINGERPRINT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    FINGERPRINT
+        .get_or_init(|| {
+            run(
+                "openssl",
+                &["x509", "-in", cert, "-noout", "-fingerprint", "-sha256"],
+            )
+            .ok()?
             .split_once('=')
-            .map(|(_, value)| value.replace(':', "").trim().to_ascii_uppercase()),
-        Err(_) => None,
-    };
+            .map(|(_, value)| value.replace(':', "").trim().to_ascii_uppercase())
+        })
+        .as_deref()
+}
 
-    let Some(fingerprint) = fingerprint else {
+#[cfg(target_os = "macos")]
+fn refresh_ios_ca_status(simulators: &mut [IosSimulator], cert: &str) {
+    let Some(fingerprint) = ca_fingerprint(cert) else {
         for sim in simulators {
             sim.ca_status = IosCaStatus::Unknown;
         }
@@ -256,7 +263,7 @@ pub fn refresh_ios_ca_status(simulators: &mut [IosSimulator], cert: &str) {
             &[&db, "select upper(hex(sha256)) from tsettings;"],
         ) {
             Ok(rows) => {
-                sim.ca_status = if truststore_contains(&rows, &fingerprint) {
+                sim.ca_status = if truststore_contains(&rows, fingerprint) {
                     IosCaStatus::Installed
                 } else {
                     IosCaStatus::Missing
@@ -277,12 +284,29 @@ pub fn ios_sim_reboot(_: &str) -> Res {
     Err("iOS simulator requires macOS".into())
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn refresh_ios_ca_status(_: &mut [IosSimulator], _: &str) {}
+pub struct DeviceSnapshot {
+    pub ios_simulators: Vec<IosSimulator>,
+    /// `None` where we can't read the system proxy setting.
+    pub system_proxy: Option<bool>,
+}
+
+/// Runs several subprocesses; call it off the UI thread.
+#[cfg(target_os = "macos")]
+pub fn snapshot(cert: &str) -> DeviceSnapshot {
+    let mut ios_simulators = ios_simulators().unwrap_or_default();
+    refresh_ios_ca_status(&mut ios_simulators, cert);
+    DeviceSnapshot {
+        ios_simulators,
+        system_proxy: system_proxy_status().ok(),
+    }
+}
 
 #[cfg(not(target_os = "macos"))]
-pub fn ios_simulators() -> Result<Vec<IosSimulator>, String> {
-    Err("iOS simulator requires macOS".into())
+pub fn snapshot(_: &str) -> DeviceSnapshot {
+    DeviceSnapshot {
+        ios_simulators: vec![],
+        system_proxy: None,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -308,7 +332,7 @@ pub fn system_proxy_status() -> Result<bool, String> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn system_proxy_status() -> Result<bool, String> {
-    Ok(false)
+    Err("reading the system proxy is only supported on macOS".into())
 }
 
 #[cfg(target_os = "macos")]
@@ -464,7 +488,6 @@ pub fn launch_chrome(port: u16) -> Res {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn truststore_sha256_match_is_case_insensitive() {
         let sha256 = "D4E842E9A47EB58147DCBAEBC9784FCF5A39C3A642D358754B0DFF7BC8A5B9FB";
@@ -475,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_only_available_booted_sims() {
+    fn parses_available_sims_in_any_state() {
         let json = r#"{
           "devices": {
             "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
