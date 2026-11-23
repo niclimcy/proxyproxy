@@ -123,10 +123,11 @@ pub fn show(
                             {
                                 ctx.copy_text(url.clone());
                             }
-                            ui.add(
-                                egui::Label::new(RichText::new(&url).monospace().color(fg_muted()))
-                                    .truncate(),
-                            );
+                            // URL reads on from the badges; the copy button stays at the edge
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.add(egui::Label::new(RichText::new(&url).monospace()).truncate())
+                                    .on_hover_text(&url);
+                            });
                         });
                     });
                 });
