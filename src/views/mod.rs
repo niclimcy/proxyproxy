@@ -8,6 +8,7 @@ pub mod onboarding_window;
 pub mod replay_window;
 pub mod rules_panel;
 pub mod schemas_tab;
+pub mod settings_window;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod table;

@@ -198,6 +198,7 @@ impl CaptureVm {
             }
             ToolbarIntent::Compose
             | ToolbarIntent::About
+            | ToolbarIntent::Settings
             | ToolbarIntent::Onboarding
             | ToolbarIntent::Session(_)
             | ToolbarIntent::Device(_) => {}
@@ -287,6 +288,7 @@ impl CaptureVm {
             }
             ShortcutIntent::ReplaySelected => return self.selected.map(Effect::OpenReplay),
             ShortcutIntent::Deselect => self.selected = None,
+            ShortcutIntent::OpenSettings => return Some(Effect::OpenSettings),
         }
         None
     }
@@ -490,6 +492,15 @@ mod tests {
         assert_eq!(vm.selected, Some(3));
         vm.handle_shortcut(ShortcutIntent::Step(false));
         assert_eq!(vm.selected, Some(2));
+    }
+
+    #[test]
+    fn settings_shortcut_opens_settings() {
+        let (mut vm, _) = setup(0);
+        assert!(matches!(
+            vm.handle_shortcut(ShortcutIntent::OpenSettings),
+            Some(Effect::OpenSettings)
+        ));
     }
 
     #[test]

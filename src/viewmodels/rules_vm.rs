@@ -360,8 +360,6 @@ pub enum RulesTab {
     Rules,
     Scope,
     Console,
-    Schemas,
-    Network,
 }
 
 const MAP_FILE_EDIT_LIMIT: u64 = 1 << 20;

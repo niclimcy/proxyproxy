@@ -34,7 +34,7 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 - Rules: breakpoints, map local, redirect, block, throttle, header and body rewrite, mock responses, and JavaScript (`onRequest` / `onResponse`).
 - Edit and resend requests, diff two requests, copy as cURL, fetch, Python, HTTPie or raw HTTP.
 - Body views: pretty, tree, raw, hex, form, decoded protobuf.
-  - Protobuf: load `FileDescriptorSet` files in the Schemas tab of the Rules window. Bodies, including gRPC framing, are decoded with field names.
+  - Protobuf: load `FileDescriptorSet` files in the Schemas tab of Settings (⌘,). Bodies, including gRPC framing, are decoded with field names.
   - GraphQL: operation name and type, formatted query, variables, response data and errors.
 - DNS overrides: map hosts (globs allowed) to IPs.
 - Upstream proxy: a manual HTTP or SOCKS5 proxy, or a PAC file.

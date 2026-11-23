@@ -9,4 +9,5 @@ pub mod replay_vm;
 pub mod rules_vm;
 pub mod schemas_vm;
 pub mod session_vm;
+pub mod settings_vm;
 pub mod status;

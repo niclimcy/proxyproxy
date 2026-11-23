@@ -11,12 +11,7 @@ fn field(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.end_row();
 }
 
-// `tab_body` draws the Schemas / Network tabs, which belong to other ViewModels
-pub fn show(
-    ui: &mut egui::Ui,
-    vm: &mut RulesVm,
-    tab_body: impl FnOnce(&mut egui::Ui, RulesTab),
-) -> Vec<RuleIntent> {
+pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
     let mut out = vec![];
     let mut open = vm.show;
     let mut close = false;
@@ -44,8 +39,6 @@ pub fn show(
                     (RulesTab::Rules, "Rules"),
                     (RulesTab::Scope, "Scope"),
                     (RulesTab::Console, "Console"),
-                    (RulesTab::Schemas, "Schemas"),
-                    (RulesTab::Network, "Network"),
                 ],
             );
             ui.add_space(6.0);
@@ -56,7 +49,6 @@ pub fn show(
                     RulesTab::Rules => rules_tab(ui, vm, &mut out),
                     RulesTab::Scope => scope_tab(ui, vm, &mut out),
                     RulesTab::Console => console_tab(ui, vm, &mut out),
-                    t @ (RulesTab::Schemas | RulesTab::Network) => tab_body(ui, t),
                 });
         });
     vm.show = open && !close;

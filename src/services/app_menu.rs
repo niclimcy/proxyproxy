@@ -20,23 +20,36 @@ impl AppMenu {
         self.0.is_some()
     }
 
-    pub fn take_setup_guide_request(&self) -> bool {
+    pub fn take_requests(&self) -> Vec<MenuRequest> {
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
-            let mut found = false;
+            let mut out = vec![];
             while let Ok(event) = muda::MenuEvent::receiver().try_recv() {
-                if event.id == "proxyproxy.setup-guide" {
-                    found = true;
+                match event.id.as_ref() {
+                    SETUP_GUIDE => out.push(MenuRequest::SetupGuide),
+                    SETTINGS => out.push(MenuRequest::Settings),
+                    _ => {}
                 }
             }
-            found
+            out
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
-            false
+            vec![]
         }
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum MenuRequest {
+    SetupGuide,
+    Settings,
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const SETUP_GUIDE: &str = "proxyproxy.setup-guide";
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const SETTINGS: &str = "proxyproxy.settings";
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn metadata(icon: Option<muda::Icon>) -> muda::AboutMetadata {
@@ -54,14 +67,18 @@ fn metadata(icon: Option<muda::Icon>) -> muda::AboutMetadata {
 
 #[cfg(target_os = "macos")]
 fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<Inner> {
+    use muda::accelerator::{Accelerator, Code, Modifiers};
     use muda::{Icon, Menu, MenuItem, PredefinedMenuItem, Submenu};
     let menu = Menu::new();
     let icon = Icon::from_rgba(icon_rgba, icon_size, icon_size).ok();
     let meta = || metadata(icon.clone());
+    let settings = Accelerator::new(Modifiers::META, Code::Comma);
 
     let app = Submenu::new(about::NAME, true);
     app.append_items(&[
         &PredefinedMenuItem::about(None, Some(meta())),
+        &PredefinedMenuItem::separator(),
+        &MenuItem::with_id(SETTINGS, "Settings…", true, Some(settings)),
         &PredefinedMenuItem::separator(),
         &PredefinedMenuItem::services(None),
         &PredefinedMenuItem::separator(),
@@ -100,7 +117,7 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
 
     let help = Submenu::new("Help", true);
     help.append_items(&[
-        &MenuItem::with_id("proxyproxy.setup-guide", "Setup Guide", true, None),
+        &MenuItem::with_id(SETUP_GUIDE, "Setup Guide", true, None),
         &PredefinedMenuItem::separator(),
         &PredefinedMenuItem::about(Some("About proxyproxy"), Some(meta())),
     ])
@@ -120,7 +137,8 @@ fn install(hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<In
     let icon = Icon::from_rgba(icon_rgba, icon_size, icon_size).ok();
     let help = Submenu::new("Help", true);
     help.append_items(&[
-        &MenuItem::with_id("proxyproxy.setup-guide", "Setup Guide", true, None),
+        &MenuItem::with_id(SETTINGS, "Settings…", true, None),
+        &MenuItem::with_id(SETUP_GUIDE, "Setup Guide", true, None),
         &PredefinedMenuItem::separator(),
         &PredefinedMenuItem::about(Some("About proxyproxy"), Some(metadata(icon))),
     ])

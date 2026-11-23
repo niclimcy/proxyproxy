@@ -53,6 +53,7 @@ pub enum ShortcutIntent {
     DeleteSelected,
     ReplaySelected,
     Deselect,
+    OpenSettings,
 }
 
 pub enum SessionIntent {
@@ -87,6 +88,7 @@ pub enum Effect {
     DiffBase(u64),
     Device(DeviceAction),
     ImportFlows(PathBuf),
+    OpenSettings,
 }
 
 pub enum ToolbarIntent {
@@ -95,6 +97,7 @@ pub enum ToolbarIntent {
     Compose,
     About,
     Onboarding,
+    Settings,
     ClearUnpinned,
     ClearAll,
     ToggleCapture,

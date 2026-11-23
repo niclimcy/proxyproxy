@@ -92,7 +92,8 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `detail_vm.rs` | tabs, view modes, diff base and cache |
 | `rules_vm.rs` | rule form, breakpoints, console, scope lists, `RuleKind` |
 | `replay_vm.rs` | replay and compose drafts |
-| `network_vm.rs`, `schemas_vm.rs` | the Network and Schemas tabs |
+| `network_vm.rs`, `schemas_vm.rs` | the Network and Schemas tabs of Settings |
+| `settings_vm.rs` | Settings window visibility and tab |
 | `session_vm.rs` | autosave, session and rules files |
 | `devices_vm.rs` | device actions; simulator and system-proxy state polled off the UI thread |
 | `onboarding_vm.rs` | onboarding stages; device and import intents become `Effect`s |
@@ -100,7 +101,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `intent.rs` | intent and effect enums |
 
 ### `views/`
-One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `network_tab`, `schemas_tab`, `shortcuts`, `body`. Also `theme` and `icon`.
+One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab` and `schemas_tab`), `shortcuts`, `body`. Also `theme` and `icon`.
 
 ## Extending
 

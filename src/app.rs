@@ -2,7 +2,7 @@ use crate::domain::config::Shared;
 use crate::domain::flow::Event;
 use crate::domain::repaint::Repaint;
 use crate::proxy;
-use crate::services::{self, flow_store::FlowStore};
+use crate::services::{self, app_menu::MenuRequest, flow_store::FlowStore};
 use crate::viewmodels::{
     about_vm::AboutVm,
     capture_vm::CaptureVm,
@@ -12,9 +12,10 @@ use crate::viewmodels::{
     network_vm::NetworkVm,
     onboarding_vm::OnboardingVm,
     replay_vm::ReplayVm,
-    rules_vm::{RulesTab, RulesVm},
+    rules_vm::RulesVm,
     schemas_vm::SchemasVm,
     session_vm::SessionVm,
+    settings_vm::SettingsVm,
     status::Status,
 };
 use crate::views::{self, theme::apply_theme};
@@ -64,6 +65,7 @@ struct App {
     menu: services::app_menu::AppMenu,
     devices: DevicesVm,
     about: AboutVm,
+    settings: SettingsVm,
     onboarding: OnboardingVm,
 }
 
@@ -101,14 +103,18 @@ impl App {
             cert,
             menu,
             about: AboutVm::default(),
+            settings: SettingsVm::default(),
             onboarding,
         }
     }
 
     fn drain(&mut self) {
         self.status.poll();
-        if self.menu.take_setup_guide_request() {
-            self.onboarding.open();
+        for r in self.menu.take_requests() {
+            match r {
+                MenuRequest::SetupGuide => self.onboarding.open(),
+                MenuRequest::Settings => self.settings.open(),
+            }
         }
         let rules = &mut self.rules;
         self.store.pump(&self.rx, |ev| match ev {
@@ -125,6 +131,7 @@ impl App {
             Some(Effect::ShowOverview) => self.detail.show_overview(),
             Some(Effect::DiffBase(id)) => self.detail.use_as_base(id),
             Some(Effect::Device(action)) => self.devices.run(action, &self.status),
+            Some(Effect::OpenSettings) => self.settings.open(),
             Some(Effect::ImportFlows(path)) => self.session.handle(
                 SessionIntent::ImportFlows(path),
                 &mut self.capture,
@@ -157,6 +164,7 @@ impl App {
                 ToolbarIntent::Device(a) => self.devices.run(a, &self.status),
                 ToolbarIntent::Compose => self.replay.open_compose(),
                 ToolbarIntent::About => self.about.open(),
+                ToolbarIntent::Settings => self.settings.open(),
                 ToolbarIntent::Onboarding => self.onboarding.open(),
                 other => self.capture.handle_toolbar(other),
             }
@@ -164,21 +172,7 @@ impl App {
     }
 
     fn rules_panel(&mut self, ui: &mut egui::Ui) {
-        let (network, schemas, status) = (&self.network, &self.schemas, &mut self.status);
-        let mut net_intents = vec![];
-        let mut schema_intents = vec![];
-        let rule_intents = views::rules_panel::show(ui, &mut self.rules, |ui, tab| match tab {
-            RulesTab::Network => net_intents = views::network_tab::show(ui, network),
-            RulesTab::Schemas => schema_intents = views::schemas_tab::show(ui, schemas),
-            _ => {}
-        });
-        for i in net_intents {
-            self.network.handle(i, status);
-        }
-        for i in schema_intents {
-            self.schemas.handle(i);
-        }
-        for i in rule_intents {
+        for i in views::rules_panel::show(ui, &mut self.rules) {
             let e = self.rules.handle(i);
             self.apply(e);
         }
@@ -193,6 +187,14 @@ impl App {
         }
         self.replay.prune_closed();
         views::about_window::show(ctx, &mut self.about);
+        let (net, schemas) =
+            views::settings_window::show(ctx, &mut self.settings, &self.network, &self.schemas);
+        for i in net {
+            self.network.handle(i, &mut self.status);
+        }
+        for i in schemas {
+            self.schemas.handle(i);
+        }
     }
 }
 

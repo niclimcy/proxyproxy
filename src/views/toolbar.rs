@@ -426,7 +426,12 @@ struct Setup<'a> {
 
 fn help_menu(ui: &mut egui::Ui, label: &str, out: &mut Vec<ToolbarIntent>) {
     toolbar_menu(ui, ph::QUESTION, label, |ui| {
-        menu_width(ui, &["Setup guide", "About proxyproxy"]);
+        let settings = format!("Settings…  ({},)", cmd());
+        menu_width(ui, &[&settings, "Setup guide", "About proxyproxy"]);
+        if menu_item(ui, &settings).clicked() {
+            out.push(ToolbarIntent::Settings);
+            ui.close();
+        }
         if menu_item(ui, "Setup guide").clicked() {
             out.push(ToolbarIntent::Onboarding);
             ui.close();
