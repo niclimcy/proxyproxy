@@ -153,13 +153,7 @@ pub fn show(
                 ui.allocate_ui(egui::vec2(content_width, HIT), |ui| {
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if action_button_icon_sized(
-                                ui,
-                                ph::ARROW_RIGHT,
-                                "Skip and open the app",
-                                accent(),
-                                210.0,
-                            )
+                            if action_button_sized(ui, ph::ARROW_RIGHT, "Skip and open the app", accent(), 210.0, true)
                             .clicked()
                             {
                                 out.push(OnboardingIntent::Skip);
@@ -233,13 +227,7 @@ pub fn show(
                 ui.allocate_ui(egui::vec2(760.0, 180.0), |ui| {
                     card().show(ui, |ui| match target {
                         OnboardingTarget::Web => {
-                            if action_button_icon_sized(
-                                ui,
-                                ph::SHIELD_CHECK,
-                                "Trust CA on this computer",
-                                accent(),
-                                240.0,
-                            )
+                            if action_button_sized(ui, ph::SHIELD_CHECK, "Trust CA on this computer", accent(), 240.0, true)
                             .clicked()
                             {
                                 out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
@@ -247,39 +235,21 @@ pub fn show(
                             ui.add_space(8.0);
                             if system_proxy_enabled {
                                 ui.label(RichText::new("System capture enabled").color(success()));
-                                if action_button_icon_sized(
-                                    ui,
-                                    ph::GEAR_SIX,
-                                    "Disable system proxy",
-                                    fg_muted(),
-                                    240.0,
-                                )
+                                if action_button_sized(ui, ph::GEAR_SIX, "Disable system proxy", fg_muted(), 240.0, true)
                                 .clicked()
                                 {
                                     out.push(OnboardingIntent::Device(DeviceAction::ClearSystemProxy));
                                 }
                             } else {
                                 ui.label(RichText::new("System capture disabled").color(fg_muted()));
-                                if action_button_icon_sized(
-                                    ui,
-                                    ph::GEAR_SIX,
-                                    "Enable system proxy",
-                                    accent(),
-                                    240.0,
-                                )
+                                if action_button_sized(ui, ph::GEAR_SIX, "Enable system proxy", accent(), 240.0, true)
                                 .clicked()
                                 {
                                     out.push(OnboardingIntent::Device(DeviceAction::SetSystemProxy));
                                 }
                             }
                             ui.add_space(8.0);
-                            if action_button_icon_sized(
-                                ui,
-                                ph::BROWSERS,
-                                "Launch clean Chrome",
-                                accent(),
-                                240.0,
-                            )
+                            if action_button_sized(ui, ph::BROWSERS, "Launch clean Chrome", accent(), 240.0, true)
                             .clicked()
                             {
                                 out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
@@ -362,13 +332,7 @@ pub fn show(
                                                 ui.add_space(8.0);
                                                 ui.label(muted("Configure the simulator proxy in Settings if needed."));
                                                 ui.add_space(6.0);
-                                                if action_button_icon_sized(
-                                                    ui,
-                                                    ph::ARROWS_CLOCKWISE,
-                                                    "Reboot simulator",
-                                                    accent(),
-                                                    220.0,
-                                                )
+                                                if action_button_sized(ui, ph::ARROWS_CLOCKWISE, "Reboot simulator", accent(), 220.0, true)
                                                 .clicked()
                                                 {
                                                     out.push(OnboardingIntent::Device(
@@ -379,13 +343,7 @@ pub fn show(
                                             crate::services::devices::IosCaStatus::Missing => {
                                                 ui.label(RichText::new("Certificate missing").color(warning()));
                                                 ui.add_space(8.0);
-                                                if action_button_icon_sized(
-                                                    ui,
-                                                    ph::SHIELD_CHECK,
-                                                    "Install CA",
-                                                    accent(),
-                                                    180.0,
-                                                )
+                                                if action_button_sized(ui, ph::SHIELD_CHECK, "Install CA", accent(), 180.0, true)
                                                 .clicked()
                                                 {
                                                     out.push(OnboardingIntent::Device(
@@ -396,13 +354,7 @@ pub fn show(
                                             crate::services::devices::IosCaStatus::Unknown => {
                                                 ui.label(RichText::new("Certificate status unknown").color(fg_muted()));
                                                 ui.add_space(8.0);
-                                                if action_button_icon_sized(
-                                                    ui,
-                                                    ph::SHIELD_CHECK,
-                                                    "Install CA",
-                                                    accent(),
-                                                    180.0,
-                                                )
+                                                if action_button_sized(ui, ph::SHIELD_CHECK, "Install CA", accent(), 180.0, true)
                                                 .clicked()
                                                 {
                                                     out.push(OnboardingIntent::Device(
@@ -419,25 +371,13 @@ pub fn show(
                             }
                         }
                         OnboardingTarget::Android => {
-                            if action_button_icon_sized(
-                                ui,
-                                ph::GEAR_SIX,
-                                "Set proxy with adb",
-                                accent(),
-                                220.0,
-                            )
+                            if action_button_sized(ui, ph::GEAR_SIX, "Set proxy with adb", accent(), 220.0, true)
                             .clicked()
                             {
                                 out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
                             }
                             ui.add_space(8.0);
-                            if action_button_icon_sized(
-                                ui,
-                                ph::SHIELD_CHECK,
-                                "Push CA to Android",
-                                accent(),
-                                220.0,
-                            )
+                            if action_button_sized(ui, ph::SHIELD_CHECK, "Push CA to Android", accent(), 220.0, true)
                             .clicked()
                             {
                                 out.push(OnboardingIntent::Device(DeviceAction::AndroidInstallCa));
@@ -466,13 +406,7 @@ pub fn show(
                 let content_width = 676.0;
                 ui.allocate_ui(egui::vec2(content_width, 64.0), |ui| {
                     ui.horizontal_wrapped(|ui| {
-                        if action_button_icon_sized(
-                            ui,
-                            ph::FOLDER_OPEN,
-                            "Import HAR / Charles JSON",
-                            accent(),
-                            220.0,
-                        )
+                        if action_button_sized(ui, ph::FOLDER_OPEN, "Import HAR / Charles JSON", accent(), 220.0, true)
                         .clicked()
                             && let Some(path) = rfd::FileDialog::new()
                                 .add_filter("HAR / Charles JSON", &["har", "json", "chlsj"])
@@ -480,28 +414,16 @@ pub fn show(
                             {
                                 out.push(OnboardingIntent::ImportFlows(path));
                             }
-                        if action_button_icon_sized(
-                            ui,
-                            ph::SHIELD_CHECK,
-                            "Trust CA",
-                            accent(),
-                            220.0,
-                        )
+                        if action_button_sized(ui, ph::SHIELD_CHECK, "Trust CA", accent(), 220.0, true)
                         .clicked()
                         {
                             out.push(OnboardingIntent::Device(DeviceAction::TrustCa));
                         }
-                        if action_button_icon_sized(
-                            ui,
-                            ph::GEAR_SIX,
-                            if system_proxy_enabled {
+                        if action_button_sized(ui, ph::GEAR_SIX, if system_proxy_enabled {
                                 "Disable system proxy"
                             } else {
                                 "Enable system proxy"
-                            },
-                            accent(),
-                            220.0,
-                        )
+                            }, accent(), 220.0, true)
                         .clicked()
                         {
                             out.push(OnboardingIntent::Device(if system_proxy_enabled {
@@ -513,13 +435,7 @@ pub fn show(
                     });
                     ui.add_space(8.0);
                     ui.horizontal_wrapped(|ui| {
-                        if action_button_icon_sized(
-                            ui,
-                            ph::BROWSERS,
-                            "Launch Chrome",
-                            accent(),
-                            220.0,
-                        )
+                        if action_button_sized(ui, ph::BROWSERS, "Launch Chrome", accent(), 220.0, true)
                         .clicked()
                         {
                             out.push(OnboardingIntent::Device(DeviceAction::LaunchChrome));
@@ -534,18 +450,11 @@ pub fn show(
                             .collect();
                         let mut ios_clicked = false;
                         ui.scope(|ui| {
-                            ios_clicked = action_button_icon_sized_enabled(
-                                ui,
-                                ph::APPLE_LOGO,
-                                if running_missing.len() == 1 {
+                            ios_clicked = action_button_sized(ui, ph::APPLE_LOGO, if running_missing.len() == 1 {
                                     "Install iOS Simulator CA"
                                 } else {
                                     "Install iOS Simulator CAs"
-                                },
-                                accent(),
-                                220.0,
-                                !running_missing.is_empty(),
-                            )
+                                }, accent(), 220.0, !running_missing.is_empty())
                             .clicked();
                         });
                         if ios_clicked {
@@ -555,13 +464,7 @@ pub fn show(
                                 ));
                             }
                         }
-                        if action_button_icon_sized(
-                            ui,
-                            ph::ANDROID_LOGO,
-                            "Android setup",
-                            accent(),
-                            220.0,
-                        )
+                        if action_button_sized(ui, ph::ANDROID_LOGO, "Android setup", accent(), 220.0, true)
                         .clicked()
                         {
                             out.push(OnboardingIntent::Device(DeviceAction::AndroidSetProxy));
@@ -589,13 +492,7 @@ pub fn show(
                                 .color(fg_muted()),
                         );
                         ui.add_space(8.0);
-                        if action_button_icon_sized(
-                            ui,
-                            ph::TERMINAL,
-                            "Copy shell environment",
-                            accent(),
-                            220.0,
-                        )
+                        if action_button_sized(ui, ph::TERMINAL, "Copy shell environment", accent(), 220.0, true)
                         .clicked()
                         {
                             ctx.copy_text(crate::services::devices::env_snippet(port, cert));
@@ -647,17 +544,24 @@ fn footer(ui: &mut egui::Ui, out: &mut Vec<OnboardingIntent>, content_width: f32
     ui.add_space(18.0);
     ui.allocate_ui(egui::vec2(content_width, HIT), |ui| {
         ui.horizontal(|ui| {
-            if action_button_icon_sized(ui, ph::ARROW_LEFT, "Back", fg_muted(), 100.0).clicked() {
+            if action_button_sized(ui, ph::ARROW_LEFT, "Back", fg_muted(), 100.0, true).clicked() {
                 out.push(OnboardingIntent::Back);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if action_button_icon_sized(ui, ph::ARROW_RIGHT, "Open proxyproxy", accent(), 170.0)
-                    .clicked()
+                if action_button_sized(
+                    ui,
+                    ph::ARROW_RIGHT,
+                    "Open proxyproxy",
+                    accent(),
+                    170.0,
+                    true,
+                )
+                .clicked()
                 {
                     out.push(OnboardingIntent::Complete);
                 }
                 ui.add_space(8.0);
-                if action_button_icon_sized(ui, ph::FAST_FORWARD, "Skip setup", fg_muted(), 150.0)
+                if action_button_sized(ui, ph::FAST_FORWARD, "Skip setup", fg_muted(), 150.0, true)
                     .clicked()
                 {
                     out.push(OnboardingIntent::Skip);

@@ -117,7 +117,7 @@ pub fn show(
                             pill(ui, &f.tag, violet());
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, ph::COPY, "")
+                            if icon_button(ui, ph::COPY, "", true)
                                 .on_hover_text("Copy URL")
                                 .clicked()
                             {
@@ -156,11 +156,16 @@ pub fn show(
                             }
                         }
                     });
-                    if icon_button(ui, ph::PLAY, "Replay / edit").clicked() {
+                    if icon_button(ui, ph::PLAY, "Replay / edit", true).clicked() {
                         out.push(DetailIntent::Replay(f.id));
                     }
-                    if icon_button(ui, ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" })
-                        .clicked()
+                    if icon_button(
+                        ui,
+                        ph::PUSH_PIN,
+                        if f.pinned { "Unpin" } else { "Pin" },
+                        true,
+                    )
+                    .clicked()
                     {
                         out.push(DetailIntent::TogglePin(f.id));
                     }

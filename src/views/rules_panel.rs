@@ -136,7 +136,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     let editing = vm.editing.is_some();
     ui.horizontal(|ui| {
         ui.label(RichText::new(if editing { "Edit rule" } else { "New rule" }).strong());
-        if editing && icon_button(ui, ph::X, "Cancel edit").clicked() {
+        if editing && icon_button(ui, ph::X, "Cancel edit", true).clicked() {
             out.push(RuleIntent::CancelEdit);
         }
     });
@@ -144,7 +144,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     form_ui(ui, &mut vm.form, out);
     ui.horizontal(|ui| {
         let label = if editing { "Save rule" } else { "Add rule" };
-        if icon_button_enabled(ui, ph::PLUS, label, vm.form.valid()).clicked() {
+        if icon_button(ui, ph::PLUS, label, vm.form.valid()).clicked() {
             out.push(RuleIntent::Submit);
         }
         if !vm.form.pattern.trim().is_empty() {
@@ -158,41 +158,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
 
 fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
     let w = (ui.available_width() - 100.0).clamp(120.0, 700.0);
-    let available = ui.available_width();
-    let spacing = ui.spacing().item_spacing.x;
-    let mut rows: Vec<Vec<(RuleKind, &str)>> = Vec::new();
-    let mut row_width = 0.0;
-    for (kind, label) in KINDS {
-        let label_width = ui
-            .painter()
-            .layout_no_wrap(
-                label.to_string(),
-                egui::FontId::proportional(FS_SMALL),
-                fg(),
-            )
-            .size()
-            .x
-            .max(64.0)
-            + 16.0;
-        if row_width > 0.0 && row_width + spacing + label_width > available {
-            rows.push(Vec::new());
-            row_width = 0.0;
-        }
-        if rows.is_empty() {
-            rows.push(Vec::new());
-        }
-        let row = rows.last_mut().unwrap();
-        row_width = if row.is_empty() {
-            label_width
-        } else {
-            row_width + spacing + label_width
-        };
-        row.push((kind, label));
-    }
-    for row in rows {
-        let items: Vec<(RuleKind, &str)> = row;
-        segmented(ui, &mut f.kind, &items);
-    }
+    segmented(ui, &mut f.kind, &KINDS);
     let hint = match f.kind {
         RuleKind::Breakpoint => "Pause matching traffic and edit it before it continues",
         RuleKind::Mock => "Reply with a fixed response; the server is never contacted",
@@ -247,7 +213,7 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                                     .desired_width((w - 80.0).max(80.0))
                                     .hint_text("/path/to/response.json"),
                             );
-                            if icon_button(ui, ph::FOLDER_OPEN, "Browse…").clicked()
+                            if icon_button(ui, ph::FOLDER_OPEN, "Browse…", true).clicked()
                                 && let Some(p) = rfd::FileDialog::new().pick_file()
                             {
                                 f.file = p.display().to_string();
@@ -264,13 +230,13 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                     field(ui, "File contents", |ui| {
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
-                                if icon_button(ui, ph::FOLDER_OPEN, "Load file")
+                                if icon_button(ui, ph::FOLDER_OPEN, "Load file", true)
                                     .on_hover_text("Read the selected file from disk")
                                     .clicked()
                                 {
                                     out.push(RuleIntent::LoadMapLocalFile);
                                 }
-                                if icon_button_enabled(
+                                if icon_button(
                                     ui,
                                     ph::FLOPPY_DISK,
                                     "Save to disk",
@@ -447,7 +413,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         for (i, h) in list.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(h).monospace());
-                if icon_button(ui, ph::X, "").clicked() {
+                if icon_button(ui, ph::X, "", true).clicked() {
                     out.push(RuleIntent::RemoveHost(kind, i));
                 }
             });
@@ -459,7 +425,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
                     .hint_text("domain or *.wildcard")
                     .desired_width(260.0),
             );
-            if icon_button(ui, ph::PLUS, "Add").clicked()
+            if icon_button(ui, ph::PLUS, "Add", true).clicked()
                 || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
             {
                 out.push(RuleIntent::AddHost(kind));
@@ -495,7 +461,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
 fn console_tab(ui: &mut egui::Ui, vm: &RulesVm, out: &mut Vec<RuleIntent>) {
     ui.horizontal(|ui| {
         ui.label(muted("console.log() output and script errors"));
-        if icon_button(ui, ph::TRASH, "Clear").clicked() {
+        if icon_button(ui, ph::TRASH, "Clear", true).clicked() {
             out.push(RuleIntent::ClearConsole);
         }
     });

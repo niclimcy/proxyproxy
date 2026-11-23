@@ -94,10 +94,10 @@ pub fn show(
                     }
                     devices_menu(ui, ctx, port, api_port, cert, ios_simulators, system_proxy_enabled, &mut out, false);
                     session_menu(ui, &mut out, false);
-                    if icon_button(ui, ph::PLUS, "Compose").clicked() {
+                    if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
                         out.push(ToolbarIntent::Compose);
                     }
-                    if icon_button(ui, ph::TRASH, "Clear").on_hover_text("Remove all requests (including pinned)").clicked() {
+                    if icon_button(ui, ph::TRASH, "Clear", true).on_hover_text("Remove all requests (including pinned)").clicked() {
                         out.push(ToolbarIntent::ClearAll);
                     }
                 });
@@ -243,13 +243,13 @@ fn compact_primary_rows(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         saved_menu(ui, vm, out);
-        if icon_button(ui, ph::TRASH, "Clear")
+        if icon_button(ui, ph::TRASH, "Clear", true)
             .on_hover_text("Remove all requests (including pinned)")
             .clicked()
         {
             out.push(ToolbarIntent::ClearAll);
         }
-        if icon_button(ui, ph::PLUS, "Compose").clicked() {
+        if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
             out.push(ToolbarIntent::Compose);
         }
         session_menu(ui, out, true);

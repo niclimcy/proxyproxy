@@ -291,8 +291,8 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(
         .corner_radius(CornerRadius::same(RADIUS))
         .inner_margin(Margin::same(3))
         .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
+            ui.horizontal_wrapped(|ui| {
                 for (t, name) in items {
                     let on = *cur == *t;
                     let g = ui.painter().layout_no_wrap(
@@ -384,123 +384,95 @@ pub fn muted(text: impl Into<String>) -> RichText {
 }
 
 pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Response {
-    ui.add(StyledCheckbox::new(checked, text))
-}
+    let box_size = 18.0;
+    let text_x = box_size + 8.0;
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), egui::FontId::proportional(FS_BODY), fg());
+    let row_height = HIT.max(galley.size().y + 10.0);
+    let row_width = text_x + galley.size().x + 4.0;
+    let (rect, mut response) =
+        ui.allocate_exact_size(egui::vec2(row_width, row_height), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, text)
+    });
 
-struct StyledCheckbox<'a> {
-    checked: &'a mut bool,
-    text: &'a str,
-}
-
-impl<'a> StyledCheckbox<'a> {
-    fn new(checked: &'a mut bool, text: &'a str) -> Self {
-        Self { checked, text }
+    if response.clicked() {
+        *checked = !*checked;
+        response.mark_changed();
     }
-}
 
-impl egui::Widget for StyledCheckbox<'_> {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let box_size = 18.0;
-        let text_x = box_size + 8.0;
-        let galley = ui.painter().layout_no_wrap(
-            self.text.to_string(),
-            egui::FontId::proportional(FS_BODY),
-            fg(),
+    let box_rect = egui::Rect::from_center_size(
+        rect.left_top() + egui::vec2(text_x / 2.0, row_height / 2.0),
+        egui::vec2(box_size, box_size),
+    );
+    let painter = ui.painter();
+
+    if response.hovered() {
+        painter.rect_filled(
+            rect.shrink(2.0),
+            CornerRadius::same(RADIUS_SM),
+            tint(accent(), Tint::Subtle),
         );
-        let row_height = HIT.max(galley.size().y + 10.0);
-        let row_width = text_x + galley.size().x + 4.0;
-        let (rect, mut response) =
-            ui.allocate_exact_size(egui::vec2(row_width, row_height), egui::Sense::click());
-        response.widget_info(|| {
-            egui::WidgetInfo::selected(
-                egui::Role::CheckBox,
-                ui.is_enabled(),
-                *self.checked,
-                self.text,
-            )
-        });
+    }
 
-        let toggled = response.clicked()
-            || (response.has_focus()
-                && ui.input(|input| {
-                    input.key_pressed(egui::Key::Space) || input.key_pressed(egui::Key::Enter)
-                }));
-        if toggled {
-            *self.checked = !*self.checked;
-            response.mark_changed();
-        }
+    let checked = *checked;
+    let fill = if checked {
+        accent()
+    } else if response.is_pointer_button_down_on() {
+        ui.visuals().widgets.active.weak_bg_fill
+    } else {
+        pal().surface
+    };
+    let stroke = if checked || response.hovered() {
+        Stroke::new(1.5, accent())
+    } else {
+        Stroke::new(1.0, pal().border_strong)
+    };
 
-        let box_rect = egui::Rect::from_center_size(
-            rect.left_top() + egui::vec2(text_x / 2.0, row_height / 2.0),
-            egui::vec2(box_size, box_size),
-        );
-        let painter = ui.painter();
+    painter.rect_filled(box_rect, CornerRadius::same(RADIUS_SM), fill);
+    painter.rect_stroke(
+        box_rect,
+        CornerRadius::same(RADIUS_SM),
+        stroke,
+        egui::StrokeKind::Inside,
+    );
 
-        if response.hovered() {
-            painter.rect_filled(
-                rect.shrink(2.0),
-                CornerRadius::same(RADIUS_SM),
-                tint(accent(), Tint::Subtle),
-            );
-        }
-
-        let checked = *self.checked;
-        let fill = if checked {
-            accent()
-        } else if response.is_pointer_button_down_on() {
-            ui.visuals().widgets.active.weak_bg_fill
+    if checked {
+        let check_color = if pal().dark {
+            pal().canvas
         } else {
-            pal().surface
+            pal().panel
         };
-        let stroke = if checked || response.hovered() {
-            Stroke::new(1.5, accent())
-        } else {
-            Stroke::new(1.0, pal().border_strong)
-        };
-        painter.rect_filled(box_rect, CornerRadius::same(5), fill);
+        painter.add(egui::epaint::Shape::line(
+            vec![
+                egui::pos2(box_rect.left() + 4.0, box_rect.center().y),
+                egui::pos2(box_rect.center().x - 0.5, box_rect.bottom() - 4.5),
+                egui::pos2(box_rect.right() - 3.5, box_rect.top() + 4.5),
+            ],
+            Stroke::new(2.2, check_color),
+        ));
+    }
+
+    painter.galley(
+        egui::pos2(
+            rect.left() + text_x,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        fg(),
+    );
+
+    if response.has_focus() {
         painter.rect_stroke(
-            box_rect,
-            CornerRadius::same(5),
-            stroke,
+            rect,
+            CornerRadius::same(RADIUS_SM),
+            Stroke::new(2.0, accent()),
             egui::StrokeKind::Inside,
         );
-
-        if checked {
-            let check_color = if pal().dark {
-                pal().canvas
-            } else {
-                pal().panel
-            };
-            painter.add(egui::epaint::Shape::line(
-                vec![
-                    egui::pos2(box_rect.left() + 4.0, box_rect.center().y),
-                    egui::pos2(box_rect.center().x - 0.5, box_rect.bottom() - 4.5),
-                    egui::pos2(box_rect.right() - 3.5, box_rect.top() + 4.5),
-                ],
-                Stroke::new(2.2, check_color),
-            ));
-        }
-
-        painter.galley(
-            egui::pos2(
-                rect.left() + text_x,
-                rect.center().y - galley.size().y / 2.0,
-            ),
-            galley,
-            fg(),
-        );
-
-        if response.has_focus() {
-            painter.rect_stroke(
-                rect,
-                CornerRadius::same(RADIUS_SM),
-                Stroke::new(2.0, accent()),
-                egui::StrokeKind::Inside,
-            );
-        }
-
-        response
     }
+
+    response
 }
 
 /// Section label: small, caps, muted.
@@ -538,30 +510,16 @@ pub fn flat<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     .inner
 }
 
-pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
+pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) -> egui::Response {
     let text = if label.is_empty() {
         icon.to_string()
     } else {
         ico(icon, label)
     };
     flat(ui, |ui| {
-        ui.add(egui::Button::new(RichText::new(text).size(FS_SMALL)))
-    })
-}
-
-pub fn icon_button_enabled(
-    ui: &mut egui::Ui,
-    icon: &str,
-    label: &str,
-    enabled: bool,
-) -> egui::Response {
-    let text = ico(icon, label);
-    flat(ui, |ui| {
         ui.add_enabled(
             enabled,
-            egui::Button::new(RichText::new(text).size(FS_SMALL))
-                .fill(Color32::TRANSPARENT)
-                .stroke(Stroke::NONE),
+            egui::Button::new(RichText::new(text).size(FS_SMALL)),
         )
     })
 }
@@ -857,59 +815,8 @@ pub fn action_button(text: impl Into<String>, color: Color32) -> egui::Button<'s
         .stroke(Stroke::new(1.0, color))
 }
 
-/// Fixed-size filled action button with an explicit hover/press state.
+/// Fixed-width `action_button` drawn by hand so hover and press keep the same geometry.
 pub fn action_button_sized(
-    ui: &mut egui::Ui,
-    text: &str,
-    color: Color32,
-    width: f32,
-) -> egui::Response {
-    let g =
-        ui.painter()
-            .layout_no_wrap(text.to_string(), egui::FontId::proportional(FS_BODY), fg());
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, HIT), egui::Sense::click());
-    let fill = if resp.is_pointer_button_down_on() {
-        color.gamma_multiply(if pal().dark { 0.70 } else { 0.82 })
-    } else if resp.hovered() {
-        color.gamma_multiply(if pal().dark { 0.85 } else { 1.12 })
-    } else {
-        tint(color, Tint::Strong)
-    };
-    let stroke = if resp.hovered() {
-        Stroke::new(1.5, color)
-    } else {
-        Stroke::new(1.0, color)
-    };
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(RADIUS_SM),
-        fill,
-        stroke,
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().galley(
-        egui::pos2(
-            rect.center().x - g.size().x / 2.0,
-            rect.center().y - g.size().y / 2.0,
-        ),
-        g,
-        fg(),
-    );
-    resp
-}
-
-/// Fixed-size icon action with a stable hover and pressed state.
-pub fn action_button_icon_sized(
-    ui: &mut egui::Ui,
-    icon: &str,
-    text: &str,
-    color: Color32,
-    width: f32,
-) -> egui::Response {
-    action_button_icon_sized_enabled(ui, icon, text, color, width, true)
-}
-
-pub fn action_button_icon_sized_enabled(
     ui: &mut egui::Ui,
     icon: &str,
     text: &str,
@@ -917,32 +824,28 @@ pub fn action_button_icon_sized_enabled(
     width: f32,
     enabled: bool,
 ) -> egui::Response {
-    let text = ico(icon, text);
-    let g = ui
-        .painter()
-        .layout_no_wrap(text, egui::FontId::proportional(FS_BODY), fg());
     let sense = if enabled {
         egui::Sense::click()
     } else {
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, HIT), sense);
-    let fill = if enabled && resp.is_pointer_button_down_on() {
-        color.gamma_multiply(if pal().dark { 0.70 } else { 0.82 })
-    } else if enabled && resp.hovered() {
-        color.gamma_multiply(if pal().dark { 0.85 } else { 1.12 })
-    } else if !enabled {
-        tint(fg_muted(), Tint::Subtle)
+    let (fill, stroke, ink) = if !enabled {
+        (
+            tint(fg_muted(), Tint::Subtle),
+            Stroke::new(1.0, border()),
+            fg_muted(),
+        )
+    } else if resp.is_pointer_button_down_on() {
+        (tint(color, Tint::Normal), Stroke::new(1.5, color), fg())
+    } else if resp.hovered() {
+        (tint(color, Tint::Strong), Stroke::new(1.5, color), fg())
     } else {
-        tint(color, Tint::Strong)
+        (tint(color, Tint::Strong), Stroke::new(1.0, color), fg())
     };
-    let stroke = if enabled && resp.hovered() {
-        Stroke::new(1.5, color)
-    } else if !enabled {
-        Stroke::new(1.0, border())
-    } else {
-        Stroke::new(1.0, color)
-    };
+    let g = ui
+        .painter()
+        .layout_no_wrap(ico(icon, text), egui::FontId::proportional(FS_BODY), ink);
     ui.painter().rect(
         rect,
         CornerRadius::same(RADIUS_SM),
@@ -950,14 +853,7 @@ pub fn action_button_icon_sized_enabled(
         stroke,
         egui::StrokeKind::Inside,
     );
-    ui.painter().galley(
-        egui::pos2(
-            rect.center().x - g.size().x / 2.0,
-            rect.center().y - g.size().y / 2.0,
-        ),
-        g,
-        fg(),
-    );
+    ui.painter().galley(rect.center() - g.size() / 2.0, g, ink);
     resp
 }
 

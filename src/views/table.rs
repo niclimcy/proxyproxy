@@ -41,13 +41,13 @@ pub fn show(
                             if copied {
                                 ctx.request_repaint();
                             }
-                            let (label, color) = if copied {
-                                (ico(ph::CHECK, "Copied"), success())
+                            let (icon, label, color) = if copied {
+                                (ph::CHECK, "Copied", success())
                             } else {
-                                (ico(ph::COPY, "Copy test command"), accent())
+                                (ph::COPY, "Copy test command", accent())
                             };
                             let response =
-                                action_button_sized(ui, &label, color, 188.0)
+                                action_button_sized(ui, icon, label, color, 188.0, true)
                                     .on_hover_text(format!("Copy: proxyproxy run --port {port} -- curl https://example.com"));
                             let clicked = response.clicked();
                             if clicked {

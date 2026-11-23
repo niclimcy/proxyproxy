@@ -32,7 +32,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                 }
             });
         }
-        if icon_button(ui, ph::PLUS, "Add override").clicked() {
+        if icon_button(ui, ph::PLUS, "Add override", true).clicked() {
             out.push(NetworkIntent::AddDns);
         }
 
@@ -77,7 +77,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                             .desired_width(280.0)
                             .hint_text("/path/to/proxy.pac"),
                     );
-                    if icon_button(ui, ph::FOLDER_OPEN, "Browse…").clicked()
+                    if icon_button(ui, ph::FOLDER_OPEN, "Browse…", true).clicked()
                         && let Some(p) = rfd::FileDialog::new()
                             .add_filter("PAC", &["pac", "js", "txt"])
                             .pick_file()
@@ -97,7 +97,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                     .desired_width(280.0)
                     .hint_text("/tmp/sslkeys.log"),
             );
-            if icon_button(ui, ph::FOLDER_OPEN, "Browse…").clicked()
+            if icon_button(ui, ph::FOLDER_OPEN, "Browse…", true).clicked()
                 && let Some(p) = rfd::FileDialog::new().save_file()
             {
                 out.push(NetworkIntent::SetKeylog(p.display().to_string()));
