@@ -60,7 +60,6 @@ struct App {
     port: u16,
     api_port: u16,
     cert: String,
-    #[allow(dead_code)]
     menu: services::app_menu::AppMenu,
     about: AboutVm,
     onboarding: OnboardingVm,
@@ -163,7 +162,7 @@ impl App {
             status: &self.status.text,
             api_port: self.api_port,
             paused_breakpoints: self.rules.paused.len(),
-            show_help: !cfg!(target_os = "macos") && !cfg!(target_os = "windows"),
+            show_help: !self.menu.is_native(),
         };
         for i in views::toolbar::show(ui, ctx, &mut self.capture, props) {
             match i {

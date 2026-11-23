@@ -2,7 +2,7 @@
 use crate::domain::about;
 
 // native menu bar; None where the UI draws its own (Linux)
-pub struct AppMenu(#[allow(dead_code)] Option<Inner>);
+pub struct AppMenu(Option<Inner>);
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 type Inner = muda::Menu;
@@ -14,6 +14,10 @@ impl AppMenu {
     // `hwnd` is the Win32 window handle (Windows only)
     pub fn install(hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Self {
         Self(install(hwnd, icon_rgba, icon_size))
+    }
+
+    pub fn is_native(&self) -> bool {
+        self.0.is_some()
     }
 
     pub fn take_setup_guide_request(&self) -> bool {
