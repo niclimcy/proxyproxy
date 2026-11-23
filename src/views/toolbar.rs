@@ -36,10 +36,27 @@ pub fn show(
         paused_breakpoints,
         show_help,
     } = p;
+    let setup = Setup {
+        port,
+        api_port,
+        cert,
+        devices,
+    };
     egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
         let compact = ui.available_width() < 900.0;
         if compact {
-            compact_primary_rows(ui, ctx, vm, port, cert, devices, show_rules, active_rules, status, api_port, paused_breakpoints, show_help, &mut out);
+            let props = Props {
+                port,
+                cert,
+                devices,
+                show_rules: &mut *show_rules,
+                active_rules,
+                status,
+                api_port,
+                paused_breakpoints,
+                show_help,
+            };
+            compact_primary_rows(ui, ctx, vm, props, &mut out);
         } else {
             ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
@@ -79,19 +96,9 @@ pub fn show(
                 capsule(ui, |ui| {
                     // right_to_left parent: add in reverse visual order
                     if show_help {
-                        toolbar_menu(ui, ph::QUESTION, "Help", |ui| {
-                            menu_width(ui, &["Setup guide", "About proxyproxy"]);
-                            if menu_item(ui, "Setup guide").clicked() {
-                                out.push(ToolbarIntent::Onboarding);
-                                ui.close();
-                            }
-                            if menu_item(ui, "About proxyproxy").clicked() {
-                                out.push(ToolbarIntent::About);
-                                ui.close();
-                            }
-                        });
+                        help_menu(ui, "Help", &mut out);
                     }
-                    devices_menu(ui, ctx, port, api_port, cert, devices, &mut out, false);
+                    devices_menu(ui, ctx, setup, &mut out, false);
                     session_menu(ui, &mut out, false);
                     if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
                         out.push(ToolbarIntent::Compose);
@@ -198,17 +205,26 @@ fn compact_primary_rows(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     vm: &mut CaptureVm,
-    port: u16,
-    cert: &str,
-    devices: &DevicesVm,
-    show_rules: &mut bool,
-    active_rules: usize,
-    status: &str,
-    api_port: u16,
-    paused_breakpoints: usize,
-    show_help: bool,
+    p: Props,
     out: &mut Vec<ToolbarIntent>,
 ) {
+    let Props {
+        port,
+        cert,
+        devices,
+        show_rules,
+        active_rules,
+        status,
+        api_port,
+        paused_breakpoints,
+        show_help,
+    } = p;
+    let setup = Setup {
+        port,
+        api_port,
+        cert,
+        devices,
+    };
     ui.horizontal(|ui| {
         if sidebar_toggle(ui, vm.show_sidebar).clicked() {
             vm.show_sidebar = !vm.show_sidebar;
@@ -251,19 +267,9 @@ fn compact_primary_rows(
             out.push(ToolbarIntent::Compose);
         }
         session_menu(ui, out, true);
-        devices_menu(ui, ctx, port, api_port, cert, devices, out, true);
+        devices_menu(ui, ctx, setup, out, true);
         if show_help {
-            toolbar_menu(ui, ph::QUESTION, "", |ui| {
-                menu_width(ui, &["Setup guide", "About proxyproxy"]);
-                if menu_item(ui, "Setup guide").clicked() {
-                    out.push(ToolbarIntent::Onboarding);
-                    ui.close();
-                }
-                if menu_item(ui, "About proxyproxy").clicked() {
-                    out.push(ToolbarIntent::About);
-                    ui.close();
-                }
-            });
+            help_menu(ui, "", out);
         }
         if paused_breakpoints > 0 {
             pill(ui, &format!("{paused_breakpoints} paused"), warning());
@@ -330,22 +336,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
         ph::FOLDER_OPEN,
         if compact { "" } else { "Session" },
         |ui| {
-            menu_width(
-                ui,
-                &[
-                    "New session",
-                    "Open session…",
-                    "Save session as…",
-                    "Import HAR / Charles JSON…",
-                    "Export HAR (visible)",
-                    "Export CSV (visible)",
-                    "Export rules…",
-                    "Import rules…",
-                    "Clear unpinned requests",
-                ],
-            );
-            let mut act = None::<u8>;
-            for (i, l) in [
+            let items = [
                 "New session",
                 "Open session…",
                 "Save session as…",
@@ -358,10 +349,10 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
                 "Import rules…",
                 "-",
                 "Clear unpinned requests",
-            ]
-            .iter()
-            .enumerate()
-            {
+            ];
+            menu_width(ui, &items);
+            let mut act = None::<u8>;
+            for (i, l) in items.iter().enumerate() {
                 if *l == "-" {
                     ui.separator();
                 } else if menu_item(ui, l).clicked() {
@@ -415,13 +406,115 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
     );
 }
 
+#[derive(Clone, Copy)]
+struct Setup<'a> {
+    port: u16,
+    api_port: u16,
+    cert: &'a str,
+    devices: &'a DevicesVm,
+}
+
+fn help_menu(ui: &mut egui::Ui, label: &str, out: &mut Vec<ToolbarIntent>) {
+    toolbar_menu(ui, ph::QUESTION, label, |ui| {
+        menu_width(ui, &["Setup guide", "About proxyproxy"]);
+        if menu_item(ui, "Setup guide").clicked() {
+            out.push(ToolbarIntent::Onboarding);
+            ui.close();
+        }
+        if menu_item(ui, "About proxyproxy").clicked() {
+            out.push(ToolbarIntent::About);
+            ui.close();
+        }
+    });
+}
+
+enum Row {
+    Note(String),
+    Separator,
+    Device(String, DeviceAction),
+    Copy(String, String),
+}
+
+fn device_rows(s: Setup) -> Vec<Row> {
+    let (port, api_port) = (s.port, s.api_port);
+    let device = |label: &str, action| Row::Device(label.to_string(), action);
+    let note = |text: &str| Row::Note(text.to_string());
+    let mut rows = vec![
+        note("This computer"),
+        device("Trust CA on this computer", DeviceAction::TrustCa),
+    ];
+    if s.devices.system_proxy_enabled {
+        rows.push(note("System capture: enabled"));
+        rows.push(device(
+            "Disable system proxy",
+            DeviceAction::ToggleSystemProxy,
+        ));
+    } else {
+        rows.push(note("System capture: disabled"));
+        rows.push(device(
+            "Enable system proxy",
+            DeviceAction::ToggleSystemProxy,
+        ));
+    }
+    rows.extend([
+        device(
+            "Launch Chrome with proxy (clean profile)",
+            DeviceAction::LaunchChrome,
+        ),
+        Row::Separator,
+        note("Terminal & scripts"),
+        Row::Copy(
+            "Copy `proxyproxy run -- <cmd>` hint".into(),
+            format!("proxyproxy run --port {port} -- "),
+        ),
+        Row::Copy(
+            "Copy shell env snippet".into(),
+            crate::services::devices::env_snippet(port, s.cert),
+        ),
+        Row::Separator,
+        note("iOS Simulators"),
+    ]);
+    if s.devices.running().next().is_none() {
+        rows.push(note("No running iOS simulator"));
+    }
+    for sim in s.devices.running() {
+        let ca = match sim.ca_status {
+            IosCaStatus::Installed => "CA installed",
+            IosCaStatus::Missing => "CA missing",
+            IosCaStatus::Unknown => "CA status unknown",
+        };
+        rows.push(note(&format!("{} · {ca}", sim.name)));
+        rows.push(if sim.ca_status == IosCaStatus::Installed {
+            Row::Device(
+                format!("Reboot {}", sim.name),
+                DeviceAction::IosSimReboot(sim.udid.clone()),
+            )
+        } else {
+            Row::Device(
+                format!("Install CA on {}", sim.name),
+                DeviceAction::IosSimInstallCa(sim.udid.clone()),
+            )
+        });
+    }
+    rows.extend([
+        note("Android"),
+        device("Android: set proxy (adb)", DeviceAction::AndroidSetProxy),
+        device("Android: clear proxy", DeviceAction::AndroidClearProxy),
+        device("Android: push CA", DeviceAction::AndroidInstallCa),
+        Row::Separator,
+        Row::Copy("Copy CA path".into(), s.cert.to_string()),
+        Row::Copy(
+            format!("Copy REST API URL (127.0.0.1:{api_port})"),
+            format!("http://127.0.0.1:{api_port}"),
+        ),
+    ]);
+    rows
+}
+
 fn devices_menu(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    port: u16,
-    api_port: u16,
-    cert: &str,
-    devices: &DevicesVm,
+    setup: Setup,
     out: &mut Vec<ToolbarIntent>,
     compact: bool,
 ) {
@@ -430,100 +523,36 @@ fn devices_menu(
         ph::DEVICE_MOBILE,
         if compact { "" } else { "Capture" },
         |ui| {
-            menu_width(
-                ui,
-                &[
-                    "This computer",
-                    "Trust CA on this computer",
-                    "Set system proxy",
-                    "Clear system proxy",
-                    "Launch Chrome with proxy (clean profile)",
-                    "Terminal & scripts",
-                    "Copy `proxyproxy run -- <cmd>` hint",
-                    "Copy shell env snippet",
-                    "Devices",
-                    "iOS Simulator: install CA",
-                    "Android: set proxy (adb)",
-                    "Android: clear proxy",
-                    "Android: push CA",
-                    "Copy CA path",
-                    "Copy REST API URL (127.0.0.1:00000)",
-                ],
-            );
-            let item = |ui: &mut egui::Ui, label: &str| {
-                let c = menu_item(ui, label).clicked();
-                if c {
-                    ui.close();
+            let rows = device_rows(setup);
+            let labels: Vec<&str> = rows
+                .iter()
+                .filter_map(|row| match row {
+                    Row::Note(l) | Row::Device(l, _) | Row::Copy(l, _) => Some(l.as_str()),
+                    Row::Separator => None,
+                })
+                .collect();
+            menu_width(ui, &labels);
+            for row in rows {
+                match row {
+                    Row::Note(text) => {
+                        ui.label(muted(text));
+                    }
+                    Row::Separator => {
+                        ui.separator();
+                    }
+                    Row::Device(label, action) => {
+                        if menu_item(ui, &label).clicked() {
+                            out.push(ToolbarIntent::Device(action));
+                            ui.close();
+                        }
+                    }
+                    Row::Copy(label, text) => {
+                        if menu_item(ui, &label).clicked() {
+                            ctx.copy_text(text);
+                            ui.close();
+                        }
+                    }
                 }
-                c
-            };
-            let mut device = |ui: &mut egui::Ui, label: &str, a: DeviceAction| {
-                if item(ui, label) {
-                    out.push(ToolbarIntent::Device(a));
-                }
-            };
-            ui.label(muted("This computer"));
-            device(ui, "Trust CA on this computer", DeviceAction::TrustCa);
-            if devices.system_proxy_enabled {
-                ui.label(muted("System capture: enabled"));
-                device(ui, "Disable system proxy", DeviceAction::ToggleSystemProxy);
-            } else {
-                ui.label(muted("System capture: disabled"));
-                device(ui, "Enable system proxy", DeviceAction::ToggleSystemProxy);
-            }
-            device(
-                ui,
-                "Launch Chrome with proxy (clean profile)",
-                DeviceAction::LaunchChrome,
-            );
-            ui.separator();
-            ui.label(muted("Terminal & scripts"));
-            if item(ui, "Copy `proxyproxy run -- <cmd>` hint") {
-                ctx.copy_text(format!("proxyproxy run --port {port} -- "));
-            }
-            if item(ui, "Copy shell env snippet") {
-                ctx.copy_text(crate::services::devices::env_snippet(port, cert));
-            }
-            ui.separator();
-            ui.label(muted("Devices"));
-            ui.label(muted("iOS Simulators"));
-            if devices.running().next().is_none() {
-                ui.label(muted("No running iOS simulator"));
-            }
-            for sim in devices.running() {
-                let ca = match sim.ca_status {
-                    IosCaStatus::Installed => "CA installed",
-                    IosCaStatus::Missing => "CA missing",
-                    IosCaStatus::Unknown => "CA status unknown",
-                };
-                ui.label(muted(format!("{} · {ca}", sim.name)));
-                if sim.ca_status == IosCaStatus::Installed {
-                    device(
-                        ui,
-                        &format!("Reboot {}", sim.name),
-                        DeviceAction::IosSimReboot(sim.udid.clone()),
-                    );
-                } else {
-                    device(
-                        ui,
-                        &format!("Install CA on {}", sim.name),
-                        DeviceAction::IosSimInstallCa(sim.udid.clone()),
-                    );
-                }
-            }
-            device(
-                ui,
-                "Android: set proxy (adb)",
-                DeviceAction::AndroidSetProxy,
-            );
-            device(ui, "Android: clear proxy", DeviceAction::AndroidClearProxy);
-            device(ui, "Android: push CA", DeviceAction::AndroidInstallCa);
-            ui.separator();
-            if item(ui, "Copy CA path") {
-                ctx.copy_text(cert.to_string());
-            }
-            if item(ui, &format!("Copy REST API URL (127.0.0.1:{api_port})")) {
-                ctx.copy_text(format!("http://127.0.0.1:{api_port}"));
             }
         },
     );
