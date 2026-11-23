@@ -272,7 +272,12 @@ fn type_picker(ui: &mut egui::Ui, id: &str, cur: Option<&str>) {
 pub fn kv_table<'a>(ui: &mut egui::Ui, rows: impl IntoIterator<Item = (&'a str, &'a str)>) {
     const KEY_W: f32 = 150.0;
     ui.horizontal(|ui| {
-        ui.add_sized([KEY_W, 18.0], egui::Label::new(overline("KEY")));
+        // rows are inset by their frame margin, so the header matches it
+        ui.add_space(4.0);
+        ui.allocate_ui(egui::vec2(KEY_W - 8.0, 18.0), |ui| {
+            ui.set_width(KEY_W - 8.0);
+            ui.label(overline("KEY"));
+        });
         ui.label(overline("VALUE"));
     });
     for (i, (k, v)) in rows.into_iter().enumerate() {
