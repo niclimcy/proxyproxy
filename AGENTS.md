@@ -6,7 +6,7 @@ proxyproxy is an HTTP(S) debugging proxy with an egui UI. Single Rust crate.
 
 ```sh
 cargo build
-cargo test     # 193 tests, no window needed
+cargo test     # 195 tests, no window needed
 cargo run -- 19090   # proxy on :19090, REST API on :19091
 ```
 
