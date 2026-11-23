@@ -16,6 +16,8 @@ pub struct Palette {
     pub faint: Color32,
     pub border: Color32,
     pub border_strong: Color32,
+    /// Resting outline of secondary controls; visible on black without shouting.
+    pub outline: Color32,
     pub fg: Color32,
     pub fg_muted: Color32,
     pub accent: Color32,
@@ -28,13 +30,15 @@ pub struct Palette {
 
 pub const DARK: Palette = Palette {
     dark: true,
-    canvas: Color32::from_rgb(24, 24, 26),
-    panel: Color32::from_rgb(31, 31, 34),
-    surface: Color32::from_rgb(43, 43, 47),
-    hover: Color32::from_rgb(56, 56, 61),
-    faint: Color32::from_rgb(35, 35, 38),
-    border: Color32::from_rgb(58, 58, 63),
+    // true black for OLED; only raised controls and lines lift off it
+    canvas: Color32::from_rgb(0, 0, 0),
+    panel: Color32::from_rgb(0, 0, 0),
+    surface: Color32::from_rgb(30, 30, 34),
+    hover: Color32::from_rgb(46, 46, 52),
+    faint: Color32::from_rgb(13, 13, 14),
+    border: Color32::from_rgb(42, 42, 46),
     border_strong: Color32::from_rgb(122, 122, 132),
+    outline: Color32::from_rgb(112, 112, 122),
     fg: Color32::from_rgb(234, 234, 238),
     fg_muted: Color32::from_rgb(182, 182, 192),
     accent: Color32::from_rgb(140, 174, 255),
@@ -54,6 +58,7 @@ pub const LIGHT: Palette = Palette {
     faint: Color32::from_rgb(240, 243, 248),
     border: Color32::from_rgb(208, 213, 223),
     border_strong: Color32::from_rgb(112, 120, 140),
+    outline: Color32::from_rgb(130, 138, 156),
     fg: Color32::from_rgb(22, 25, 33),
     fg_muted: Color32::from_rgb(80, 88, 106),
     accent: Color32::from_rgb(37, 84, 214),
@@ -185,7 +190,7 @@ fn visuals(p: &Palette) -> egui::Visuals {
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
     v.widgets.inactive.bg_fill = p.surface;
     v.widgets.inactive.weak_bg_fill = p.surface;
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, p.border_strong);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, p.outline);
     v.widgets.hovered.bg_fill = p.hover;
     v.widgets.hovered.weak_bg_fill = p.hover;
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, p.accent);
@@ -510,18 +515,19 @@ pub fn flat<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     .inner
 }
 
+/// Labelled buttons are secondary (filled, outlined at rest); icon-only ones stay flat.
 pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) -> egui::Response {
-    let text = if label.is_empty() {
-        icon.to_string()
-    } else {
-        ico(icon, label)
-    };
-    flat(ui, |ui| {
+    let button = |ui: &mut egui::Ui, text: String| {
         ui.add_enabled(
             enabled,
-            egui::Button::new(RichText::new(text).size(FS_SMALL)),
+            egui::Button::new(RichText::new(text).size(FS_SMALL)).min_size(egui::vec2(0.0, HIT)),
         )
-    })
+    };
+    if label.is_empty() {
+        flat(ui, |ui| button(ui, icon.to_string()))
+    } else {
+        button(ui, ico(icon, label))
+    }
 }
 
 /// Groups related toolbar actions in one rounded capsule.
@@ -644,9 +650,7 @@ fn panel_toggle(
 
 /// Toolbar menu trigger, styled like `icon_button`.
 pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, add: impl FnOnce(&mut egui::Ui)) {
-    flat(ui, |ui| {
-        ui.menu_button(RichText::new(ico(icon, label)).size(FS_SMALL), add);
-    });
+    ui.menu_button(RichText::new(ico(icon, label)).size(FS_SMALL), add);
 }
 
 /// Popup-menu row with a restrained rounded hover fill and no widget border.
@@ -963,6 +967,8 @@ mod tests {
             ] {
                 let r = ratio(p.border_strong, bg);
                 assert!(r >= 3.0, "border_strong on {n} (dark={}) = {r:.2}", p.dark);
+                let r = ratio(p.outline, bg);
+                assert!(r >= 3.0, "outline on {n} (dark={}) = {r:.2}", p.dark);
             }
         }
     }
