@@ -38,23 +38,7 @@ pub fn parse_form(s: &str) -> Vec<(String, String)> {
 }
 
 fn url_decode(s: &str) -> String {
-    let b = s.replace('+', " ").into_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%'
-            && i + 2 < b.len()
-            && i + 2 <= (b.len() - 1)
-            && let Ok(v) = u8::from_str_radix(&String::from_utf8_lossy(&b[i + 1..i + 3]), 16)
-        {
-            out.push(v);
-            i += 3;
-            continue;
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    crate::proxy::http_util::percent_decode(&s.replace('+', " "))
 }
 
 pub fn is_json(m: &Message) -> bool {

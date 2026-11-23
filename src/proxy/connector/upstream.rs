@@ -57,19 +57,26 @@ pub fn parse_proxy(s: &str) -> Option<ProxyAddr> {
     };
     let (host, port) = match hp.rsplit_once(':') {
         Some((h, p)) if !p.ends_with(']') => (h, p.parse().ok()?),
-        _ => (hp, 8080),
+        _ => (
+            hp,
+            if kind == ProxyKind::Socks5 {
+                1080
+            } else {
+                8080
+            },
+        ),
     };
     if host.is_empty() {
         return None;
     }
-    let auth = cred.map(|c| {
+    let auth = cred.map(crate::proxy::http_util::percent_decode).map(|c| {
         if kind == ProxyKind::Http {
             format!(
                 "Basic {}",
                 base64::engine::general_purpose::STANDARD.encode(c)
             )
         } else {
-            c.to_string()
+            c
         }
     });
     Some(ProxyAddr {
@@ -80,7 +87,8 @@ pub fn parse_proxy(s: &str) -> Option<ProxyAddr> {
     })
 }
 
-// First usable entry wins; DIRECT (or nothing usable) means no proxy.
+// First usable entry wins; DIRECT (or nothing usable) means no proxy. PAC `SOCKS` means
+// SOCKS4, which we don't speak, so only `SOCKS5` entries are used.
 pub fn parse_pac_result(s: &str) -> Option<ProxyAddr> {
     for entry in s.split(';') {
         let mut it = entry.split_whitespace();
@@ -94,7 +102,7 @@ pub fn parse_pac_result(s: &str) -> Option<ProxyAddr> {
                     return Some(p);
                 }
             }
-            (Some("SOCKS" | "SOCKS5"), Some(hp)) => {
+            (Some("SOCKS5"), Some(hp)) => {
                 if let Some(p) = parse_proxy(&format!("socks5://{hp}")) {
                     return Some(p);
                 }
@@ -319,12 +327,25 @@ async fn socks5(
         return Err("SOCKS5 proxy does not support an offered authentication method".into());
     }
 
-    let host_bytes = host.as_bytes();
-    if host_bytes.len() > u8::MAX as usize {
-        return Err("SOCKS5 target host is too long".into());
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    let mut request = vec![5, 1, 0];
+    match bare.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => {
+            request.push(1);
+            request.extend_from_slice(&ip.octets());
+        }
+        Ok(std::net::IpAddr::V6(ip)) => {
+            request.push(4);
+            request.extend_from_slice(&ip.octets());
+        }
+        Err(_) => {
+            let len = u8::try_from(host.len()).map_err(|_| "SOCKS5 target host is too long")?;
+            request.push(3);
+            request.push(len);
+            request.extend_from_slice(host.as_bytes());
+        }
     }
-    io.write_all(&[5, 1, 0, 3, host_bytes.len() as u8]).await?;
-    io.write_all(host_bytes).await?;
+    io.write_all(&request).await?;
     io.write_all(&port.to_be_bytes()).await?;
     let mut reply = [0; 4];
     io.read_exact(&mut reply).await?;
@@ -423,6 +444,11 @@ mod tests {
             parse_proxy("socks5://u:p@h:1").unwrap().auth.as_deref(),
             Some("u:p")
         );
+        assert_eq!(
+            parse_proxy("socks5://u:p%40ss@h").unwrap().auth.as_deref(),
+            Some("u:p@ss")
+        );
+        assert_eq!(parse_proxy("socks5://h").unwrap().port, 1080);
         assert_eq!(parse_proxy(""), None);
         assert_eq!(parse_proxy("h:notaport"), None);
     }
@@ -432,9 +458,10 @@ mod tests {
         assert_eq!(parse_pac_result("DIRECT"), None);
         assert_eq!(parse_pac_result("PROXY a:1; DIRECT").unwrap().port, 1);
         assert_eq!(
-            parse_pac_result("SOCKS s:9").unwrap().kind,
+            parse_pac_result("SOCKS5 s:9").unwrap().kind,
             ProxyKind::Socks5
         );
+        assert_eq!(parse_pac_result("SOCKS s:9; PROXY b:2").unwrap().host, "b");
         assert_eq!(parse_pac_result("proxy b:2").unwrap().host, "b");
         assert_eq!(parse_pac_result("DIRECT; PROXY a:1"), None);
         assert_eq!(parse_pac_result(""), None);

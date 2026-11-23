@@ -2,7 +2,7 @@ mod actions;
 mod app_lookup;
 pub mod connector;
 mod handler;
-mod http_util;
+pub mod http_util;
 mod pipeline;
 pub mod script;
 pub mod sink;
