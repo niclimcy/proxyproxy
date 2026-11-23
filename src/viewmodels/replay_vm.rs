@@ -8,6 +8,12 @@ use std::sync::{
     mpsc::{Receiver, Sender, channel},
 };
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DraftTab {
+    Headers,
+    Body,
+}
+
 pub struct ReplayDraft {
     pub id: u64,
     pub method: String,
@@ -21,6 +27,7 @@ pub struct ReplayDraft {
     pub prev: Option<Message>,
     pub show_diff: bool,
     pub source: Option<u64>,
+    pub tab: DraftTab,
 }
 
 type Done = (u64, Result<Sent, String>);
@@ -64,6 +71,11 @@ impl ReplayVm {
 
     fn push(&mut self, mut d: ReplayDraft) {
         d.id = self.next_win;
+        d.tab = if d.body.is_empty() {
+            DraftTab::Headers
+        } else {
+            DraftTab::Body
+        };
         self.next_win += 1;
         self.drafts.push(d);
     }
@@ -85,6 +97,7 @@ impl ReplayVm {
             prev: f.response.clone(),
             show_diff: false,
             source: Some(f.id),
+            tab: DraftTab::Headers,
         });
     }
 
@@ -102,6 +115,7 @@ impl ReplayVm {
             prev: None,
             show_diff: false,
             source: None,
+            tab: DraftTab::Headers,
         });
     }
 
@@ -202,6 +216,7 @@ mod tests {
             ("POST", "https://a.com/p?q=1", "X-A: 1", "hi")
         );
         assert_eq!(d.source, Some(5));
+        assert_eq!(d.tab, DraftTab::Body);
         assert!(d.prev.is_some() && d.open);
         vm.open_replay(99);
         assert_eq!(vm.drafts.len(), 1);
@@ -214,6 +229,7 @@ mod tests {
         vm.open_compose();
         assert_ne!(vm.drafts[0].id, vm.drafts[1].id);
         assert_eq!(vm.drafts[0].url, "https://");
+        assert_eq!(vm.drafts[0].tab, DraftTab::Headers);
     }
 
     #[test]

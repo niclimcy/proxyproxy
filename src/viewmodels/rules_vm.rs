@@ -344,6 +344,8 @@ pub struct RulesVm {
     pub list_inputs: [String; 3],
     pub console: Vec<String>,
     pub paused: Vec<BpDraft>,
+    /// raise the breakpoint window on the next frame
+    pub focus_breakpoint: bool,
 }
 
 pub struct ScopeView {
@@ -378,6 +380,7 @@ impl RulesVm {
             list_inputs: Default::default(),
             console: vec![],
             paused: vec![],
+            focus_breakpoint: false,
         }
     }
 
@@ -390,6 +393,7 @@ impl RulesVm {
 
     pub fn pause(&mut self, p: Paused) {
         self.paused.push(BpDraft::new(p));
+        self.focus_breakpoint = true;
     }
 
     pub fn open_from_flow(&mut self, id: u64, kind: RuleKind) {
@@ -867,6 +871,7 @@ mod tests {
         };
         let (p, mut rx) = paused(b"orig");
         vm.pause(p);
+        assert!(vm.focus_breakpoint);
         vm.paused[0].body = "changed".into();
         vm.handle(RuleIntent::Resolve(true));
         match rx.try_recv().unwrap() {
