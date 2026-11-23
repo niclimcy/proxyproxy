@@ -95,29 +95,25 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                                         out.push(SidebarIntent::Pick(format!("host:{h}")));
                                     }
                                     resp.context_menu(|ui| {
-                                        if ui
-                                            .button(ico(ph::EYE_SLASH, "Mute (hide from record)"))
-                                            .clicked()
-                                        {
-                                            out.push(SidebarIntent::Mute(h.clone()));
-                                            ui.close();
-                                        }
-                                        if ui
-                                            .button(ico(ph::TARGET, "Add to capture scope"))
-                                            .clicked()
-                                        {
-                                            out.push(SidebarIntent::Scope(h.clone()));
-                                            ui.close();
-                                        }
-                                        if ui
-                                            .button(ico(ph::LOCK_OPEN, "Don't decrypt TLS"))
-                                            .clicked()
-                                        {
-                                            out.push(SidebarIntent::NoTls(h.clone()));
-                                            ui.close();
-                                        }
-                                        if ui.button(ico(ph::COPY, "Copy host")).clicked() {
-                                            ui.ctx().copy_text(h.clone());
+                                        let items = [
+                                            ico(ph::EYE_SLASH, "Mute (hide from record)"),
+                                            ico(ph::TARGET, "Add to capture scope"),
+                                            ico(ph::LOCK_OPEN, "Don't decrypt TLS"),
+                                            ico(ph::COPY, "Copy host"),
+                                        ];
+                                        let labels: Vec<&str> =
+                                            items.iter().map(String::as_str).collect();
+                                        menu_width(ui, &labels);
+                                        for (i, label) in labels.iter().enumerate() {
+                                            if !menu_item(ui, label).clicked() {
+                                                continue;
+                                            }
+                                            match i {
+                                                0 => out.push(SidebarIntent::Mute(h.clone())),
+                                                1 => out.push(SidebarIntent::Scope(h.clone())),
+                                                2 => out.push(SidebarIntent::NoTls(h.clone())),
+                                                _ => ui.ctx().copy_text(h.clone()),
+                                            }
                                             ui.close();
                                         }
                                     });
@@ -125,7 +121,8 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                             });
                         });
                         head.context_menu(|ui| {
-                            if ui.button("Show only this app").clicked() {
+                            menu_width(ui, &["Show only this app"]);
+                            if menu_item(ui, "Show only this app").clicked() {
                                 out.push(SidebarIntent::Pick(format!("app:{app}")));
                                 ui.close();
                             }
@@ -137,7 +134,10 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                         for m in &cfg.muted {
                             ui.horizontal(|ui| {
                                 ui.label(muted(m));
-                                if ui.small_button(ph::X).on_hover_text("Unmute").clicked() {
+                                if icon_button(ui, ph::X, "", true)
+                                    .on_hover_text("Unmute")
+                                    .clicked()
+                                {
                                     out.push(SidebarIntent::Unmute(m.clone()));
                                 }
                             });

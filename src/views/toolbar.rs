@@ -313,25 +313,30 @@ fn compact_primary_rows(
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
     let menu = flat(ui, |ui| {
         ui.menu_button(RichText::new(ph::STAR).size(FS_BODY), |ui| {
-            if !vm.filter.trim().is_empty()
-                && ui.button(ico(ph::PLUS, "Save current query")).clicked()
-            {
+            let saved = vm.saved_queries();
+            let save = ico(ph::PLUS, "Save current query");
+            let mut labels: Vec<&str> = saved.iter().map(|(n, _)| n.as_str()).collect();
+            labels.push(&save);
+            menu_width(ui, &labels);
+            if !vm.filter.trim().is_empty() && menu_item(ui, &save).clicked() {
                 out.push(ToolbarIntent::SaveQuery);
                 ui.close();
                 return;
             }
-            let saved = vm.saved_queries();
             if saved.is_empty() {
                 ui.label(muted("No saved queries"));
             }
             for (i, (name, q)) in saved.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    if ui.button(name).on_hover_text(q).clicked() {
+                    if icon_button(ui, ph::X, "", true)
+                        .on_hover_text("Delete saved query")
+                        .clicked()
+                    {
+                        out.push(ToolbarIntent::DeleteQuery(i));
+                    }
+                    if menu_item(ui, name).on_hover_text(q).clicked() {
                         out.push(ToolbarIntent::LoadQuery(q.clone()));
                         ui.close();
-                    }
-                    if ui.small_button(ph::X).clicked() {
-                        out.push(ToolbarIntent::DeleteQuery(i));
                     }
                 });
             }

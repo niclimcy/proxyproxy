@@ -24,7 +24,10 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
     }
     for (i, p) in v.paths.iter().enumerate() {
         ui.horizontal(|ui| {
-            if ui.small_button(ph::X).on_hover_text("Remove").clicked() {
+            if icon_button(ui, ph::X, "", true)
+                .on_hover_text("Remove")
+                .clicked()
+            {
                 out.push(SchemasIntent::Remove(i));
             }
             ui.label(RichText::new(p).monospace());
@@ -40,10 +43,7 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
                 "{} messages · {} services",
                 v.stats.0, v.stats.1
             )));
-            if ui
-                .small_button(ico(ph::ARROWS_CLOCKWISE, "Reload"))
-                .clicked()
-            {
+            if icon_button(ui, ph::ARROWS_CLOCKWISE, "Reload", true).clicked() {
                 out.push(SchemasIntent::Reload);
             }
         });

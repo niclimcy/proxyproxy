@@ -143,6 +143,7 @@ pub fn show(
                 segmented(ui, &mut vm.tab, &tabs);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     toolbar_menu(ui, ph::COPY, "Copy as", |ui| {
+                        menu_width(ui, &["Python requests"]);
                         for (l, s) in [
                             ("URL", f.url()),
                             ("cURL", ex::curl(&f)),
@@ -151,7 +152,7 @@ pub fn show(
                             ("HTTPie", ex::httpie(&f)),
                             ("Raw HTTP", ex::raw_http(&f)),
                         ] {
-                            if ui.button(l).clicked() {
+                            if menu_item(ui, l).clicked() {
                                 ctx.copy_text(s);
                                 ui.close();
                             }
@@ -360,7 +361,7 @@ fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailI
                         ui.label(muted(
                             o.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default(),
                         ));
-                        if ui.small_button("Diff vs this").clicked() {
+                        if icon_button(ui, ph::GIT_DIFF, "Diff vs this", true).clicked() {
                             out.push(DetailIntent::DiffAgainst(o.id));
                         }
                     });
@@ -377,7 +378,7 @@ fn diff_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow, out: &mut Vec<DetailI
     ui.horizontal(|ui| {
         ui.label(muted(format!("Comparing #{} → #{}", base.id, f.id)));
         checkbox(ui, &mut vm.diff_only_changes, "Only changes");
-        if vm.diff_base.is_some() && ui.small_button("Clear base").clicked() {
+        if vm.diff_base.is_some() && icon_button(ui, ph::X, "Clear base", true).clicked() {
             out.push(DetailIntent::ClearBase);
         }
     });

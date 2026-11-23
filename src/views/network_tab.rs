@@ -27,7 +27,10 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                 if !valid_ip(ip) {
                     ui.label(RichText::new("invalid IP").color(danger()));
                 }
-                if ui.small_button(ph::X).clicked() {
+                if icon_button(ui, ph::X, "", true)
+                    .on_hover_text("Remove override")
+                    .clicked()
+                {
                     out.push(NetworkIntent::RemoveDns(i));
                 }
             });
@@ -108,10 +111,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
     ui.separator();
     ui.label(RichText::new("Custom CA").strong());
     ui.label(muted("Replace the root CA with your own certificate + key (PEM). Old files are backed up; restart to apply, then re-trust the CA."));
-    if ui
-        .button(ico(ph::UPLOAD_SIMPLE, "Import CA certificate + key…"))
-        .clicked()
-    {
+    if icon_button(ui, ph::UPLOAD_SIMPLE, "Import CA certificate + key…", true).clicked() {
         let cert = rfd::FileDialog::new()
             .set_title("CA certificate (PEM)")
             .pick_file();

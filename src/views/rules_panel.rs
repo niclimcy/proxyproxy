@@ -2,7 +2,7 @@ use crate::domain::rule::Action;
 use crate::viewmodels::intent::{ListKind, RuleIntent};
 use crate::viewmodels::rules_vm::{KINDS, RuleForm, RuleKind, RulesTab, RulesVm};
 use crate::views::theme::*;
-use eframe::egui::{self, Color32, RichText, ScrollArea, Stroke, TextEdit};
+use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
 fn field(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
@@ -91,31 +91,19 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
                         }
                         ui.label(RichText::new(&r.pattern).monospace());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let flat = |s: &str| {
-                                egui::Button::new(s)
-                                    .fill(Color32::TRANSPARENT)
-                                    .stroke(Stroke::NONE)
+                            let tool = |ui: &mut egui::Ui, icon: &str, tip: &str| {
+                                icon_button(ui, icon, "", true).on_hover_text(tip).clicked()
                             };
-                            if ui.add(flat(ph::X)).on_hover_text("Delete").clicked() {
+                            if tool(ui, ph::X, "Delete") {
                                 out.push(RuleIntent::Delete(r.id));
                             }
-                            if ui.add(flat(ph::PENCIL)).on_hover_text("Edit").clicked() {
+                            if tool(ui, ph::PENCIL, "Edit") {
                                 out.push(RuleIntent::Edit(r.id));
                             }
-                            if i + 1 < n
-                                && ui
-                                    .add(flat(ph::ARROW_DOWN))
-                                    .on_hover_text("Lower priority")
-                                    .clicked()
-                            {
+                            if i + 1 < n && tool(ui, ph::ARROW_DOWN, "Lower priority") {
                                 out.push(RuleIntent::Move(i, 1));
                             }
-                            if i > 0
-                                && ui
-                                    .add(flat(ph::ARROW_UP))
-                                    .on_hover_text("Higher priority")
-                                    .clicked()
-                            {
+                            if i > 0 && tool(ui, ph::ARROW_UP, "Higher priority") {
                                 out.push(RuleIntent::Move(i, -1));
                             }
                             if r.hits > 0 {

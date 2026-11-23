@@ -170,8 +170,7 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
             fmt_size(m.body.len()),
             m.content_type()
         )));
-        if ui
-            .small_button(ph_copy())
+        if icon_button(ui, egui_phosphor::regular::COPY, "", true)
             .on_hover_text("Copy body")
             .clicked()
         {
@@ -202,10 +201,14 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
         Rendered::Tree(v) => {
             let mut expand = None;
             ui.horizontal(|ui| {
-                if ui.small_button("Expand all").clicked() {
+                if icon_button(ui, egui_phosphor::regular::ARROWS_OUT_SIMPLE, "Expand all", true)
+                    .clicked()
+                {
                     expand = Some(true);
                 }
-                if ui.small_button("Collapse all").clicked() {
+                if icon_button(ui, egui_phosphor::regular::ARROWS_IN_SIMPLE, "Collapse all", true)
+                    .clicked()
+                {
                     expand = Some(false);
                 }
                 ui.label(muted("click a value to copy its JSONPath"));
@@ -353,8 +356,4 @@ pub fn diff_view(ui: &mut egui::Ui, id: &str, lines: &[(char, String)], only_cha
                 });
             }
         });
-}
-
-fn ph_copy() -> String {
-    egui_phosphor::regular::COPY.to_string()
 }

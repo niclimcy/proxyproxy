@@ -222,17 +222,25 @@ pub fn show(
                 resp.context_menu(|ui| {
                     let id = f.id;
                     let b = |ui: &mut egui::Ui, l: &str| {
-                        let c = ui.button(l).clicked();
+                        let c = menu_item(ui, l).clicked();
                         if c {
                             ui.close();
                         }
                         c
                     };
-                    if b(ui, &ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd()))) {
+                    let host = f.hostname().to_string();
+                    let (replay, mute, only) = (
+                        ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd())),
+                        ico(ph::EYE_SLASH, &format!("Mute {host}")),
+                        ico(ph::TARGET, &format!("Capture only {host}")),
+                    );
+                    menu_width(ui, &[&replay, &mute, &only, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
+                    if b(ui, &replay) {
                         out.push(RowIntent::Replay(id));
                     }
                     ui.menu_button(ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), |ui| {
                         use RuleKind as K;
+                        menu_width(ui, &["Mock this response", "Throttle / delay"]);
                         for (k, l) in [(K::Breakpoint, "Breakpoint"), (K::Mock, "Mock this response"), (K::Block, "Block"), (K::Throttle, "Throttle / delay"), (K::Redirect, "Redirect to…"), (K::Header, "Rewrite header"), (K::Script, "Script")] {
                             if b(ui, l) {
                                 out.push(RowIntent::Rule(id, k));
@@ -244,6 +252,7 @@ pub fn show(
                         out.push(RowIntent::Pin(id));
                     }
                     ui.menu_button(ico(ph::PALETTE, "Color"), |ui| {
+                        menu_width(ui, &["Purple"]);
                         if b(ui, "None") {
                             out.push(RowIntent::Color(id, None));
                         }
@@ -262,17 +271,17 @@ pub fn show(
                     ui.separator();
                     ui.menu_button(ico(ph::COPY, "Copy as"), |ui| {
                         use crate::services::exporter as ex;
+                        menu_width(ui, &["Python requests"]);
                         for (l, s) in [("URL", f.url()), ("cURL", ex::curl(f)), ("fetch", ex::fetch(f)), ("Python requests", ex::python(f)), ("HTTPie", ex::httpie(f)), ("Raw HTTP", ex::raw_http(f))] {
                             if b(ui, l) {
                                 ctx.copy_text(s);
                             }
                         }
                     });
-                    let host = f.hostname().to_string();
-                    if b(ui, &ico(ph::EYE_SLASH, &format!("Mute {host}"))) {
+                    if b(ui, &mute) {
                         out.push(RowIntent::Mute(host.clone()));
                     }
-                    if b(ui, &ico(ph::TARGET, &format!("Capture only {host}"))) {
+                    if b(ui, &only) {
                         out.push(RowIntent::Scope(host.clone()));
                     }
                     if b(ui, &ico(ph::LOCK_OPEN, "Don't decrypt this host")) {
