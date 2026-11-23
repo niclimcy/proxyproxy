@@ -95,6 +95,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `network_vm.rs`, `schemas_vm.rs` | the Network and Schemas tabs |
 | `session_vm.rs` | autosave, session and rules files |
 | `devices_vm.rs` | device actions; simulator and system-proxy state polled off the UI thread |
+| `onboarding_vm.rs` | onboarding stages; device and import intents become `Effect`s |
 | `status.rs` | status line, `JobRunner` for background jobs |
 | `intent.rs` | intent and effect enums |
 
