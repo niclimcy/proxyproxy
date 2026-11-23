@@ -278,20 +278,6 @@ pub fn ico(icon: &str, text: &str) -> String {
 }
 
 pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(T, &str)]) {
-    let tab_width = items
-        .iter()
-        .map(|(_, name)| {
-            ui.painter()
-                .layout_no_wrap(
-                    (*name).to_string(),
-                    egui::FontId::proportional(FS_SMALL),
-                    fg(),
-                )
-                .size()
-                .x
-                + 16.0
-        })
-        .fold(72.0_f32, f32::max);
     Frame::new()
         .fill(canvas())
         .corner_radius(CornerRadius::same(RADIUS))
@@ -306,6 +292,8 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(
                         egui::FontId::proportional(FS_SMALL),
                         if on { fg() } else { fg_muted() },
                     );
+                    // width from the label alone, so selection never changes geometry
+                    let tab_width = (g.size().x + 28.0).max(56.0);
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(tab_width, HIT), egui::Sense::click());
                     resp.widget_info(|| {
