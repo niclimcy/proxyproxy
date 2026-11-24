@@ -62,6 +62,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `filter.rs` | search query parser |
 | `mime.rs` | file extension to content type |
 | `repaint.rs` | `Repaint` trait |
+| `about.rs` | app name, version, author and license for the About window |
 
 ### `services/`
 | File | Contents |
@@ -77,6 +78,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `replay.rs` | send a request without going through the proxy |
 | `app_icons.rs` | resolves the client process to an app (name, bundle id) and extracts its icon to `<data dir>/icons/` (`.icns` and PNG decoding in Rust, no `sips`); `IconStore` serves PNG bytes from memory, loading from disk on a worker thread |
 | `devices.rs` | `apply_route`, CA trust, Chrome, iOS simulator, adb |
+| `app_menu.rs` | native menu bar on macOS and Windows (`muda`); none on Linux, where the toolbar draws Help |
 | `sysproxy/` | system proxy (global, or PAC for proxy-only hosts) per OS: `macos.rs`, `linux.rs`, `windows.rs`, `other.rs` |
 | `car.rs` | `Assets.car` reader: BOM trees, `AppIcon` facet, largest rendition as PNG (embedded PNG, raw, zlib, LZFSE/LZVN `KCBC`; RLE and palette skipped) |
 | `android_icons.rs`, `android_pkg.rs`, `zip_read.rs` | package id to label and icon via adb: command runner, APK zip reader, binary `AndroidManifest.xml` and `resources.arsc` parsers |
@@ -109,6 +111,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `replay_vm.rs` | replay and compose drafts |
 | `network_vm.rs`, `schemas_vm.rs` | the Network and Schemas tabs of Settings |
 | `settings_vm.rs` | Settings window visibility and tab |
+| `about_vm.rs` | About window visibility |
 | `session_vm.rs` | autosave, session and rules files |
 | `devices_vm.rs` | device actions; simulator and system-proxy state polled off the UI thread |
 | `onboarding_vm.rs` | onboarding stages; device and import intents become `Effect`s |
@@ -116,7 +119,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `intent.rs` | intent and effect enums |
 
 ### `views/`
-One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab` and `schemas_tab`), `shortcuts`, `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
+One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab` and `schemas_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts`, `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
 
 ## Extending
 
