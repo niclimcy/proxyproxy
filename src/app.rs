@@ -198,7 +198,8 @@ impl App {
 
     fn windows(&mut self, ctx: &egui::Context) {
         if let Some(i) = views::breakpoint_window::show(ctx, &mut self.rules) {
-            self.rules.handle(i);
+            let e = self.rules.handle(i);
+            self.apply(e);
         }
         for id in views::replay_window::show(ctx, &mut self.replay) {
             self.replay.send(id);
