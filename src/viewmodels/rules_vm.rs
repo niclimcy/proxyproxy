@@ -1,11 +1,13 @@
 use super::intent::{Effect, ListKind, RuleIntent};
 use super::status::Status;
-use crate::domain::config::Shared;
+use crate::domain::config::{Config, Shared};
 use crate::domain::pac;
 use crate::domain::flow::{BpEdit, Decision, Flow, Paused, Stage};
 use crate::domain::policy::url_matches;
 use crate::domain::rule::{Action, Rule};
 use crate::services::flow_store::FlowStore;
+use std::cell::Cell;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum RuleKind {
@@ -347,6 +349,23 @@ pub struct RulesVm {
     pub paused: Vec<BpDraft>,
     /// raise the breakpoint window on the next frame
     pub focus_breakpoint: bool,
+    // the panel asks every frame; counting 20k flows each time stalls the UI
+    live_cache: Cell<Option<(u64, usize)>>,
+    scope_cache: Cell<Option<(u64, usize)>>,
+}
+
+fn cached_count(cache: &Cell<Option<(u64, usize)>>, key: impl Hash, count: impl FnOnce() -> usize) -> usize {
+    let mut h = DefaultHasher::new();
+    key.hash(&mut h);
+    let key = h.finish();
+    match cache.get() {
+        Some((k, n)) if k == key => n,
+        _ => {
+            let n = count();
+            cache.set(Some((key, n)));
+            n
+        }
+    }
 }
 
 pub struct ScopeView {
@@ -388,6 +407,8 @@ impl RulesVm {
             console: vec![],
             paused: vec![],
             focus_breakpoint: false,
+            live_cache: Cell::default(),
+            scope_cache: Cell::default(),
         }
     }
 
@@ -419,16 +440,17 @@ impl RulesVm {
 
     pub fn live_matches(&self) -> usize {
         let f = &self.form;
-        self.store
-            .lock()
-            .flows
-            .iter()
-            .filter(|fl| {
-                url_matches(&f.pattern, &fl.url())
-                    && (f.method.trim().is_empty()
-                        || f.method.trim().eq_ignore_ascii_case(&fl.method))
-            })
-            .count()
+        let st = self.store.lock();
+        cached_count(&self.live_cache, (st.rev(), &f.pattern, &f.method), || {
+            st.flows
+                .iter()
+                .filter(|fl| {
+                    url_matches(&f.pattern, &fl.url())
+                        && (f.method.trim().is_empty()
+                            || f.method.trim().eq_ignore_ascii_case(&fl.method))
+                })
+                .count()
+        })
     }
 
     pub fn rules_snapshot(&self) -> Vec<Rule> {
@@ -436,8 +458,24 @@ impl RulesVm {
     }
 
     pub fn scope_view(&self) -> ScopeView {
-        let c = self.cfg.lock().unwrap().clone();
+        let c = {
+            let cfg = self.cfg.lock().unwrap();
+            Config {
+                scope_only: cfg.scope_only,
+                scope: cfg.scope.clone(),
+                exclude: cfg.exclude.clone(),
+                muted: cfg.muted.clone(),
+                bypass_tls: cfg.bypass_tls.clone(),
+                proxy_only: cfg.proxy_only,
+                proxy_only_hosts: cfg.proxy_only_hosts.clone(),
+                ..Config::default()
+            }
+        };
         let st = self.store.lock();
+        let key = (st.rev(), c.scope_only, &c.scope, &c.exclude, &c.muted);
+        let matching = cached_count(&self.scope_cache, key, || {
+            st.flows.iter().filter(|f| c.in_record_scope(&f.url())).count()
+        });
         ScopeView {
             scope_only: c.scope_only,
             scope: c.scope.clone(),
@@ -447,7 +485,7 @@ impl RulesVm {
             proxy_only: c.proxy_only,
             proxy_only_hosts: c.proxy_only_hosts.clone(),
             scope_has_paths: pac::has_path_entries(&c.scope),
-            matching: st.flows.iter().filter(|f| c.in_record_scope(&f.url())).count(),
+            matching,
             total: st.flows.len(),
         }
     }
@@ -1037,6 +1075,10 @@ mod tests {
         vm.form.pattern = "a.com".into();
         vm.form.method = "post".into();
         assert_eq!(vm.live_matches(), 0);
+        let mut f = Flow::sample(3);
+        f.method = "POST".into();
+        vm.store.lock().push(f);
+        assert_eq!(vm.live_matches(), 1);
     }
 
     #[test]
