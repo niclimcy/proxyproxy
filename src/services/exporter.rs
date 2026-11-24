@@ -6,8 +6,17 @@ fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
+// imported HAR and session files can carry any string as the method
+fn sh_word(s: &str) -> String {
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        s.to_string()
+    } else {
+        sh_quote(s)
+    }
+}
+
 pub fn curl(f: &Flow) -> String {
-    let mut out = format!("curl -X {} {}", f.method, sh_quote(&f.url()));
+    let mut out = format!("curl -X {} {}", sh_word(&f.method), sh_quote(&f.url()));
     for (k, v) in &f.request.headers {
         if matches!(
             k.to_ascii_lowercase().as_str(),
@@ -161,7 +170,7 @@ pub fn python(f: &Flow) -> String {
 }
 
 pub fn httpie(f: &Flow) -> String {
-    let mut o = format!("http {} {}", f.method, sh_quote(&f.url()));
+    let mut o = format!("http {} {}", sh_word(&f.method), sh_quote(&f.url()));
     for (k, v) in f.request.headers.iter().filter(|(k, _)| !skip_hdr(k)) {
         o.push_str(&format!(" {}", sh_quote(&format!("{k}:{v}"))));
     }
@@ -224,6 +233,16 @@ pub fn csv(flows: &[&Flow]) -> String {
 mod tests {
     use super::*;
     use crate::domain::flow::Message;
+
+    #[test]
+    fn hostile_method_is_quoted_in_shell_exports() {
+        let mut f = flow();
+        f.method = "GET; touch /tmp/x #".into();
+        assert!(curl(&f).starts_with("curl -X 'GET; touch /tmp/x #' "));
+        assert!(httpie(&f).contains("http 'GET; touch /tmp/x #' "));
+        f.method = "PATCH".into();
+        assert!(curl(&f).starts_with("curl -X PATCH "));
+    }
 
     fn flow() -> Flow {
         Flow {
