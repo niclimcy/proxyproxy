@@ -11,7 +11,7 @@ Two palettes, `DARK` and `LIGHT`. `DARK` is true black (`canvas` and `panel` are
 | Role | Tokens | Use |
 |---|---|---|
 | Surfaces | `canvas`, `panel`, `surface` | table/inputs, panels, cards/buttons |
-| Lines | `border`, `outline` | dividers and table separators; resting outline of secondary controls (3:1 on every surface, tested) |
+| Lines | `border`, `border_strong` | dividers, table separators and the soft hairline of secondary buttons; input outlines (`border_strong`, 3:1 on every surface, tested) |
 | Text | `fg`, `fg_muted` | primary, secondary |
 | Brand | `accent` | selection, links, keys |
 | Status | `success`, `info`, `warning`, `danger`, `violet` | method/status colours, pills, diffs |
@@ -28,7 +28,7 @@ Use `tint(color, Tint::Subtle|Normal|Strong)` for washes, not `gamma_multiply`.
 
 Button hierarchy:
 - `action_button` is for the primary or destructive action in a view. It uses a strong tint and coloured border.
-- Secondary: `icon_button` with a label and `toolbar_menu` are filled (`surface`) with an `outline` border at rest, so they read as buttons on OLED black. Hover turns the border `accent`.
+- Secondary: `icon_button` with a label and `toolbar_menu` are a quiet `surface` fill with a `border` hairline; hover lifts the fill to `hover` and pressed uses an accent wash, so accent stays rare. Inside a `capsule` (a single `surface` pill) they are flat, so grouped toolbar actions are not individually boxed.
 - Tertiary: icon-only `icon_button` and `flat` stay borderless for dismiss/copy glyphs that should not compete with other actions.
 - `chip` is for multi-select filters and `segmented` is for mutually exclusive tabs. Both reserve stable geometry across selected, hover, and pressed states.
 

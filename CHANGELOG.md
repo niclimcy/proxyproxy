@@ -18,7 +18,7 @@
 
 - Compose, Replay and the breakpoint editor open as native windows instead of floating inside the app. Cmd+Enter sends or executes; the breakpoint window comes to the front when traffic pauses.
 - Network and Schemas move from the Rules panel to a Settings window (Cmd+,).
-- The dark theme is true black for OLED screens.
+- The dark theme is true black for OLED screens. Labelled buttons get a quiet filled surface with a soft hairline, and grouped toolbar actions sit in one capsule.
 - The toolbar's Clear keeps pinned requests; Clear all, including pinned, is in the Session menu.
 - The devices menu is now called Connect, and the sidebar toggle is an icon.
 - Rule types are picked from a dropdown, and Add rule is the form's primary button.

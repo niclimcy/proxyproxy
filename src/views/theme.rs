@@ -16,8 +16,6 @@ pub struct Palette {
     pub faint: Color32,
     pub border: Color32,
     pub border_strong: Color32,
-    /// Resting outline of secondary controls; visible on black without shouting.
-    pub outline: Color32,
     pub fg: Color32,
     pub fg_muted: Color32,
     pub accent: Color32,
@@ -33,12 +31,11 @@ pub const DARK: Palette = Palette {
     // true black for OLED; only raised controls and lines lift off it
     canvas: Color32::from_rgb(0, 0, 0),
     panel: Color32::from_rgb(0, 0, 0),
-    surface: Color32::from_rgb(30, 30, 34),
-    hover: Color32::from_rgb(46, 46, 52),
+    surface: Color32::from_rgb(24, 24, 27),
+    hover: Color32::from_rgb(40, 40, 45),
     faint: Color32::from_rgb(13, 13, 14),
     border: Color32::from_rgb(42, 42, 46),
     border_strong: Color32::from_rgb(122, 122, 132),
-    outline: Color32::from_rgb(112, 112, 122),
     fg: Color32::from_rgb(234, 234, 238),
     fg_muted: Color32::from_rgb(182, 182, 192),
     accent: Color32::from_rgb(140, 174, 255),
@@ -58,7 +55,6 @@ pub const LIGHT: Palette = Palette {
     faint: Color32::from_rgb(240, 243, 248),
     border: Color32::from_rgb(208, 213, 223),
     border_strong: Color32::from_rgb(112, 120, 140),
-    outline: Color32::from_rgb(130, 138, 156),
     fg: Color32::from_rgb(22, 25, 33),
     fg_muted: Color32::from_rgb(80, 88, 106),
     accent: Color32::from_rgb(37, 84, 214),
@@ -192,7 +188,7 @@ fn visuals(p: &Palette) -> egui::Visuals {
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
     v.widgets.inactive.bg_fill = p.surface;
     v.widgets.inactive.weak_bg_fill = p.surface;
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, p.outline);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, p.border_strong);
     v.widgets.hovered.bg_fill = p.hover;
     v.widgets.hovered.weak_bg_fill = p.hover;
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, p.accent);
@@ -505,7 +501,29 @@ pub fn flat<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     .inner
 }
 
-/// Labelled buttons are secondary (filled, outlined at rest); icon-only ones stay flat.
+/// Secondary look: a quiet surface fill with a soft hairline. Skipped when already flat (inside a capsule).
+fn secondary<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if ui.visuals().widgets.inactive.weak_bg_fill == Color32::TRANSPARENT {
+        return add(ui);
+    }
+    ui.scope(|ui| {
+        let (surface, hover, accent) = (surface(), pal().hover, accent());
+        let hairline = Stroke::new(1.0, pal().border);
+        let w = &mut ui.visuals_mut().widgets;
+        w.inactive.weak_bg_fill = surface;
+        w.inactive.bg_stroke = hairline;
+        w.hovered.weak_bg_fill = hover;
+        w.hovered.bg_stroke = hairline;
+        w.active.weak_bg_fill = tint(accent, Tint::Normal);
+        w.active.bg_stroke = Stroke::new(1.0, tint(accent, Tint::Strong));
+        w.open.weak_bg_fill = hover;
+        w.open.bg_stroke = hairline;
+        add(ui)
+    })
+    .inner
+}
+
+/// Labelled buttons are secondary; icon-only ones stay flat.
 pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) -> egui::Response {
     let button = |ui: &mut egui::Ui, text: String| {
         ui.add_enabled(
@@ -516,19 +534,19 @@ pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) ->
     if label.is_empty() {
         flat(ui, |ui| button(ui, icon.to_string()))
     } else {
-        button(ui, ico(icon, label))
+        secondary(ui, |ui| button(ui, ico(icon, label)))
     }
 }
 
-/// Groups related toolbar actions in one rounded capsule.
+/// Groups related toolbar actions in one rounded capsule of flat buttons.
 pub fn capsule<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     Frame::new()
-        .fill(canvas())
+        .fill(surface())
         .corner_radius(CornerRadius::same(RADIUS))
         .inner_margin(Margin::symmetric(2, 0))
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            ui.horizontal(add).inner
+            flat(ui, |ui| ui.horizontal(add).inner)
         })
         .inner
 }
@@ -642,7 +660,9 @@ fn panel_toggle(
 
 /// Toolbar menu trigger, styled like `icon_button`.
 pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, add: impl FnOnce(&mut egui::Ui)) {
-    ui.menu_button(RichText::new(ico(icon, label)).size(FS_SMALL), add);
+    secondary(ui, |ui| {
+        ui.menu_button(RichText::new(ico(icon, label)).size(FS_SMALL), add);
+    });
 }
 
 /// Popup-menu row with a restrained rounded hover fill and no widget border.
@@ -654,6 +674,7 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
     );
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), HIT), egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     let fill = if resp.is_pointer_button_down_on() {
         ui.visuals().widgets.active.weak_bg_fill
     } else if resp.hovered() {
@@ -674,7 +695,6 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
 /// Size a popup to its longest label instead of inheriting toolbar width.
 pub fn menu_width(ui: &mut egui::Ui, labels: &[&str]) {
     let width = labels
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         .iter()
         .map(|label| {
             ui.painter()
@@ -844,6 +864,7 @@ pub fn action_button_sized(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, HIT), sense);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, text));
     let (fill, stroke, ink) = if !enabled {
         (
             tint(fg_muted(), Tint::Subtle),
@@ -864,7 +885,6 @@ pub fn action_button_sized(
         rect,
         CornerRadius::same(RADIUS_SM),
         fill,
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, text));
         stroke,
         egui::StrokeKind::Inside,
     );
@@ -978,8 +998,6 @@ mod tests {
             ] {
                 let r = ratio(p.border_strong, bg);
                 assert!(r >= 3.0, "border_strong on {n} (dark={}) = {r:.2}", p.dark);
-                let r = ratio(p.outline, bg);
-                assert!(r >= 3.0, "outline on {n} (dark={}) = {r:.2}", p.dark);
             }
         }
     }
