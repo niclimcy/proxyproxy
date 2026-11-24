@@ -20,7 +20,10 @@ impl RuleAction for Delay {
     }
 
     fn response_delay(&self, body_len: usize) -> Option<Duration> {
-        (self.kbps > 0).then(|| Duration::from_millis(body_len as u64 * 1000 / (self.kbps * 1024)))
+        // saturating: kbps comes from user input and the MCP API, and must never panic
+        (self.kbps > 0).then(|| {
+            Duration::from_millis((body_len as u64).saturating_mul(1000) / self.kbps.saturating_mul(1024))
+        })
     }
 }
 
@@ -34,5 +37,6 @@ mod tests {
         assert_eq!(d.request_delay(), Some(Duration::from_millis(50)));
         assert_eq!(d.response_delay(2048), Some(Duration::from_millis(2000)));
         assert_eq!(Delay { ms: 0, kbps: 0 }.response_delay(2048), None);
+        assert_eq!(Delay { ms: 0, kbps: u64::MAX }.response_delay(2048), Some(Duration::ZERO));
     }
 }
