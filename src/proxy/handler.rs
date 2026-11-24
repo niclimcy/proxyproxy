@@ -29,6 +29,12 @@ use tokio::sync::oneshot;
 
 pub type WsMap = Arc<Mutex<HashMap<String, u64>>>;
 
+// The upgrade request and the socket handler see the same URL in different forms
+// (`https`/`a.com` vs `wss`/`a.com:443`), so both go through here.
+fn ws_key(scheme: &str, authority: &str, path: &str) -> String {
+    format!("{}{path}", strip_default_port(scheme, authority.to_string()))
+}
+
 #[derive(Clone)]
 pub struct Capture {
     pub sink: Arc<dyn FlowSink>,
@@ -201,7 +207,7 @@ impl HttpHandler for Capture {
             self.ws
                 .lock()
                 .unwrap()
-                .insert(format!("{}{}", f.host, f.path), id);
+                .insert(ws_key(&f.scheme, &f.host, &f.path), id);
         }
         self.sink.emit(Event::Request(Box::new(f)));
         if is_ws {
@@ -395,10 +401,10 @@ impl WebSocketHandler for WsCap {
             WebSocketContext::ClientToServer { dst, .. } => (Dir::Out, dst.clone()),
             WebSocketContext::ServerToClient { src, .. } => (Dir::In, src.clone()),
         };
-        let key = format!(
-            "{}{}",
+        let key = ws_key(
+            uri.scheme_str().unwrap_or("ws"),
             uri.authority().map(|a| a.as_str()).unwrap_or(""),
-            uri.path_and_query().map(|p| p.as_str()).unwrap_or("/")
+            uri.path_and_query().map(|p| p.as_str()).unwrap_or("/"),
         );
         while let Some(m) = stream.next().await {
             let Ok(m) = m else {
@@ -429,5 +435,24 @@ impl WebSocketHandler for WsCap {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ws_key_matches_between_upgrade_and_socket_forms() {
+        // hudsucker keeps the CONNECT authority (with :443) and switches the scheme to wss
+        let upgrade = ws_key("https", "a.com", "/socket?x=1");
+        let uri: Uri = "wss://a.com:443/socket?x=1".parse().unwrap();
+        let socket = ws_key(
+            uri.scheme_str().unwrap(),
+            uri.authority().unwrap().as_str(),
+            uri.path_and_query().unwrap().as_str(),
+        );
+        assert_eq!(upgrade, socket);
+        assert_eq!(ws_key("http", "a.com:8080", "/"), ws_key("ws", "a.com:8080", "/"));
     }
 }

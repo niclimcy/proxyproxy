@@ -96,7 +96,7 @@ pub fn replace_body(body: &[u8], find: &str, with: &str, regex: bool) -> Option<
 // drops the default port so "a.com:443" and "a.com" are one host
 pub fn strip_default_port(scheme: &str, host: String) -> String {
     match (scheme, host.rsplit_once(':')) {
-        ("https", Some((h, "443"))) | ("http", Some((h, "80"))) => h.to_string(),
+        ("https" | "wss", Some((h, "443"))) | ("http" | "ws", Some((h, "80"))) => h.to_string(),
         _ => host,
     }
 }
@@ -141,6 +141,8 @@ mod tests {
         assert_eq!(strip_default_port("https", "a.com:443".into()), "a.com");
         assert_eq!(strip_default_port("http", "a.com:80".into()), "a.com");
         assert_eq!(strip_default_port("http", "a.com:443".into()), "a.com:443");
+        assert_eq!(strip_default_port("wss", "a.com:443".into()), "a.com");
+        assert_eq!(strip_default_port("ws", "a.com:80".into()), "a.com");
     }
 
     #[test]
