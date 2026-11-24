@@ -937,7 +937,9 @@ pub fn list_row(
 }
 
 /// Compact monospace badge for table cells (method, status).
-pub fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
+/// `on_selection`: the row's highlight stacks under the tint, so the text switches to `fg` to stay AA.
+pub fn badge(ui: &mut egui::Ui, text: &str, color: Color32, on_selection: bool) {
+    let ink = if on_selection { fg() } else { color };
     Frame::new()
         .fill(tint(color, Tint::Normal))
         .corner_radius(CornerRadius::same(RADIUS_SM))
@@ -948,7 +950,7 @@ pub fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
                     .monospace()
                     .strong()
                     .size(FS_CAPTION)
-                    .color(color),
+                    .color(ink),
             );
         });
 }
@@ -1138,6 +1140,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn hint_and_weak_text_meet_aa() {
+        for p in [&DARK, &LIGHT] {
+            let weak = visuals(p).weak_text_color();
+            for (n, bg) in [("canvas", p.canvas), ("panel", p.panel), ("surface", p.surface)] {
+                let r = ratio(weak, bg);
+                assert!(r >= 4.5, "weak text on {n} (dark={}) = {r:.2}", p.dark);
+            }
+        }
+    }
+
+    // selected table rows: plain text, badges (hue on its own tint) and status glyphs
+    #[test]
+    fn selected_rows_keep_text_and_glyph_contrast() {
+        let mut bad = vec![];
+        for p in [&DARK, &LIGHT] {
+            let v = visuals(p);
+            for base in [p.panel, p.faint] {
+                let sel = over(p.accent, v.selection.bg_fill.a() as f32 / 255.0, base);
+                for (n, c) in [("fg", p.fg), ("fg_muted", p.fg_muted)] {
+                    let r = ratio(c, sel);
+                    if r < 4.5 {
+                        bad.push(format!("{n} text (dark={}) = {r:.2}", p.dark));
+                    }
+                }
+                for (n, c) in hues(p) {
+                    let badge = ratio(p.fg, over(c, tint_alpha(p.dark, Tint::Normal), sel));
+                    if badge < 4.5 {
+                        bad.push(format!("{n} badge (dark={}) = {badge:.2}", p.dark));
+                    }
+                    let glyph = ratio(c, sel);
+                    if glyph < 3.0 {
+                        bad.push(format!("{n} glyph (dark={}) = {glyph:.2}", p.dark));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:#?}");
     }
 
     #[test]

@@ -135,9 +135,10 @@ pub fn show(
                             } else {
                                 method_color(&f.method)
                             },
+                            false,
                         );
                         if let Some(s) = f.status {
-                            badge(ui, &s.to_string(), status_color(s));
+                            badge(ui, &s.to_string(), status_color(s), false);
                         }
                         if !f.tag.is_empty() {
                             pill(ui, &f.tag, violet());

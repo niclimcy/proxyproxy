@@ -210,11 +210,11 @@ pub fn show(
                             ui.label(RichText::new(name).color(fg_muted()));
                         }
                         "Method" => {
-                            badge(ui, if f.is_ws { "WS" } else { &f.method }, if f.is_ws { violet() } else { method_color(&f.method) });
+                            badge(ui, if f.is_ws { "WS" } else { &f.method }, if f.is_ws { violet() } else { method_color(&f.method) }, selected);
                         }
                         "Status" => match f.status {
                             Some(s) => {
-                                badge(ui, &s.to_string(), status_color(s));
+                                badge(ui, &s.to_string(), status_color(s), selected);
                             }
                             None => {
                                 ui.spinner();
