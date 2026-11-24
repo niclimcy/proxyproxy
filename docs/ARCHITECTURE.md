@@ -38,7 +38,7 @@ src/
 
 - `FlowStore` (`services/flow_store.rs`) holds all captured flows behind `Arc<Mutex<Inner>>`. `Inner::rev()` goes up on every change; viewmodels use it as a cache key. The REST API reads the same store.
 - `Shared` (`domain/config.rs`) is `Arc<Mutex<Config>>`, read when needed, so rule edits apply to the next request. `should_decrypt` is only checked on CONNECT, so "don't decrypt" applies to new connections only.
-- Mute and scope only affect what is recorded (`Config::captured`), not the network.
+- Mute, scope and exclude only affect what is recorded (`Config::captured`), not the network. Scope and exclude entries are hosts or `host/path*` URL patterns; CONNECT tunnels are never judged, only the requests inside them.
 
 Keep lock guards short. Don't hold the store lock across an `.await`, and don't call the store from the closure passed to `FlowStore::pump`.
 
@@ -50,7 +50,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `flow.rs` | `Flow`, `Message`, `WsMsg`, `Event`, breakpoint types |
 | `rule.rs` | `Rule` and `Action` (data, label, description) |
 | `config.rs` | `Config`, `Upstream`, `UpstreamMode` (HTTP, SOCKS5 or PAC), `Shared` |
-| `policy.rs` | `Config::captured`, `should_decrypt`, `matching`; URL and glob matching |
+| `policy.rs` | `Config::captured` (scope, exclude, mute against the full URL), `should_decrypt`, `matching`; URL and glob matching |
 | `filter.rs` | search query parser |
 | `mime.rs` | file extension to content type |
 | `repaint.rs` | `Repaint` trait |

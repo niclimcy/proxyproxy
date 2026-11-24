@@ -25,6 +25,7 @@ pub fn show(
     p: Props,
 ) -> Vec<ToolbarIntent> {
     let mut out = vec![];
+    let scope_active = vm.scope_active();
     let Props {
         port,
         cert,
@@ -112,6 +113,9 @@ pub fn show(
                     ui.add_space(8.0);
                     if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
                         out.push(ToolbarIntent::ShowBreakpoint);
+                    }
+                    if scope_active && scope_pill(ui).clicked() {
+                        out.push(ToolbarIntent::ShowScope);
                     }
                     if !status.is_empty() {
                         ui.add(egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate()).on_hover_text(status);
@@ -218,6 +222,7 @@ fn compact_primary_rows(
     p: Props,
     out: &mut Vec<ToolbarIntent>,
 ) {
+    let scope_active = vm.scope_active();
     let Props {
         port,
         cert,
@@ -284,6 +289,9 @@ fn compact_primary_rows(
         if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
             out.push(ToolbarIntent::ShowBreakpoint);
         }
+        if scope_active && scope_pill(ui).clicked() {
+            out.push(ToolbarIntent::ShowScope);
+        }
         if !status.is_empty() {
             ui.add(
                 egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate(),
@@ -324,6 +332,18 @@ fn paused_pill(ui: &mut egui::Ui, n: usize) -> egui::Response {
         )
     })
     .on_hover_text("Show the breakpoint editor")
+}
+
+fn scope_pill(ui: &mut egui::Ui) -> egui::Response {
+    flat(ui, |ui| {
+        ui.add(
+            egui::Button::new(RichText::new(ico(ph::TARGET, "Scoped")).size(FS_SMALL).color(accent()))
+                .fill(tint(accent(), Tint::Normal))
+                .min_size(egui::vec2(0.0, HIT))
+                .corner_radius(RADIUS_PILL),
+        )
+    })
+    .on_hover_text("Only part of the traffic is recorded. Open scope settings")
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {

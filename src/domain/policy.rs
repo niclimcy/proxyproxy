@@ -7,31 +7,34 @@ impl Config {
     }
 
     pub fn host_in(list: &[String], host: &str) -> bool {
-        let h = host.to_lowercase();
-        list.iter().any(|p| {
-            let p = p.trim().to_lowercase();
-            !p.is_empty()
-                && if p.contains('*') {
-                    glob(p.as_bytes(), h.as_bytes())
-                } else {
-                    h == p || h.ends_with(&format!(".{p}"))
-                }
+        list.iter().any(|p| host_entry_matches(p, host))
+    }
+
+    /// Scope and exclude entries are hosts (suffix match) or, if they contain `/`, URL patterns.
+    pub fn url_in(list: &[String], url: &str) -> bool {
+        let host = url_host(url);
+        list.iter().any(|e| {
+            let e = e.trim();
+            if is_url_pattern(e) {
+                url_pattern_matches(e, url)
+            } else {
+                host_entry_matches(e, host)
+            }
         })
     }
 
-    pub fn captured(&self, host: &str) -> bool {
-        if self.capture_paused {
+    /// Scope/exclude/mute verdict, ignoring the pause switch.
+    pub fn in_record_scope(&self, url: &str) -> bool {
+        if Self::host_in(&self.muted, url_host(url)) || Self::url_in(&self.exclude, url) {
             return false;
         }
-        let h = host
-            .rsplit_once(':')
-            .filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit()))
-            .map(|(h, _)| h)
-            .unwrap_or(host);
-        if Self::host_in(&self.muted, h) {
-            return false;
-        }
-        !self.scope_only || self.scope.is_empty() || Self::host_in(&self.scope, h)
+        !self.scope_only || self.scope.is_empty() || Self::url_in(&self.scope, url)
+    }
+
+    // CONNECT never calls this: tunnels aren't recorded, only the requests inside them,
+    // and those arrive with a full URL.
+    pub fn captured(&self, url: &str) -> bool {
+        !self.capture_paused && self.in_record_scope(url)
     }
 
     // evaluated per CONNECT, so edits only affect new connections
@@ -48,6 +51,62 @@ impl Config {
             }
         }
         out
+    }
+}
+
+fn host_entry_matches(entry: &str, host: &str) -> bool {
+    let (p, h) = (entry.trim().to_lowercase(), host.to_lowercase());
+    !p.is_empty()
+        && if p.contains('*') {
+            glob(p.as_bytes(), h.as_bytes())
+        } else {
+            h == p || h.ends_with(&format!(".{p}"))
+        }
+}
+
+fn is_url_pattern(entry: &str) -> bool {
+    entry.contains('/')
+}
+
+fn url_host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let authority = rest.split(['/', '?']).next().unwrap_or("");
+    match authority.rsplit_once(':') {
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => h,
+        _ => authority,
+    }
+}
+
+// no `*` => prefix match on a path boundary, so `a.com/v2` covers `a.com/v2/x` but not `a.com/v20`
+fn url_pattern_matches(pattern: &str, url: &str) -> bool {
+    let pattern = pattern.trim().to_lowercase();
+    let wild = pattern.contains('*');
+    let p = if pattern.contains("://") || pattern.starts_with('*') {
+        pattern
+    } else {
+        format!("*://{pattern}")
+    };
+    let u = url.to_lowercase();
+    // patterns rarely spell out the port or the query, so also try the URL without them
+    let portless = u.replacen(&format!(":{}", port_of(&u)), "", 1);
+    let bare = |u: &str| u.split('?').next().unwrap_or(u).to_string();
+    let forms = [u.clone(), portless.clone(), bare(&u), bare(&portless)];
+    forms.iter().any(|u| {
+        let g = |p: &str| glob(p.as_bytes(), u.as_bytes());
+        if wild {
+            return g(&p);
+        }
+        let base = p.trim_end_matches('/');
+        g(base) || g(&format!("{base}/*"))
+    })
+}
+
+fn port_of(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let authority = rest.split(['/', '?']).next().unwrap_or("");
+    match authority.rsplit_once(':') {
+        Some((_, p)) if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => p,
+        _ => "\0",
     }
 }
 
@@ -117,9 +176,9 @@ mod tests {
             scope: vec!["a.com".into()],
             ..Default::default()
         };
-        assert!(c.captured("a.com:443") && !c.captured("b.com"));
+        assert!(c.captured("https://a.com:443/") && !c.captured("https://b.com/"));
         c.muted.push("a.com".into());
-        assert!(!c.captured("a.com"));
+        assert!(!c.captured("https://a.com/"));
     }
 
     #[test]
@@ -139,11 +198,11 @@ mod tests {
             action: Action::Block { status: 403 },
             hits: 0,
         });
-        assert!(!c.captured("b.com"));
+        assert!(!c.captured("https://b.com/"));
         // rules stay evaluable; the proxy just skips them for uncaptured hosts
         assert_eq!(c.matching("GET", "https://b.com/x").len(), 1);
         c.capture_paused = true;
-        assert!(!c.captured("a.com"));
+        assert!(!c.captured("https://a.com/"));
     }
 
     #[test]
@@ -258,13 +317,13 @@ mod characterization {
             scope_only: true,
             ..Default::default()
         };
-        assert!(c.captured("any.com"));
+        assert!(c.captured("https://any.com/"));
         let c = Config {
             scope_only: false,
             scope: vec!["a.com".into()],
             ..Default::default()
         };
-        assert!(c.captured("b.com"));
+        assert!(c.captured("https://b.com/"));
     }
 
     #[test]
@@ -283,5 +342,62 @@ mod characterization {
         c.capture_paused = true;
         let back: Config = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert_eq!((back.rules[0].hits, back.capture_paused), (0, false));
+    }
+
+    fn cfg(scope: &[&str], exclude: &[&str]) -> Config {
+        Config {
+            scope_only: true,
+            scope: scope.iter().map(|s| s.to_string()).collect(),
+            exclude: exclude.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn path_scope_matches_full_url() {
+        let c = cfg(&["api.example.com/v2/*", "https://*.example.com/graphql"], &[]);
+        assert!(c.captured("https://api.example.com/v2/users?x=1"));
+        assert!(c.captured("https://api.example.com:8443/v2/users"));
+        assert!(!c.captured("https://api.example.com/v1/users"));
+        assert!(c.captured("https://a.example.com/graphql"));
+        assert!(c.captured("https://a.example.com/graphql?op=1"));
+        assert!(!c.captured("http://a.example.com/graphql"));
+        assert!(!c.captured("https://a.example.com/graphqlx"));
+    }
+
+    #[test]
+    fn host_entries_still_match_any_path() {
+        let c = cfg(&["example.com", "api.other.com/v2"], &[]);
+        assert!(c.captured("https://www.example.com/anything"));
+        assert!(c.captured("https://api.other.com/v2"));
+        assert!(c.captured("https://api.other.com/v2/x"));
+        assert!(!c.captured("https://api.other.com/v20"));
+    }
+
+    #[test]
+    fn exclude_beats_scope_and_takes_patterns() {
+        let c = cfg(&["example.com"], &["example.com/health*", "ads.example.com"]);
+        assert!(c.captured("https://example.com/users"));
+        assert!(!c.captured("https://example.com/healthz"));
+        assert!(!c.captured("https://ads.example.com/x"));
+        let c = Config {
+            exclude: vec!["a.com/private".into()],
+            ..Default::default()
+        };
+        assert!(c.captured("https://a.com/public") && !c.captured("https://a.com/private/1"));
+    }
+
+    #[test]
+    fn exclude_applies_without_scope_only() {
+        let mut c = cfg(&["a.com"], &["b.com"]);
+        c.scope_only = false;
+        assert!(!c.captured("https://b.com/") && c.captured("https://c.com/"));
+    }
+
+    #[test]
+    fn config_without_exclude_deserializes() {
+        let c: Config = serde_json::from_str(r#"{"rules":[],"scope_only":true,"scope":["a.com"],"muted":["m.com"]}"#).unwrap();
+        assert!(c.exclude.is_empty());
+        assert!(c.captured("https://a.com/x") && !c.captured("https://b.com/x") && !c.captured("https://m.com/x"));
     }
 }

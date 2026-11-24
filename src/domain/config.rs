@@ -16,6 +16,8 @@ pub struct Config {
     #[serde(default)]
     pub scope: Vec<String>,
     #[serde(default)]
+    pub exclude: Vec<String>,
+    #[serde(default)]
     pub muted: Vec<String>,
     #[serde(default)]
     pub bypass_tls: Vec<String>,

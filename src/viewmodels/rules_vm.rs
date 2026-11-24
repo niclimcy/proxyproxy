@@ -341,7 +341,7 @@ pub struct RulesVm {
     pub tab: RulesTab,
     pub form: RuleForm,
     pub editing: Option<u64>,
-    pub list_inputs: [String; 3],
+    pub list_inputs: [String; 4],
     pub console: Vec<String>,
     pub paused: Vec<BpDraft>,
     /// raise the breakpoint window on the next frame
@@ -351,8 +351,12 @@ pub struct RulesVm {
 pub struct ScopeView {
     pub scope_only: bool,
     pub scope: Vec<String>,
+    pub exclude: Vec<String>,
     pub muted: Vec<String>,
     pub bypass_tls: Vec<String>,
+    /// recorded flows that pass scope, exclude and mute, out of all recorded flows
+    pub matching: usize,
+    pub total: usize,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -427,12 +431,16 @@ impl RulesVm {
     }
 
     pub fn scope_view(&self) -> ScopeView {
-        let c = self.cfg.lock().unwrap();
+        let c = self.cfg.lock().unwrap().clone();
+        let st = self.store.lock();
         ScopeView {
             scope_only: c.scope_only,
             scope: c.scope.clone(),
+            exclude: c.exclude.clone(),
             muted: c.muted.clone(),
             bypass_tls: c.bypass_tls.clone(),
+            matching: st.flows.iter().filter(|f| c.in_record_scope(&f.url())).count(),
+            total: st.flows.len(),
         }
     }
 
@@ -494,14 +502,16 @@ impl RulesVm {
             RuleIntent::AddHost(kind) => {
                 let slot = match kind {
                     ListKind::Scope => 0,
-                    ListKind::Muted => 1,
-                    ListKind::BypassTls => 2,
+                    ListKind::Exclude => 1,
+                    ListKind::Muted => 2,
+                    ListKind::BypassTls => 3,
                 };
                 let v = self.list_inputs[slot].trim().to_string();
                 if !v.is_empty() {
                     let mut cfg = self.cfg.lock().unwrap();
                     match kind {
                         ListKind::Scope => cfg.scope.push(v),
+                        ListKind::Exclude => cfg.exclude.push(v),
                         ListKind::Muted => cfg.muted.push(v),
                         ListKind::BypassTls => cfg.bypass_tls.push(v),
                     }
@@ -512,6 +522,7 @@ impl RulesVm {
                 let mut cfg = self.cfg.lock().unwrap();
                 let list = match kind {
                     ListKind::Scope => &mut cfg.scope,
+                    ListKind::Exclude => &mut cfg.exclude,
                     ListKind::Muted => &mut cfg.muted,
                     ListKind::BypassTls => &mut cfg.bypass_tls,
                 };
@@ -818,20 +829,42 @@ mod tests {
     #[test]
     fn host_lists_add_trim_and_remove() {
         let mut vm = vm();
-        vm.list_inputs[1] = "  tracker.com ".into();
+        vm.list_inputs[2] = "  tracker.com ".into();
         vm.handle(RuleIntent::AddHost(ListKind::Muted));
         assert_eq!(
             vm.cfg.lock().unwrap().muted,
             vec!["tracker.com".to_string()]
         );
-        assert!(vm.list_inputs[1].is_empty());
+        assert!(vm.list_inputs[2].is_empty());
         vm.handle(RuleIntent::AddHost(ListKind::Muted));
         assert_eq!(vm.cfg.lock().unwrap().muted.len(), 1);
         vm.handle(RuleIntent::RemoveHost(ListKind::Muted, 0));
         assert!(vm.cfg.lock().unwrap().muted.is_empty());
-        vm.list_inputs[2] = "pinned.com".into();
+        vm.list_inputs[3] = "pinned.com".into();
         vm.handle(RuleIntent::AddHost(ListKind::BypassTls));
         assert!(!vm.cfg.lock().unwrap().should_decrypt("pinned.com"));
+    }
+
+    #[test]
+    fn scope_view_counts_recorded_flows_in_scope() {
+        let mut vm = vm();
+        for (id, host, path) in [(1, "a.com", "/v2/x"), (2, "a.com", "/v1/x"), (3, "b.com", "/v2/x")] {
+            let mut f = Flow::sample(id);
+            f.host = host.into();
+            f.path = path.into();
+            vm.store.lock().push(f);
+        }
+        assert_eq!(vm.scope_view().matching, 3);
+        vm.list_inputs[0] = "a.com/v2/*".into();
+        vm.handle(RuleIntent::AddHost(ListKind::Scope));
+        vm.handle(RuleIntent::SetScopeOnly(true));
+        let sv = vm.scope_view();
+        assert_eq!((sv.matching, sv.total), (1, 3));
+        vm.list_inputs[1] = "a.com/v2/x".into();
+        vm.handle(RuleIntent::AddHost(ListKind::Exclude));
+        assert_eq!(vm.scope_view().matching, 0);
+        vm.handle(RuleIntent::RemoveHost(ListKind::Exclude, 0));
+        assert!(vm.cfg.lock().unwrap().exclude.is_empty());
     }
 
     #[test]

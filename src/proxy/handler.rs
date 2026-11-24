@@ -114,7 +114,7 @@ impl HttpHandler for Capture {
 
         let (captured, actions) = {
             let mut cfg = self.cfg.lock().unwrap();
-            let c = cfg.captured(&host);
+            let c = cfg.captured(&url);
             (
                 c,
                 if c {

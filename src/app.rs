@@ -12,7 +12,7 @@ use crate::viewmodels::{
     network_vm::NetworkVm,
     onboarding_vm::OnboardingVm,
     replay_vm::ReplayVm,
-    rules_vm::RulesVm,
+    rules_vm::{RulesTab, RulesVm},
     schemas_vm::SchemasVm,
     session_vm::SessionVm,
     settings_vm::SettingsVm,
@@ -166,6 +166,10 @@ impl App {
                 ToolbarIntent::About => self.about.open(),
                 ToolbarIntent::Settings => self.settings.open(),
                 ToolbarIntent::ShowBreakpoint => self.rules.focus_breakpoint = true,
+                ToolbarIntent::ShowScope => {
+                    self.rules.show = true;
+                    self.rules.tab = RulesTab::Scope;
+                }
                 ToolbarIntent::Onboarding => self.onboarding.open(),
                 other => self.capture.handle_toolbar(other),
             }

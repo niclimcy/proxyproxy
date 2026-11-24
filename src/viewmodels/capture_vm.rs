@@ -44,6 +44,16 @@ fn sort_cmp(col: usize, x: &Flow, y: &Flow) -> std::cmp::Ordering {
     }
 }
 
+// `/v2/users/1?x` scopes to `host/v2/users/*`: the id alone would match one flow
+fn scope_path_pattern(f: &Flow) -> String {
+    let dir = f.path_only().rsplit_once('/').map_or("", |(d, _)| d);
+    format!("{}{dir}/*", f.host)
+}
+
+fn exclude_pattern(f: &Flow) -> String {
+    format!("{}{}", f.host, f.path_only())
+}
+
 impl CaptureVm {
     pub fn new(store: FlowStore, cfg: Shared) -> Self {
         Self {
@@ -200,6 +210,7 @@ impl CaptureVm {
             | ToolbarIntent::About
             | ToolbarIntent::Settings
             | ToolbarIntent::ShowBreakpoint
+            | ToolbarIntent::ShowScope
             | ToolbarIntent::Onboarding
             | ToolbarIntent::Session(_)
             | ToolbarIntent::Device(_) => {}
@@ -237,13 +248,19 @@ impl CaptureVm {
                     "Muted {h} — hidden from the record; traffic still flows"
                 ));
             }
-            RowIntent::Scope(h) => {
+            RowIntent::Scope(h) => self.add_scope(h, status),
+            RowIntent::ScopePath(id) => {
+                let pattern = self.store.lock().find(id).map(scope_path_pattern)?;
+                self.add_scope(pattern, status);
+            }
+            RowIntent::Exclude(id) => {
+                let pattern = self.store.lock().find(id).map(exclude_pattern)?;
                 let mut c = self.cfg.lock().unwrap();
-                c.scope.push(h);
-                c.scope_only = true;
+                if !c.exclude.contains(&pattern) {
+                    c.exclude.push(pattern.clone());
+                }
                 status.set(format!(
-                    "Recording only {} — other traffic still flows, unrecorded",
-                    c.scope.join(", ")
+                    "Excluding {pattern} — hidden from the record; traffic still flows"
                 ));
             }
             RowIntent::NoTls(h) => {
@@ -260,6 +277,24 @@ impl CaptureVm {
             }
         }
         None
+    }
+
+    fn add_scope(&self, entry: String, status: &mut Status) {
+        let mut c = self.cfg.lock().unwrap();
+        if !c.scope.contains(&entry) {
+            c.scope.push(entry);
+        }
+        c.scope_only = true;
+        status.set(format!(
+            "Recording only {} — other traffic still flows, unrecorded",
+            c.scope.join(", ")
+        ));
+    }
+
+    /// Whether scope or exclude currently narrows what is recorded.
+    pub fn scope_active(&self) -> bool {
+        let c = self.cfg.lock().unwrap();
+        (c.scope_only && !c.scope.is_empty()) || !c.exclude.is_empty()
     }
 
     pub fn handle_sidebar(&mut self, intent: SidebarIntent) {
@@ -423,7 +458,7 @@ mod tests {
     fn mute_intent_updates_policy_and_status_but_not_flows() {
         let (mut vm, mut status) = setup(2);
         vm.handle_row(RowIntent::Mute("h1.com".into()), &mut status);
-        assert!(!vm.config_snapshot().captured("h1.com"));
+        assert!(!vm.config_snapshot().captured("https://h1.com/"));
         assert!(status.text.starts_with("Muted h1.com"));
         assert_eq!(vm.flow_count(), 2);
     }
@@ -433,7 +468,7 @@ mod tests {
         let (mut vm, mut status) = setup(0);
         vm.handle_row(RowIntent::Scope("a.com".into()), &mut status);
         let c = vm.config_snapshot();
-        assert!(c.scope_only && c.captured("a.com") && !c.captured("b.com"));
+        assert!(c.scope_only && c.captured("https://a.com/") && !c.captured("https://b.com/"));
         assert!(status.text.contains("a.com"));
     }
 
@@ -591,6 +626,41 @@ mod tests {
             )
         );
         assert_eq!(vm.tree[1].0, "node");
+    }
+
+    #[test]
+    fn scope_path_and_exclude_intents_use_the_flow_url() {
+        let (mut vm, mut status) = setup(1);
+        {
+            let mut st = vm.store.lock();
+            let f = st.find_mut(1).unwrap();
+            f.host = "api.a.com".into();
+            f.path = "/v2/users/7?x=1".into();
+        }
+        vm.handle_row(RowIntent::ScopePath(1), &mut status);
+        vm.handle_row(RowIntent::ScopePath(1), &mut status);
+        let c = vm.config_snapshot();
+        assert_eq!(c.scope, vec!["api.a.com/v2/users/*".to_string()]);
+        assert!(c.scope_only && c.captured("https://api.a.com/v2/users/9"));
+        assert!(!c.captured("https://api.a.com/v2/orders/9"));
+        assert!(vm.scope_active());
+
+        vm.handle_row(RowIntent::Exclude(1), &mut status);
+        let c = vm.config_snapshot();
+        assert_eq!(c.exclude, vec!["api.a.com/v2/users/7".to_string()]);
+        assert!(!c.captured("https://api.a.com/v2/users/7?y=2"));
+        assert!(c.captured("https://api.a.com/v2/users/8"));
+        assert_eq!(vm.flow_count(), 1);
+    }
+
+    #[test]
+    fn scope_active_reflects_scope_and_exclude() {
+        let (vm, _) = setup(0);
+        assert!(!vm.scope_active());
+        vm.cfg.lock().unwrap().scope_only = true;
+        assert!(!vm.scope_active());
+        vm.cfg.lock().unwrap().exclude.push("x.com".into());
+        assert!(vm.scope_active());
     }
 
     #[test]

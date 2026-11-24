@@ -410,12 +410,16 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     if checkbox(
         ui,
         &mut scope_only,
-        "Capture only the scope domains below (everything else passes through unrecorded)",
+        "Record only the scope entries below (everything else passes through unrecorded)",
     )
     .changed()
     {
         out.push(RuleIntent::SetScopeOnly(scope_only));
     }
+    ui.label(muted(format!(
+        "{} of {} recorded requests match the current scope, exclude and mute lists",
+        sv.matching, sv.total
+    )));
     let mut section = |ui: &mut egui::Ui,
                        title: &str,
                        hint: &str,
@@ -437,7 +441,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
             let input = &mut vm.list_inputs[slot];
             let r = ui.add(
                 TextEdit::singleline(input)
-                    .hint_text("domain or *.wildcard")
+                    .hint_text("domain, host/path/* or https://*.host/path")
                     .desired_width(260.0),
             );
             if icon_button(ui, ph::PLUS, "Add", true).clicked()
@@ -450,10 +454,18 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     section(
         ui,
         "Scope",
-        "Domains to capture when scope is on",
+        "Hosts or URL patterns (* is a wildcard) to record when scope is on. A bare host covers its subdomains.",
         ListKind::Scope,
         &sv.scope,
         0,
+    );
+    section(
+        ui,
+        "Exclude",
+        "Never recorded, even inside the scope. Same patterns as Scope. Traffic still passes through.",
+        ListKind::Exclude,
+        &sv.exclude,
+        1,
     );
     section(
         ui,
@@ -461,7 +473,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         "Never captured or shown (analytics, telemetry…). Traffic still passes through.",
         ListKind::Muted,
         &sv.muted,
-        1,
+        2,
     );
     section(
         ui,
@@ -469,7 +481,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         "Tunnelled as-is — for pinned apps. Applies to new connections.",
         ListKind::BypassTls,
         &sv.bypass_tls,
-        2,
+        3,
     );
 }
 

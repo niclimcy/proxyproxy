@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Scope entries can be URL patterns such as `api.example.com/v2/*` or `https://*.example.com/graphql`, and a new Exclude list hides matching URLs from the record. Saved host-only scopes keep working.
+- The request context menu has Scope to this host, Scope to this URL path and Exclude this URL; the Scope tab shows how many recorded requests match, and the toolbar shows a Scoped pill while scope or exclude is active.
+
 ### Changed
 
 - Compose, Replay and the breakpoint editor open as native windows instead of floating inside the app. Cmd+Enter sends or executes; the breakpoint window comes to the front when traffic pauses.

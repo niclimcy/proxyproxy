@@ -31,6 +31,8 @@ pub enum RowIntent {
     Rule(u64, RuleKind),
     Mute(String),
     Scope(String),
+    ScopePath(u64),
+    Exclude(u64),
     NoTls(String),
     Delete(u64),
     DiffBase(u64),
@@ -99,6 +101,7 @@ pub enum ToolbarIntent {
     Onboarding,
     Settings,
     ShowBreakpoint,
+    ShowScope,
     ClearUnpinned,
     ClearAll,
     ToggleCapture,
@@ -121,6 +124,7 @@ pub enum DetailIntent {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ListKind {
     Scope,
+    Exclude,
     Muted,
     BypassTls,
 }
