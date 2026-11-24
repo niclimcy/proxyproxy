@@ -387,6 +387,7 @@ impl CaptureVm {
             ShortcutIntent::ReplaySelected => return self.selected.map(Effect::OpenReplay),
             ShortcutIntent::Deselect => self.selected = None,
             ShortcutIntent::OpenSettings => return Some(Effect::OpenSettings),
+            ShortcutIntent::ToggleCapture => self.handle_toolbar(ToolbarIntent::ToggleCapture),
         }
         None
     }
@@ -681,6 +682,8 @@ mod tests {
         assert!(vm.config_snapshot().hidden_cols.is_empty());
         vm.handle_toolbar(ToolbarIntent::ToggleCapture);
         assert!(vm.config_snapshot().capture_paused);
+        vm.handle_shortcut(ShortcutIntent::ToggleCapture);
+        assert!(!vm.config_snapshot().capture_paused);
     }
 
     #[test]

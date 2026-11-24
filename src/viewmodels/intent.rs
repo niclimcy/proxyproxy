@@ -61,6 +61,7 @@ pub enum ShortcutIntent {
     ReplaySelected,
     Deselect,
     OpenSettings,
+    ToggleCapture,
 }
 
 pub enum SessionIntent {

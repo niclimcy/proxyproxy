@@ -309,9 +309,9 @@ fn compact_primary_rows(
 /// Only controls recording: the proxy keeps forwarding while paused. Routing lives in the Sources menu.
 fn record_pill(ui: &mut egui::Ui, paused: bool, port: u16, out: &mut Vec<ToolbarIntent>) {
     let (icon, label, state, tip) = if paused {
-        (ph::PAUSE_CIRCLE, "Paused", warning(), format!("Recording paused. Traffic still flows through :{port} but is not saved. Click to resume"))
+        (ph::PAUSE_CIRCLE, "Paused", warning(), format!("Recording paused. Traffic still flows through :{port} but is not saved. Click to resume ({}⇧P)", cmd()))
     } else {
-        (ph::RECORD, "Recording", success(), format!("Recording traffic arriving on 127.0.0.1:{port}. Click to pause"))
+        (ph::RECORD, "Recording", success(), format!("Recording traffic arriving on 127.0.0.1:{port}. Click to pause ({}⇧P)", cmd()))
     };
     let resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
     if resp.on_hover_text(tip).clicked() {

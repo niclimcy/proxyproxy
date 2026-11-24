@@ -4,7 +4,7 @@ use eframe::egui;
 pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
     let mut out = vec![];
     let typing = ctx.egui_wants_keyboard_input();
-    let (toggle, find, down, up, del, replay, esc, settings) = ctx.input(|i| {
+    let (toggle, find, down, up, del, replay, esc, settings, record) = ctx.input(|i| {
         let cmd = i.modifiers.command;
         (
             cmd && i.key_pressed(egui::Key::B),
@@ -15,6 +15,7 @@ pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
             cmd && i.key_pressed(egui::Key::R),
             i.key_pressed(egui::Key::Escape),
             cmd && i.key_pressed(egui::Key::Comma),
+            cmd && i.modifiers.shift && i.key_pressed(egui::Key::P),
         )
     });
     if toggle {
@@ -25,6 +26,9 @@ pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
     }
     if settings {
         out.push(ShortcutIntent::OpenSettings);
+    }
+    if record {
+        out.push(ShortcutIntent::ToggleCapture);
     }
     if typing {
         if esc {
