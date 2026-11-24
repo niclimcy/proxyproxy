@@ -3,7 +3,7 @@ use crate::viewmodels::capture_vm::CaptureVm;
 use crate::viewmodels::intent::SidebarIntent;
 use crate::views::app_icon::{paint_fallback_icon, paint_icon};
 use crate::views::theme::*;
-use eframe::egui::{self, Margin, RichText, ScrollArea};
+use eframe::egui::{self, RichText, ScrollArea};
 use egui_phosphor::regular as ph;
 
 pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
@@ -14,11 +14,14 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
     }
     let cfg = vm.config_snapshot();
     let vm_ref = &*vm;
-    egui::Panel::left("sidebar")
+    resize_line(ui, true);
+    let shown = egui::Panel::left("sidebar")
         .resizable(true)
         .default_size(230.0)
-        .frame(panel_frame().inner_margin(Margin::same(PAD)))
+        .show_separator_line(false)
+        .frame(card_panel())
         .show_collapsible(ui, &mut open, |ui| {
+            resize_line(ui, false);
             ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -104,6 +107,11 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                     }
                 });
         });
+    resize_line(ui, false);
+    if let Some(r) = shown {
+        let r = r.response.rect;
+        resize_grip(ui, "sidebar", egui::Rect::from_two_pos(r.right_top(), r.right_bottom()));
+    }
     vm.show_sidebar = open;
     out
 }

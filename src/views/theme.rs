@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct Palette {
     pub dark: bool,
+    pub backdrop: Color32,
     pub canvas: Color32,
     pub panel: Color32,
     pub surface: Color32,
@@ -28,12 +29,13 @@ pub struct Palette {
 
 pub const DARK: Palette = Palette {
     dark: true,
-    // true black for OLED; only raised controls and lines lift off it
+    // cards are near-black and recessed into a lighter backdrop; controls lift above the cards
+    backdrop: Color32::from_rgb(24, 24, 27),
     canvas: Color32::from_rgb(0, 0, 0),
-    panel: Color32::from_rgb(0, 0, 0),
-    surface: Color32::from_rgb(24, 24, 27),
-    hover: Color32::from_rgb(40, 40, 45),
-    faint: Color32::from_rgb(13, 13, 14),
+    panel: Color32::from_rgb(9, 9, 10),
+    surface: Color32::from_rgb(32, 32, 36),
+    hover: Color32::from_rgb(48, 48, 54),
+    faint: Color32::from_rgb(18, 18, 20),
     border: Color32::from_rgb(42, 42, 46),
     border_strong: Color32::from_rgb(122, 122, 132),
     fg: Color32::from_rgb(234, 234, 238),
@@ -48,6 +50,7 @@ pub const DARK: Palette = Palette {
 
 pub const LIGHT: Palette = Palette {
     dark: false,
+    backdrop: Color32::from_rgb(240, 242, 246),
     canvas: Color32::from_rgb(244, 246, 249),
     panel: Color32::from_rgb(255, 255, 255),
     surface: Color32::from_rgb(238, 241, 246),
@@ -80,6 +83,9 @@ pub fn pal() -> &'static Palette {
     }
 }
 
+pub fn backdrop() -> Color32 {
+    pal().backdrop
+}
 pub fn canvas() -> Color32 {
     pal().canvas
 }
@@ -151,6 +157,9 @@ pub const PAD: i8 = 12;
 pub const RADIUS: u8 = 8;
 pub const RADIUS_SM: u8 = 6;
 pub const RADIUS_PILL: u8 = 20;
+pub const RADIUS_CARD: u8 = 10;
+/// Space between workspace cards and the window edge.
+pub const GAP: i8 = 6;
 pub const HIT: f32 = 28.0;
 pub const ICON_SIZE: f32 = 18.0;
 
@@ -542,6 +551,7 @@ pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) ->
 pub fn capsule<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     Frame::new()
         .fill(surface())
+        .stroke(Stroke::new(1.0, border()))
         .corner_radius(CornerRadius::same(RADIUS))
         .inner_margin(Margin::symmetric(2, 0))
         .show(ui, |ui| {
@@ -760,11 +770,66 @@ pub fn card() -> Frame {
         .inner_margin(Margin::same(PAD))
 }
 
-/// Frame for side/top/bottom panels.
+/// Frame for side/top/bottom panels. No stroke: egui draws one separator per seam,
+/// and a four-sided outline would double up against neighbours and the window edge.
 pub fn panel_frame() -> Frame {
+    Frame::new().fill(panel())
+}
+
+/// Inset card for workspace panels. Outer margins of neighbours add up to `GAP`;
+/// the workspace shrinks its area by half a gap so the window edge gets the same.
+pub fn card_panel() -> Frame {
     Frame::new()
         .fill(panel())
         .stroke(Stroke::new(1.0, border()))
+        .corner_radius(CornerRadius::same(RADIUS_CARD))
+        .outer_margin(Margin::same(GAP / 2))
+        .inner_margin(Margin::same(PAD))
+}
+
+/// egui paints a panel's resize line with the parent's `fg_stroke` (hover/drag), a full-height
+/// edge that overshoots rounded cards. A zero-width stroke suppresses it; the resize cursor
+/// still signals the handle. Call with `true` on the parent before showing a resizable panel,
+/// `false` after, and at the top of its contents so widgets inside keep their text strokes.
+pub fn resize_line(ui: &mut egui::Ui, hidden: bool) {
+    let stroke = if hidden {
+        Stroke::NONE
+    } else {
+        Stroke::new(1.0, fg())
+    };
+    let w = &mut ui.visuals_mut().widgets;
+    w.hovered.fg_stroke = stroke;
+    w.active.fg_stroke = stroke;
+}
+
+/// Three dots centred in the gap between cards, marking a resizable edge. `edge` is the panel's
+/// outer-rect side (a line, the middle of the gap). They light up when the pointer is anywhere
+/// on the edge, matching egui's grab area, and stay lit for the whole drag. `name` keys the flag.
+pub fn resize_grip(ui: &egui::Ui, name: &str, edge: egui::Rect) {
+    let vertical = edge.height() > edge.width();
+    let axis = if vertical {
+        egui::vec2(0.0, 1.0)
+    } else {
+        egui::vec2(1.0, 0.0)
+    };
+    let near = ui
+        .input(|i| i.pointer.hover_pos())
+        .is_some_and(|p| edge.expand(ui.style().interaction.resize_grab_radius_side).contains(p));
+    let id = ui.make_persistent_id(("resize-grip", name));
+    let (pressed, down) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down()));
+    let dragging = (pressed && near) || (down && ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false));
+    ui.data_mut(|d| d.insert_temp(id, dragging));
+    let color = if near || dragging { accent() } else { pal().border_strong };
+    for step in [-1.0, 0.0, 1.0] {
+        ui.painter().circle_filled(edge.center() + axis * (step * 5.0), 1.5, color);
+    }
+}
+
+/// Toolbar frame: no fill, so controls sit directly on the canvas.
+pub fn bar_frame() -> Frame {
+    Frame::new()
+        .outer_margin(Margin::same(GAP / 2))
+        .inner_margin(Margin::symmetric(0, 4))
 }
 
 pub fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
@@ -1007,6 +1072,7 @@ mod tests {
     fn text_meets_aa_on_every_surface() {
         for p in [&DARK, &LIGHT] {
             for (bg_name, bg) in [
+                ("backdrop", p.backdrop),
                 ("canvas", p.canvas),
                 ("panel", p.panel),
                 ("surface", p.surface),
@@ -1025,6 +1091,7 @@ mod tests {
     fn control_outlines_meet_3_to_1() {
         for p in [&DARK, &LIGHT] {
             for (n, bg) in [
+                ("backdrop", p.backdrop),
                 ("panel", p.panel),
                 ("canvas", p.canvas),
                 ("surface", p.surface),

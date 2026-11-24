@@ -3,7 +3,7 @@ use crate::viewmodels::intent::RowIntent;
 use crate::viewmodels::rules_vm::RuleKind;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::theme::*;
-use eframe::egui::{self, Frame, Margin, RichText};
+use eframe::egui::{self, RichText};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
 
@@ -64,7 +64,7 @@ pub fn show(
     let sort = vm.sort;
     let has_flows = vm.has_flows();
 
-    egui::CentralPanel::default().frame(Frame::new().fill(canvas()).inner_margin(Margin::same(PAD))).show(ui, |ui| {
+    egui::CentralPanel::default().frame(card_panel()).show(ui, |ui| {
         if !has_flows {
             ui.vertical_centered(|ui| {
                 ui.add_space((ui.available_height() - 280.0).max(24.0) / 2.0);

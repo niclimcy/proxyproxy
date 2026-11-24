@@ -4,13 +4,13 @@ All tokens live in `src/views/theme.rs`. Views never use raw colours, `Color32::
 
 ## Themes
 
-Two palettes, `DARK` and `LIGHT`. `DARK` is true black (`canvas` and `panel` are `#000`) for OLED screens; `border` separates panels, and only raised controls (`surface`, `hover`) lift off black. The app follows the OS (`ThemePreference::System`). `theme::sync` runs once per frame; token functions (`fg()`, `danger()`, …) read the active palette, so call them at draw time, never store them in a `const` or `static`.
+Two palettes, `DARK` and `LIGHT`. Workspace panels are inset cards (`panel`, with a `border` outline) on a `backdrop` that is lighter than the cards in dark mode, like VS Code's panes; `GAP` of backdrop separates them. `canvas` stays the recessed fill inside cards (inputs, headers); `DARK` canvas is true black for OLED. Controls (`surface`, `hover`) lift above the cards. The app follows the OS (`ThemePreference::System`). `theme::sync` runs once per frame; token functions (`fg()`, `danger()`, …) read the active palette, so call them at draw time, never store them in a `const` or `static`.
 
 ## Colour roles
 
 | Role | Tokens | Use |
 |---|---|---|
-| Surfaces | `canvas`, `panel`, `surface` | table/inputs, panels, cards/buttons |
+| Surfaces | `backdrop`, `canvas`, `panel`, `surface` | window gaps and toolbar, inputs/recessed fills, panel cards, cards/buttons |
 | Lines | `border`, `border_strong` | dividers, table separators and the soft hairline of secondary buttons; input outlines (`border_strong`, 3:1 on every surface, tested) |
 | Text | `fg`, `fg_muted` | primary, secondary |
 | Brand | `accent` | selection, links, keys |
@@ -24,7 +24,7 @@ Use `tint(color, Tint::Subtle|Normal|Strong)` for washes, not `gamma_multiply`.
 
 ## Components
 
-`card`, `panel_frame`, `pill`, `badge` (table cells), `status_dot`, `chip` (filter tab), `segmented`, `list_row` (sidebar), `capsule` (grouped toolbar actions), `sidebar_toggle`, `action_button`, `action_button_sized` (fixed width, hand-drawn), `icon_button`, `checkbox`, `toolbar_menu`, `menu_item`, `menu_width`, `flat`, `muted`, `overline`; `body::kv_table` for key/value lists. Shortcut hints use `cmd()` (⌘ on macOS, Ctrl+ elsewhere).
+`card`, `card_panel` (workspace panels), `bar_frame` (toolbar), `panel_frame` (bars inside windows), `pill`, `badge` (table cells), `status_dot`, `chip` (filter tab), `segmented`, `list_row` (sidebar), `capsule` (grouped toolbar actions), `sidebar_toggle`, `action_button`, `action_button_sized` (fixed width, hand-drawn), `icon_button`, `checkbox`, `toolbar_menu`, `menu_item`, `menu_width`, `flat`, `muted`, `overline`; `body::kv_table` for key/value lists. Shortcut hints use `cmd()` (⌘ on macOS, Ctrl+ elsewhere).
 
 Button hierarchy:
 - `action_button` is for the primary or destructive action in a view. It uses a strong tint and coloured border.

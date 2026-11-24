@@ -244,6 +244,11 @@ impl App {
             self.apply(e);
         }
 
+        let full = ui.max_rect();
+        ui.painter().rect_filled(full, 0, views::theme::backdrop());
+        let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(full.shrink(views::theme::GAP as f32 / 2.0)));
+        let ui = &mut ui;
+
         self.toolbar(ui, ctx);
 
         self.schemas.sync();

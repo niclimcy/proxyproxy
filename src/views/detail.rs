@@ -83,17 +83,19 @@ pub fn show(
         if !has_flows {
             return out;
         }
-        egui::Panel::bottom("detail-empty").exact_size(40.0).frame(panel_frame().inner_margin(Margin::same(PAD))).show(ui, |ui| {
+        egui::Panel::bottom("detail-empty").exact_size(56.0).show_separator_line(false).frame(card_panel()).show(ui, |ui| {
             ui.centered_and_justified(|ui| ui.label(muted(format!("Select a request to inspect it  ·  ↑/↓ navigate  ·  {0}R replay  ·  {0}F search", cmd()))));
         });
         return out;
     }
-    egui::Panel::bottom("detail")
+    resize_line(ui, true);
+    let shown = egui::Panel::bottom("detail")
         .resizable(true)
-        .show_separator_line(false) // would bleed under the side panels
         .default_size(360.0)
-        .frame(panel_frame().inner_margin(Margin::same(PAD)))
+        .show_separator_line(false)
+        .frame(card_panel())
         .show(ui, |ui| {
+            resize_line(ui, false);
             let Some(f) = selected.and_then(|id| vm.flow(id)) else {
                 return;
             };
@@ -186,6 +188,9 @@ pub fn show(
                 DTab::Messages => ws_ui(ui, vm, &f, &mut out),
             }
         });
+    resize_line(ui, false);
+    let r = shown.response.rect;
+    resize_grip(ui, "detail", egui::Rect::from_two_pos(r.left_top(), r.right_top()));
     out
 }
 

@@ -43,7 +43,8 @@ pub fn show(
         cert,
         devices,
     };
-    egui::Panel::top("top").frame(panel_frame().inner_margin(Margin::symmetric(14, 8))).show(ui, |ui| {
+    egui::Panel::top("top").frame(bar_frame()).show_separator_line(false).show(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 8.0;
         let compact = ui.available_width() < 900.0;
         if compact {
             let props = Props {

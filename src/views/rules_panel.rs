@@ -15,12 +15,15 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
     let mut out = vec![];
     let mut open = vm.show;
     let mut close = false;
-    egui::Panel::right("rules")
+    resize_line(ui, true);
+    let shown = egui::Panel::right("rules")
         .resizable(open)
         .default_size(440.0)
         .size_range(360.0..=900.0)
-        .frame(panel_frame().inner_margin(egui::Margin::same(PAD)))
+        .show_separator_line(false)
+        .frame(card_panel())
         .show_collapsible(ui, &mut open, |ui| {
+            resize_line(ui, false);
             ui.horizontal(|ui| {
                 ui.label(overline("RULES & SCOPE"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -51,6 +54,11 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
                     RulesTab::Console => console_tab(ui, vm, &mut out),
                 });
         });
+    resize_line(ui, false);
+    if let Some(r) = shown {
+        let r = r.response.rect;
+        resize_grip(ui, "rules", egui::Rect::from_two_pos(r.left_top(), r.left_bottom()));
+    }
     vm.show = open && !close;
     out
 }
