@@ -439,12 +439,12 @@ impl WebSocketHandler for WsCap {
     async fn handle_websocket(
         self,
         ctx: WebSocketContext,
-        mut stream: impl Stream<
+        stream: impl Stream<
             Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>,
         > + Unpin
         + Send
         + 'static,
-        mut sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error>
+        sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error>
         + Unpin
         + Send
         + 'static,
@@ -453,11 +453,26 @@ impl WebSocketHandler for WsCap {
             WebSocketContext::ClientToServer { dst, .. } => (Dir::Out, dst.clone()),
             WebSocketContext::ServerToClient { src, .. } => (Dir::In, src.clone()),
         };
+        self.relay(dir, uri, stream, sink).await;
+    }
+}
+
+impl WsCap {
+    // split from the trait method because tests can't build a non-exhaustive WebSocketContext
+    async fn relay(
+        &self,
+        dir: Dir,
+        uri: Uri,
+        mut stream: impl Stream<Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>> + Unpin,
+        mut sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error> + Unpin,
+    ) {
         let key = ws_key(
             uri.scheme_str().unwrap_or("ws"),
             uri.authority().map(|a| a.as_str()).unwrap_or(""),
             uri.path_and_query().map(|p| p.as_str()).unwrap_or("/"),
         );
+        // read once: a later socket to the same URL takes over the key, not this socket's frames
+        let id = self.map.lock().unwrap().get(&key).copied();
         while let Some(m) = stream.next().await {
             let Ok(m) = m else {
                 let _ = sink.send(WsMessage::Close(None)).await;
@@ -468,7 +483,7 @@ impl WebSocketHandler for WsCap {
                 WsMessage::Binary(b) => (true, Some(b.to_vec())),
                 _ => (false, None),
             };
-            if let (Some(data), Some(id)) = (data, self.map.lock().unwrap().get(&key).copied()) {
+            if let (Some(data), Some(id)) = (data, id) {
                 let ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
@@ -486,6 +501,10 @@ impl WebSocketHandler for WsCap {
             if sink.send(m).await.is_err() {
                 break;
             }
+        }
+        let mut map = self.map.lock().unwrap();
+        if id.is_some() && map.get(&key).copied() == id {
+            map.remove(&key);
         }
     }
 }
@@ -531,6 +550,30 @@ mod tests {
             assert_eq!(h.get(CONTENT_ENCODING).unwrap(), enc);
             assert!(h.contains_key(CONTENT_LENGTH));
         }
+    }
+
+    #[derive(Default)]
+    struct Frames(Mutex<Vec<(u64, Vec<u8>)>>);
+
+    impl FlowSink for Frames {
+        fn emit(&self, ev: Event) {
+            if let Event::Ws { id, msg } = ev {
+                self.0.lock().unwrap().push((id, msg.data));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn wss_frames_are_recorded_and_the_key_is_released() {
+        let frames = Arc::new(Frames::default());
+        let map: WsMap = Arc::default();
+        map.lock().unwrap().insert(ws_key("https", "a.com", "/s"), 7);
+        let cap = WsCap { sink: frames.clone(), map: map.clone() };
+        let stream = futures_util::stream::iter([Ok(WsMessage::Text("hi".into()))]);
+        let sink = futures_util::sink::drain().sink_map_err(|e: std::convert::Infallible| match e {});
+        cap.relay(Dir::Out, "wss://a.com:443/s".parse().unwrap(), stream, sink).await;
+        assert_eq!(*frames.0.lock().unwrap(), vec![(7, b"hi".to_vec())]);
+        assert!(map.lock().unwrap().is_empty());
     }
 
     #[test]
