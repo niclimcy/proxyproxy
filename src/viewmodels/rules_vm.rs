@@ -713,8 +713,14 @@ impl RulesVm {
         }
     }
 
+    // config-shaped so older builds can import it, but only the rules: the rest
+    // (upstream credentials, keylog path, scope) shouldn't travel with a shared file
     pub fn rules_json(&self) -> String {
-        serde_json::to_string_pretty(&*self.cfg.lock().unwrap()).unwrap_or_default()
+        let only_rules = Config {
+            rules: self.cfg.lock().unwrap().rules.clone(),
+            ..Config::default()
+        };
+        serde_json::to_string_pretty(&only_rules).unwrap_or_default()
     }
 }
 
@@ -1060,6 +1066,18 @@ mod tests {
         );
         vm.open_from_flow(99, RuleKind::Block);
         assert_eq!(vm.form.pattern, "api.x.com/v1/u");
+    }
+
+    #[test]
+    fn exported_rules_leave_out_other_settings_and_reimport() {
+        let mut vm = vm();
+        vm.form.pattern = "a.com".into();
+        vm.handle(RuleIntent::Submit);
+        vm.cfg.lock().unwrap().upstream.url = "http://user:secret@proxy:3128".into();
+        let json = vm.rules_json();
+        assert!(!json.contains("secret"));
+        vm.import_rules(&json, &mut Status::new(String::new(), Arc::new(NoRepaint)));
+        assert_eq!(vm.cfg.lock().unwrap().rules.len(), 2);
     }
 
     #[test]
