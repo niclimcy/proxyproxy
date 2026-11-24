@@ -180,10 +180,12 @@ fn rendition_png(v: &[u8]) -> Option<Vec<u8>> {
     let pixels = bitmap(data, (w * h * 4) as usize)?;
     // BOM stores premultiplied BGRA
     let rgba: Vec<u8> = pixels
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|p| {
             let a = u32::from(p[3]);
-            let un = |c: u8| if a == 0 { 0 } else { (u32::from(c) * 255 / a).min(255) as u8 };
+            let un = |c: u8| (u32::from(c) * 255).checked_div(a).map_or(0, |v| v.min(255) as u8);
             [un(p[2]), un(p[1]), un(p[0]), p[3]]
         })
         .collect();

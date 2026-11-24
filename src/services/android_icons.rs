@@ -24,7 +24,7 @@ impl SystemAdb {
         let exe = if cfg!(windows) { "adb.exe" } else { "adb" };
         let sdk = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
             .iter()
-            .filter_map(|v| std::env::var_os(v))
+            .filter_map(std::env::var_os)
             .map(|d| PathBuf::from(d).join("platform-tools").join(exe))
             .find(|p| p.is_file());
         Self(sdk.unwrap_or_else(|| PathBuf::from("adb")))

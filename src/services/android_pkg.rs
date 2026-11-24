@@ -201,10 +201,11 @@ impl<'a> Resources<'a> {
         let mut out = vec![];
         while at < end {
             let (cty, chead, csize) = chunk(self.b, at)?;
-            if cty == RES_TYPE && *self.b.get(at + 8)? == ty {
-                if let Some(v) = self.entry(at, chead, entry) {
-                    out.push(v);
-                }
+            if cty == RES_TYPE
+                && *self.b.get(at + 8)? == ty
+                && let Some(v) = self.entry(at, chead, entry)
+            {
+                out.push(v);
             }
             at += csize;
         }
@@ -279,8 +280,10 @@ pub mod fixtures {
         v
     }
 
-    /// `attrs`: (name string idx, data type, data).
-    pub fn manifest(strings: &[&str], elems: &[(u32, Vec<(u32, u8, u32)>)]) -> Vec<u8> {
+    /// (element name string idx, attrs); attrs are (name string idx, data type, data).
+    pub type Elem = (u32, Vec<(u32, u8, u32)>);
+
+    pub fn manifest(strings: &[&str], elems: &[Elem]) -> Vec<u8> {
         let mut body = pool(strings, true);
         for (name, attrs) in elems {
             let size = 36 + attrs.len() * 20;
