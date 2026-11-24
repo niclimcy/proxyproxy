@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.3.0
+
+Changes since [v0.2.0](https://github.com/niclimcy/proxyproxy/releases/tag/v0.2.0).
 
 ### Added
 
@@ -11,6 +13,9 @@
 - Proxy-only hosts: a Scope tab list (plus Add hosts from Scope) and a Connect menu toggle route only those hosts through the system proxy using a generated PAC file; other traffic connects directly. The request context menu has Route only this host through proxy and Add to proxy-only list, and the toolbar shows an N hosts only pill. Works on macOS, Linux (GNOME) and Windows; edits rewrite the PAC while the proxy is on, and already-open connections keep their route.
 
 - App icons for iOS Simulator apps are read from the compiled `Assets.car` (pure Rust, no `actool`/`assetutil`), falling back to loose `AppIcon*.png`. Android emulator and USB device flows resolve a package id from `X-Requested-With` or the User-Agent, then get the app label and icon through `adb` (APK pulled once, cached, skipped silently when adb or the package is missing).
+- The detail panel closes with a button, Esc or by dragging it shut.
+- Cmd+Shift+P toggles recording.
+- HTTP/2 is enabled in the proxy.
 
 ### Changed
 
@@ -20,11 +25,13 @@
 - Network and Schemas move from the Rules panel to a Settings window (Cmd+,).
 - The dark theme is true black for OLED screens. Labelled buttons get a quiet filled surface with a soft hairline, and grouped toolbar actions sit in one capsule.
 - The toolbar's Clear keeps pinned requests; Clear all, including pinned, is in the Session menu.
-- The devices menu is now called Connect, and the sidebar toggle is an icon.
+- The devices menu is now a Sources menu: the recording pill only says Recording/Paused, the menu button names the active routes, and system proxy and host-only routing are checkbox rows. The sidebar toggle is an icon.
 - Rule types are picked from a dropdown, and Add rule is the form's primary button.
 
 ### Fixed
 
+- Panel seams get a single separator instead of doubled outlines, and the no-match card stays centered when the filter is long.
+- Menu items, action buttons and choice cards expose button roles and labels to assistive tech.
 - Web pages can no longer change rules or replay requests through the MCP endpoint: posts must be JSON, cross-site `Origin`s and non-loopback `Host`s are refused, and bodies are capped at 4 MB.
 - Quitting only turns off the system proxy when it points at proxyproxy, so a proxy you set up yourself is left alone.
 - iOS simulator and system proxy status are polled in the background instead of blocking the UI every second, and the onboarding screen now updates while open.
