@@ -11,6 +11,12 @@ use crate::views::theme::*;
 use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
+/// Releasing the divider this close to the bottom closes the details; near the top it snaps fully open.
+const SNAP_WITHIN: f32 = 80.0;
+
+/// Table height left visible when the details are fully open.
+const TABLE_PEEK: f32 = 112.0;
+
 fn msg_view(
     ui: &mut egui::Ui,
     id: &str,
@@ -89,12 +95,25 @@ pub fn show(
         return out;
     }
     resize_line(ui, true);
-    let shown = egui::Panel::bottom("detail")
+    // Dragging the panel to a sliver closes it; a fresh id drops the stored tiny size so it reopens at default.
+    let epoch_id = ui.make_persistent_id("detail-epoch");
+    let epoch: u32 = ui.data(|d| d.get_temp(epoch_id)).unwrap_or(0);
+    let full_id = ui.make_persistent_id("detail-full");
+    let full: bool = ui.data(|d| d.get_temp(full_id)).unwrap_or(false);
+    let region = ui.available_rect_before_wrap();
+    // Keeps the table header visible so the divider and borders never meet the toolbar.
+    let max_h = (region.height() - TABLE_PEEK).max(SNAP_WITHIN);
+    // Stays selected while sliding shut; Close is sent only once the slide finishes.
+    let open_id = ui.make_persistent_id("detail-open");
+    let mut expanded: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(true);
+    let mut close_clicked = false;
+    let Some(shown) = egui::Panel::bottom(("detail", epoch))
         .resizable(true)
-        .default_size(360.0)
+        .size_range(SNAP_WITHIN..=max_h)
+        .default_size(if full { max_h } else { 360.0 })
         .show_separator_line(false)
         .frame(card_panel())
-        .show(ui, |ui| {
+        .show_collapsible(ui, &mut expanded, |ui| {
             resize_line(ui, false);
             let Some(f) = selected.and_then(|id| vm.flow(id)) else {
                 return;
@@ -124,6 +143,9 @@ pub fn show(
                             pill(ui, &f.tag, violet());
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if icon_button(ui, ph::X, "", true).on_hover_text("Close (Esc)").clicked() {
+                                close_clicked = true;
+                            }
                             if icon_button(ui, ph::COPY, "", true)
                                 .on_hover_text("Copy URL")
                                 .clicked()
@@ -187,9 +209,42 @@ pub fn show(
                 DTab::Diff => diff_ui(ui, vm, &f, &mut out),
                 DTab::Messages => ws_ui(ui, vm, &f, &mut out),
             }
+        })
+    else {
+        // Fully slid shut. A fresh id drops the stored tiny size so it reopens at default.
+        ui.data_mut(|d| {
+            d.insert_temp(epoch_id, epoch + 1);
+            d.insert_temp(full_id, false);
+            d.insert_temp(open_id, true);
         });
+        out.push(DetailIntent::Close);
+        return out;
+    };
+    // egui clears `expanded` when a drag crosses the minimum size
+    ui.data_mut(|d| d.insert_temp(open_id, expanded && !close_clicked));
     resize_line(ui, false);
     let r = shown.response.rect;
+    // Only a drag that actually resized the panel can snap it open.
+    let drag_id = ui.make_persistent_id("detail-drag");
+    let prev_h_id = ui.make_persistent_id("detail-prev-h");
+    let (down, pos) = ui.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
+    let prev_h: f32 = ui.data(|d| d.get_temp(prev_h_id)).unwrap_or(r.height());
+    let mut dragging: bool = ui.data(|d| d.get_temp(drag_id)).unwrap_or(false);
+    dragging |= down && (r.height() - prev_h).abs() > 0.5;
+    if dragging && !down {
+        dragging = false;
+        if pos.is_some_and(|p| p.y < region.top() + SNAP_WITHIN) {
+            // New id so default_size applies again, now at full height
+            ui.data_mut(|d| {
+                d.insert_temp(epoch_id, epoch + 1);
+                d.insert_temp(full_id, true);
+            });
+        }
+    }
+    ui.data_mut(|d| {
+        d.insert_temp(drag_id, dragging);
+        d.insert_temp(prev_h_id, r.height());
+    });
     resize_grip(ui, "detail", egui::Rect::from_two_pos(r.left_top(), r.right_top()));
     out
 }

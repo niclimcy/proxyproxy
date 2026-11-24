@@ -139,6 +139,10 @@ impl App {
             Some(Effect::DiffBase(id)) => self.detail.use_as_base(id),
             Some(Effect::Device(action)) => self.devices.run(action, &self.status),
             Some(Effect::OpenSettings) => self.settings.open(),
+            Some(Effect::CloseDetail) => {
+                self.capture.selected = None;
+                self.detail.on_select();
+            }
             Some(Effect::ImportFlows(path)) => self.session.handle(
                 SessionIntent::ImportFlows(path),
                 &mut self.capture,

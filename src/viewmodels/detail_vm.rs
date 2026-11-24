@@ -167,6 +167,7 @@ impl DetailVm {
             DetailIntent::DiffAgainst(id) => self.use_as_base(id),
             DetailIntent::ClearBase => self.diff_base = None,
             DetailIntent::SelectWs(i) => self.ws_sel = Some(i),
+            DetailIntent::Close => return Some(Effect::CloseDetail),
         }
         None
     }

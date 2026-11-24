@@ -98,6 +98,7 @@ pub enum Effect {
     Device(DeviceAction),
     ImportFlows(PathBuf),
     OpenSettings,
+    CloseDetail,
 }
 
 pub enum ToolbarIntent {
@@ -126,6 +127,7 @@ pub enum DetailIntent {
     DiffAgainst(u64),
     ClearBase,
     SelectWs(usize),
+    Close,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

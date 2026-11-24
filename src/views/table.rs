@@ -125,7 +125,7 @@ pub fn show(
         let cols: Vec<usize> = cols.into_iter().filter(|&c| c != APP || widths.show_app).collect();
         // the dot only stands in for the status badge when that column is hidden
         let status_dot_on = !cols.iter().any(|&c| ALL_COLS[c] == "Status");
-        let mut tb = TableBuilder::new(ui).striped(true).sense(egui::Sense::click()).cell_layout(egui::Layout::left_to_right(egui::Align::Center)).stick_to_bottom(follow);
+        let mut tb = TableBuilder::new(ui).striped(true).sense(egui::Sense::click()).cell_layout(egui::Layout::left_to_right(egui::Align::Center)).min_scrolled_height(0.0).stick_to_bottom(follow);
         for &c in &cols {
             tb = tb.column(match ALL_COLS[c] {
                 "App" => Column::initial(110.0).range(60.0..=widths.app_max).resizable(true).clip(true),
