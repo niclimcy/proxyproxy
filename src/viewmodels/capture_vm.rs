@@ -169,11 +169,15 @@ impl CaptureVm {
     }
 
     pub fn remove_flows(&mut self, keep: impl Fn(&Flow) -> bool) {
-        let mut st = self.store.lock();
-        st.retain(keep);
-        if self.selected.is_some_and(|id| st.find(id).is_none()) {
-            self.selected = None;
+        {
+            let mut st = self.store.lock();
+            st.retain(keep);
+            if self.selected.is_some_and(|id| st.find(id).is_none()) {
+                self.selected = None;
+            }
         }
+        // `visible` indexes into the store, and the table may draw later this frame
+        self.refresh_visible();
     }
 
     pub fn toggle_token(&mut self, tok: &str) {
@@ -490,6 +494,15 @@ mod tests {
         assert_eq!(vm.sort, None);
         vm.cycle_sort(4);
         assert_eq!(vm.sort, Some((4, true)));
+    }
+
+    #[test]
+    fn clearing_unpinned_keeps_visible_in_bounds() {
+        let (mut vm, _) = setup(5);
+        vm.store.lock().flows[1].pinned = true;
+        vm.refresh_visible();
+        vm.handle_toolbar(ToolbarIntent::ClearUnpinned);
+        assert_eq!(ids(&vm), vec![2]);
     }
 
     #[test]
