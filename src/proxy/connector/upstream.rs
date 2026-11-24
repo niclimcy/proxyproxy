@@ -1,5 +1,5 @@
 use super::dns::Resolver;
-use crate::domain::config::{Shared, UpstreamMode};
+use crate::domain::config::{Shared, Upstream, UpstreamMode};
 use crate::domain::policy::glob;
 use base64::Engine;
 use hudsucker::hyper::{Uri, rt};
@@ -170,6 +170,15 @@ pub fn eval_pac(code: &str, url: &str, host: &str) -> Result<String, String> {
             e => e.to_string(),
         })
     })
+}
+
+// Plain-HTTP requests to an HTTP proxy are sent in absolute form, not tunnelled, so the
+// credentials must ride on each request. PAC picks per connection, so only Manual can be known here.
+pub fn plain_http_auth(up: &Upstream) -> Option<String> {
+    if up.mode != UpstreamMode::Manual {
+        return None;
+    }
+    parse_proxy(&up.url).filter(|p| p.kind == ProxyKind::Http)?.auth
 }
 
 fn pick(cfg: &Shared, uri: &Uri) -> Result<Option<ProxyAddr>, BoxErr> {
@@ -413,6 +422,18 @@ impl Service<Uri> for UpstreamConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_http_auth_only_for_manual_http_proxies_with_credentials() {
+        let up = |mode, url: &str| Upstream { mode, url: url.into(), pac_path: String::new() };
+        assert_eq!(
+            plain_http_auth(&up(UpstreamMode::Manual, "http://u:p@h:3128")).as_deref(),
+            Some("Basic dTpw")
+        );
+        assert!(plain_http_auth(&up(UpstreamMode::Manual, "http://h:3128")).is_none());
+        assert!(plain_http_auth(&up(UpstreamMode::Socks, "u:p@h:1080")).is_none());
+        assert!(plain_http_auth(&up(UpstreamMode::Off, "http://u:p@h:3128")).is_none());
+    }
     use crate::domain::config::{Config, Upstream};
     use std::sync::{Arc, Mutex};
 

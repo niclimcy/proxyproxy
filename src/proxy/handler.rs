@@ -19,7 +19,7 @@ use hudsucker::{
     decode_request,
     hyper::{
         HeaderMap, Method, Request, Response, StatusCode, Uri,
-        header::{CONTENT_ENCODING, CONTENT_LENGTH, HeaderValue},
+        header::{CONTENT_ENCODING, CONTENT_LENGTH, HeaderValue, PROXY_AUTHORIZATION},
     },
     tokio_tungstenite::tungstenite::Message as WsMessage,
 };
@@ -83,6 +83,16 @@ pub struct Capture {
 }
 
 impl Capture {
+    fn add_upstream_auth(&self, parts: &mut hudsucker::hyper::http::request::Parts) {
+        if parts.uri.scheme_str() != Some("http") {
+            return;
+        }
+        let auth = super::connector::upstream::plain_http_auth(&self.cfg.lock().unwrap().upstream);
+        if let Some(v) = auth.and_then(|a| HeaderValue::try_from(a).ok()) {
+            parts.headers.insert(PROXY_AUTHORIZATION, v);
+        }
+    }
+
     async fn pause(&self, id: u64, stage: Stage, edit: BpEdit) -> Decision {
         let (reply, rx) = oneshot::channel();
         let orig = edit.clone();
@@ -163,6 +173,7 @@ impl HttpHandler for Capture {
             )
         };
         if !captured {
+            self.add_upstream_auth(&mut parts);
             return Request::from_parts(parts, Body::from(Full::new(bytes))).into();
         }
 
@@ -321,6 +332,8 @@ impl HttpHandler for Capture {
                 },
             });
         }
+        // after recording, so the credentials never show up in the flow
+        self.add_upstream_auth(&mut parts);
         Request::from_parts(parts, Body::from(Full::new(bytes))).into()
     }
 
