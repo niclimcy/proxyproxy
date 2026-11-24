@@ -24,8 +24,7 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
     }
     for (i, p) in v.paths.iter().enumerate() {
         ui.horizontal(|ui| {
-            if icon_button(ui, ph::X, "", true)
-                .on_hover_text("Remove")
+            if icon_only(ui, ph::X, "Remove descriptor")
                 .clicked()
             {
                 out.push(SchemasIntent::Remove(i));

@@ -143,11 +143,10 @@ pub fn show(
                             pill(ui, &f.tag, violet());
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, ph::X, "", true).on_hover_text("Close (Esc)").clicked() {
+                            if icon_only(ui, ph::X, "Close details (Esc)").clicked() {
                                 close_clicked = true;
                             }
-                            if icon_button(ui, ph::COPY, "", true)
-                                .on_hover_text("Copy URL")
+                            if icon_only(ui, ph::COPY, "Copy URL")
                                 .clicked()
                             {
                                 ctx.copy_text(url.clone());

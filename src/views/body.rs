@@ -170,8 +170,7 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
             fmt_size(m.body.len()),
             m.content_type()
         )));
-        if icon_button(ui, egui_phosphor::regular::COPY, "", true)
-            .on_hover_text("Copy body")
+        if icon_only(ui, egui_phosphor::regular::COPY, "Copy body")
             .clicked()
         {
             ui.ctx().copy_text(decode::pretty_text(m));

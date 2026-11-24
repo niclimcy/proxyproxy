@@ -96,6 +96,7 @@ fn choice_card(
         rect.width() - 32.0,
     );
     painter.galley(egui::pos2(left, top), description_galley, fg_muted());
+    focus_ring(ui, &response, RADIUS);
     response
 }
 

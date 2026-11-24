@@ -62,6 +62,7 @@ pub fn paint_fallback_icon(painter: &egui::Painter, rect: egui::Rect, name: &str
 /// App icon, or a letter avatar until (or unless) one is available.
 pub fn app_icon(ui: &mut egui::Ui, icons: &IconStore, name: &str, identity: Option<&AppIdentity>) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ICON_SIZE, ICON_SIZE), egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     // Eased so the icon doesn't snap between sizes.
     let zoom = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.12);
     let rect = egui::Rect::from_center_size(rect.center(), rect.size() * (1.0 + 0.25 * zoom));
@@ -72,6 +73,7 @@ pub fn app_icon(ui: &mut egui::Ui, icons: &IconStore, name: &str, identity: Opti
         // the zoomed rect outgrows the cell's clip, which would cut the filled tile
         paint_fallback_icon(&ui.painter().with_clip_rect(rect.expand(1.0)), rect, name, identity);
     }
+    crate::views::theme::focus_ring(ui, &resp, RADIUS_SM);
     resp
 }
 

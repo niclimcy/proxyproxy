@@ -96,8 +96,7 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                         for m in &cfg.muted {
                             ui.horizontal(|ui| {
                                 ui.label(muted(m));
-                                if icon_button(ui, ph::X, "", true)
-                                    .on_hover_text("Unmute")
+                                if icon_only(ui, ph::X, &format!("Unmute {m}"))
                                     .clicked()
                                 {
                                     out.push(SidebarIntent::Unmute(m.clone()));

@@ -180,7 +180,8 @@ pub fn show(
                             // room for the selection bar, kept on every row so ids don't shift
                             ui.add_space(4.0);
                             if status_dot_on {
-                                status_dot(ui, f.status.map(status_color).unwrap_or_else(fg_muted));
+                                let label = f.status.map_or_else(|| "Pending".to_string(), |s| format!("Status {s}"));
+                                status_dot(ui, f.status.map(status_color).unwrap_or_else(fg_muted), &label);
                             }
                             if let Some(i) = f.color {
                                 ui.label(RichText::new(ph::CIRCLE).color(tag_colors()[i as usize % 5].1).size(FS_CAPTION));
@@ -240,6 +241,9 @@ pub fn show(
                     });
                 }
                 let resp = row.response();
+                let status = f.status.map_or_else(|| "pending".to_string(), |s| s.to_string());
+                let spoken = format!("{} {} {status}", f.method, f.url());
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Row, true, selected, &spoken));
                 if resp.clicked() {
                     out.push(RowIntent::Select(f.id));
                 }

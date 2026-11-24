@@ -27,8 +27,7 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
             ui.horizontal(|ui| {
                 ui.label(overline("RULES & SCOPE"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if icon_button(ui, ph::X, "", true)
-                        .on_hover_text("Close")
+                    if icon_only(ui, ph::X, "Close rules panel")
                         .clicked()
                     {
                         close = true;
@@ -100,7 +99,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
                         ui.label(RichText::new(&r.pattern).monospace());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let tool = |ui: &mut egui::Ui, icon: &str, tip: &str| {
-                                icon_button(ui, icon, "", true).on_hover_text(tip).clicked()
+                                icon_only(ui, icon, tip).clicked()
                             };
                             if tool(ui, ph::X, "Delete") {
                                 out.push(RuleIntent::Delete(r.id));
@@ -440,7 +439,7 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         for (i, h) in list.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(h).monospace());
-                if icon_button(ui, ph::X, "", true).clicked() {
+                if icon_only(ui, ph::X, &format!("Remove {h}")).clicked() {
                     out.push(RuleIntent::RemoveHost(kind, i));
                 }
             });

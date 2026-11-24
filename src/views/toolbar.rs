@@ -378,8 +378,7 @@ fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
             }
             for (i, (name, q)) in saved.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    if icon_button(ui, ph::X, "", true)
-                        .on_hover_text("Delete saved query")
+                    if icon_only(ui, ph::X, "Delete saved query")
                         .clicked()
                     {
                         out.push(ToolbarIntent::DeleteQuery(i));

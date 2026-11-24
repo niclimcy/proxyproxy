@@ -283,6 +283,23 @@ pub fn ico(icon: &str, text: &str) -> String {
     format!("{icon}  {text}")
 }
 
+/// Label for screen readers: icon glyphs live in the private use area and read as noise.
+pub fn spoken(s: &str) -> String {
+    s.chars().filter(|c| !('\u{E000}'..='\u{F8FF}').contains(c)).collect::<String>().trim().to_string()
+}
+
+/// Keyboard focus outline for hand-drawn widgets; egui only draws one for its own.
+pub fn focus_ring(ui: &egui::Ui, resp: &egui::Response, radius: u8) {
+    if resp.has_focus() {
+        ui.painter().rect_stroke(
+            resp.rect,
+            CornerRadius::same(radius),
+            Stroke::new(2.0, accent()),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
 pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(T, &str)]) {
     Frame::new()
         .fill(canvas())
@@ -303,7 +320,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(tab_width, HIT), egui::Sense::click());
                     resp.widget_info(|| {
-                        egui::WidgetInfo::selected(egui::Role::Button, true, on, *name)
+                        egui::WidgetInfo::selected(egui::Role::Tab, true, on, spoken(name))
                     });
                     let fill = if resp.is_pointer_button_down_on() {
                         if on {
@@ -332,6 +349,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, cur: &mut T, items: &[(
                         g,
                         if on { fg() } else { fg_muted() },
                     );
+                    focus_ring(ui, &resp, RADIUS_SM);
                     if resp.clicked() {
                         *cur = *t;
                     }
@@ -348,7 +366,7 @@ pub fn chip(ui: &mut egui::Ui, text: &str, on: bool, color: Color32) -> egui::Re
             .layout_no_wrap(text.to_string(), egui::FontId::proportional(FS_SMALL), ink);
     let size = egui::vec2(g.size().x + 16.0, HIT);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, text));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, spoken(text)));
     let fill = if resp.is_pointer_button_down_on() {
         if on {
             tint(color, Tint::Strong)
@@ -376,6 +394,7 @@ pub fn chip(ui: &mut egui::Ui, text: &str, on: bool, color: Color32) -> egui::Re
         g,
         ink,
     );
+    focus_ring(ui, &resp, RADIUS_SM);
     resp
 }
 
@@ -394,7 +413,7 @@ pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Resp
     let (rect, mut response) =
         ui.allocate_exact_size(egui::vec2(row_width, row_height), egui::Sense::click());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, text)
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, spoken(text))
     });
 
     if response.clicked() {
@@ -463,15 +482,7 @@ pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Resp
         fg(),
     );
 
-    if response.has_focus() {
-        painter.rect_stroke(
-            rect,
-            CornerRadius::same(RADIUS_SM),
-            Stroke::new(2.0, accent()),
-            egui::StrokeKind::Inside,
-        );
-    }
-
+    focus_ring(ui, &response, RADIUS_SM);
     response
 }
 
@@ -532,19 +543,25 @@ fn secondary<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     .inner
 }
 
-/// Labelled buttons are secondary; icon-only ones stay flat.
+/// Secondary labelled button.
 pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) -> egui::Response {
-    let button = |ui: &mut egui::Ui, text: String| {
+    let resp = secondary(ui, |ui| {
         ui.add_enabled(
             enabled,
-            egui::Button::new(RichText::new(text).size(FS_SMALL)).min_size(egui::vec2(0.0, HIT)),
+            egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL)).min_size(egui::vec2(0.0, HIT)),
         )
-    };
-    if label.is_empty() {
-        flat(ui, |ui| button(ui, icon.to_string()))
-    } else {
-        secondary(ui, |ui| button(ui, ico(icon, label)))
-    }
+    });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, spoken(label)));
+    resp
+}
+
+/// Flat glyph button. `name` is required: it is the tooltip and the only thing a screen reader can announce.
+pub fn icon_only(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
+    let resp = flat(ui, |ui| {
+        ui.add(egui::Button::new(RichText::new(icon).size(FS_SMALL)).min_size(egui::vec2(HIT, HIT)))
+    });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    resp.on_hover_text(name)
 }
 
 /// Groups related toolbar actions in one rounded capsule of flat buttons.
@@ -657,14 +674,7 @@ fn panel_toggle(
             p.line_segment([panel.right_top(), panel.right_bottom()], stroke);
         }
     }
-    if resp.has_focus() {
-        p.rect_stroke(
-            rect,
-            CornerRadius::same(RADIUS),
-            Stroke::new(2.0, accent()),
-            egui::StrokeKind::Inside,
-        );
-    }
+    focus_ring(ui, &resp, RADIUS);
     resp
 }
 
@@ -692,7 +702,7 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
     );
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), HIT), egui::Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, spoken(label)));
     let fill = if resp.is_pointer_button_down_on() {
         ui.visuals().widgets.active.weak_bg_fill
     } else if resp.hovered() {
@@ -707,6 +717,7 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
         g,
         fg(),
     );
+    focus_ring(ui, &resp, RADIUS_SM);
     resp
 }
 
@@ -861,7 +872,11 @@ pub fn list_row(
 ) -> egui::Response {
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), HIT), egui::Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, label));
+    let name = match count {
+        Some(n) => format!("{}, {n}", spoken(label)),
+        None => spoken(label),
+    };
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, &name));
     let fill = if selected {
         tint(accent(), Tint::Normal)
     } else if resp.hovered() {
@@ -917,6 +932,7 @@ pub fn list_row(
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_w.max(0.0));
     let g = p.layout_job(job);
     p.galley(egui::pos2(x, rect.center().y - g.size().y / 2.0), g, ink);
+    focus_ring(ui, &resp, RADIUS_SM);
     resp
 }
 
@@ -937,9 +953,12 @@ pub fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
         });
 }
 
-pub fn status_dot(ui: &mut egui::Ui, color: Color32) {
-    let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+/// `label` carries what the colour means, for the tooltip and screen readers.
+pub fn status_dot(ui: &mut egui::Ui, color: Color32, label: &str) {
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
     ui.painter().circle_filled(r.center(), 4.0, color);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
+    resp.on_hover_text(label);
 }
 
 /// Filled action button (primary/destructive). Text stays `fg` for contrast.
@@ -989,6 +1008,7 @@ pub fn action_button_sized(
         egui::StrokeKind::Inside,
     );
     ui.painter().galley(rect.center() - g.size() / 2.0, g, ink);
+    focus_ring(ui, &resp, RADIUS_SM);
     resp
 }
 

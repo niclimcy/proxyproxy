@@ -27,8 +27,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                 if !valid_ip(ip) {
                     ui.label(RichText::new("invalid IP").color(danger()));
                 }
-                if icon_button(ui, ph::X, "", true)
-                    .on_hover_text("Remove override")
+                if icon_only(ui, ph::X, "Remove override")
                     .clicked()
                 {
                     out.push(NetworkIntent::RemoveDns(i));
