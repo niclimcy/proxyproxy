@@ -5,12 +5,17 @@ mod services;
 mod viewmodels;
 mod views;
 
+// 0 would bind a random port, and 65535 leaves no room for the API on port + 1
+fn valid_port(s: &str) -> Option<u16> {
+    s.parse().ok().filter(|p| (1..u16::MAX).contains(p))
+}
+
 // Parses leading `--port N` flags; returns the port and the index of the first other argument.
 fn port_flag(args: &[String]) -> (u16, usize) {
     let mut port = 9090u16;
     let mut i = 0;
     while let Some("--port" | "-p") = args.get(i).map(String::as_str) {
-        port = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(port);
+        port = args.get(i + 1).and_then(|p| valid_port(p)).unwrap_or(port);
         i += 2;
     }
     (port, i)
@@ -99,6 +104,21 @@ fn main() -> eframe::Result {
     if args.first().map(|s| s.as_str()) == Some("run") {
         run_cli(&args[1..]);
     }
-    let port: u16 = args.first().and_then(|p| p.parse().ok()).unwrap_or(9090);
+    let port = args.first().and_then(|p| valid_port(p)).unwrap_or(9090);
     app::run(port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ports_without_room_for_the_api_are_rejected() {
+        assert_eq!(valid_port("19090"), Some(19090));
+        assert_eq!(valid_port("65534"), Some(65534));
+        assert_eq!(valid_port("65535"), None);
+        assert_eq!(valid_port("0"), None);
+        let args: Vec<String> = ["--port", "65535"].map(String::from).to_vec();
+        assert_eq!(port_flag(&args), (9090, 2));
+    }
 }

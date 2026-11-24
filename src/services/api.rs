@@ -212,7 +212,7 @@ fn respond(stream: &mut impl Write, code: u16, body: &str) {
 }
 
 pub fn port_for(proxy_port: u16) -> u16 {
-    proxy_port.wrapping_add(1)
+    proxy_port.saturating_add(1)
 }
 
 // Loopback JSON API: read-only REST for captured flows, plus `POST /mcp`, which can also
