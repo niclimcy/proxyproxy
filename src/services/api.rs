@@ -17,8 +17,18 @@ pub fn detail(f: &Flow) -> Value {
     v
 }
 
+// Serializes a copy so the UI and the proxy's store updates don't wait on a large export.
+pub fn har_json(store: &FlowStore) -> Value {
+    let flows = store.lock().flows.clone();
+    let all: Vec<&Flow> = flows.iter().collect();
+    serde_json::from_str(&crate::services::exporter::har(&all)).unwrap_or(Value::Null)
+}
+
 fn handle(store: &FlowStore, target: &str) -> (u16, Value) {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if path.trim_end_matches('/') == "/har" {
+        return (200, har_json(store));
+    }
     let st = store.lock();
     let flows = &st.flows;
     let q: Vec<(&str, &str)> = query.split('&').filter_map(|p| p.split_once('=')).collect();
@@ -58,13 +68,6 @@ fn handle(store: &FlowStore, target: &str) -> (u16, Value) {
             200,
             json!({"name": "proxyproxy", "flows": flows.len(), "endpoints": ["/flows?q=&limit=", "/flows/{id}", "/har"]}),
         ),
-        "/har" => {
-            let all: Vec<&Flow> = flows.iter().collect();
-            (
-                200,
-                serde_json::from_str(&crate::services::exporter::har(&all)).unwrap_or(Value::Null),
-            )
-        }
         _ => (404, json!({"error": "not found"})),
     }
 }

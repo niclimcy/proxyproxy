@@ -245,12 +245,7 @@ fn call_tool(
             cfg.rules.retain(|rule| rule.id != id);
             Ok(json!({"deleted": cfg.rules.len() != old_len}))
         }
-        "proxyproxy_export_har" => {
-            let st = store.lock();
-            let flows: Vec<&crate::domain::flow::Flow> = st.flows.iter().collect();
-            let har = crate::services::exporter::har(&flows);
-            Ok(serde_json::from_str(&har).unwrap_or(Value::Null))
-        }
+        "proxyproxy_export_har" => Ok(crate::services::api::har_json(store)),
         _ => Err(format!("unknown tool: {name}")),
     }
 }
