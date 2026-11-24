@@ -104,8 +104,10 @@ pub fn show(
         if vm.visible.is_empty() {
             ui.vertical_centered(|ui| {
                 ui.add_space((ui.available_height() - 190.0).max(24.0) / 2.0);
+                let card_width = ui.clip_rect().width().min(520.0);
                 card().show(ui, |ui| {
-                    ui.set_min_width(520.0);
+                    // fixed width: a long filter would stretch a min-width card off-center
+                    ui.set_width((card_width - 2.0 * PAD as f32).max(0.0));
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.label(RichText::new("No requests match this search").size(FS_TITLE).strong());
                         ui.add_space(6.0);
