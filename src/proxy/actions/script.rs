@@ -34,12 +34,14 @@ impl RuleAction for Script {
     }
 
     fn apply_request(&self, parts: &mut Parts, body: &mut Bytes, sink: &dyn FlowSink) -> bool {
+        // compared against what the script saw, so a non-UTF-8 body it left alone stays byte for byte
+        let sent = String::from_utf8_lossy(body).into_owned();
         let mut c = script::Ctx {
             method: parts.method.to_string(),
             url: parts.uri.to_string(),
             status: 0,
             headers: headers(&parts.headers),
-            body: String::from_utf8_lossy(body).into_owned(),
+            body: sent.clone(),
         };
         run(sink, &self.code, "onRequest", &mut c);
         if let Ok(m) = c.method.parse::<Method>() {
@@ -49,26 +51,27 @@ impl RuleAction for Script {
             parts.uri = u;
         }
         parts.headers = header_map(&c.headers);
-        if c.body.as_bytes() != &body[..] {
+        if c.body != sent {
             *body = Bytes::from(c.body.into_bytes());
         }
         true
     }
 
     fn apply_response(&self, parts: &mut ResParts, body: &mut Bytes, sink: &dyn FlowSink) {
+        let sent = String::from_utf8_lossy(body).into_owned();
         let mut c = script::Ctx {
             method: String::new(),
             url: String::new(),
             status: parts.status.as_u16(),
             headers: headers(&parts.headers),
-            body: String::from_utf8_lossy(body).into_owned(),
+            body: sent.clone(),
         };
         run(sink, &self.code, "onResponse", &mut c);
         if let Ok(s) = StatusCode::from_u16(c.status) {
             parts.status = s;
         }
         parts.headers = header_map(&c.headers);
-        if c.body.as_bytes() != &body[..] {
+        if c.body != sent {
             *body = Bytes::from(c.body.into_bytes());
         }
     }
@@ -98,6 +101,19 @@ mod tests {
         let code = "function onResponse(c){ c.status = 418; c.body = 'new'; return c; }";
         Script { code: code.into() }.apply_response(&mut parts, &mut body, &sink);
         assert_eq!((parts.status.as_u16(), &body[..]), (418, &b"new"[..]));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn untouched_binary_bodies_stay_byte_for_byte() {
+        let sink = TestSink::default();
+        let raw = Bytes::from_static(&[0x89, b'P', 0xff, 0xfe, 0x00]);
+        let code = "function onRequest(c){ c.headers['x']='1'; return c; } function onResponse(c){ return c; }";
+        let s = Script { code: code.into() };
+        let mut body = raw.clone();
+        s.apply_request(&mut req_parts("https://a.com/"), &mut body, &sink);
+        assert_eq!(body, raw);
+        s.apply_response(&mut res_parts(200), &mut body, &sink);
+        assert_eq!(body, raw);
     }
 
     #[tokio::test(flavor = "multi_thread")]
