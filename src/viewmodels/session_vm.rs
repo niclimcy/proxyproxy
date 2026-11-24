@@ -5,6 +5,7 @@ use super::status::Status;
 use crate::domain::config::Shared;
 use crate::domain::flow::Flow;
 use crate::services::{config_store, exporter, flow_store::FlowStore, importer, session};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct SessionVm {
@@ -14,6 +15,8 @@ pub struct SessionVm {
     cfg_checked: Instant,
     saved_rev: u64,
     last_save: Instant,
+    // held while the autosave file is written, so a background save and shutdown never interleave
+    writing: Arc<Mutex<()>>,
 }
 
 fn cfg_json(cfg: &Shared) -> String {
@@ -30,6 +33,7 @@ impl SessionVm {
             cfg_checked: Instant::now(),
             saved_rev: 0,
             last_save: Instant::now(),
+            writing: Arc::default(),
         }
     }
 
@@ -53,7 +57,18 @@ impl SessionVm {
         if self.last_save.elapsed() > Duration::from_secs(30)
             && self.saved_rev != self.store.lock().rev()
         {
-            self.save_now();
+            // serializing 20k flows takes long enough to drop frames, so only the copy is on the UI thread
+            let (flows, rev) = {
+                let st = self.store.lock();
+                (st.flows.clone(), st.rev())
+            };
+            let writing = self.writing.clone();
+            std::thread::spawn(move || {
+                let _w = writing.lock().unwrap();
+                let _ = session::save(&session::autosave_path(), &flows);
+            });
+            self.saved_rev = rev;
+            self.last_save = Instant::now();
         }
     }
 
@@ -66,6 +81,7 @@ impl SessionVm {
     }
 
     pub fn save_now(&mut self) {
+        let _w = self.writing.lock().unwrap();
         let st = self.store.lock();
         let _ = session::save(&session::autosave_path(), &st.flows);
         self.saved_rev = st.rev();
