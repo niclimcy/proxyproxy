@@ -820,8 +820,10 @@ pub fn resize_grip(ui: &egui::Ui, name: &str, edge: egui::Rect) {
     let dragging = (pressed && near) || (down && ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false));
     ui.data_mut(|d| d.insert_temp(id, dragging));
     let color = if near || dragging { accent() } else { pal().border_strong };
+    // Own layer so a neighbouring card that overflows its slot (the table at narrow widths) can't cover the dots.
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Middle, id));
     for step in [-1.0, 0.0, 1.0] {
-        ui.painter().circle_filled(edge.center() + axis * (step * 5.0), 1.5, color);
+        painter.circle_filled(edge.center() + axis * (step * 5.0), 1.5, color);
     }
 }
 

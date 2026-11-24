@@ -64,7 +64,16 @@ pub fn show(
     let sort = vm.sort;
     let has_flows = vm.has_flows();
 
-    egui::CentralPanel::default().frame(card_panel()).show(ui, |ui| {
+    // The card is painted at the slot's size, not the content's, so columns that can't shrink further
+    // get clipped instead of stretching the border over the neighbouring panel.
+    egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
+        let frame = card_panel();
+        let slot = ui.max_rect().shrink(GAP as f32 / 2.0);
+        ui.painter().rect(slot, frame.corner_radius, frame.fill, frame.stroke, egui::StrokeKind::Inside);
+        let inner = slot.shrink(PAD as f32);
+        let mut body = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+        body.set_clip_rect(inner.intersect(ui.clip_rect()));
+        let ui = &mut body;
         if !has_flows {
             ui.vertical_centered(|ui| {
                 ui.add_space((ui.available_height() - 280.0).max(24.0) / 2.0);
