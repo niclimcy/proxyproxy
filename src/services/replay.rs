@@ -27,7 +27,11 @@ pub fn send(
         .map_err(|e| e.to_string())?;
     let mut h = HeaderMap::new();
     for (k, v) in headers {
-        if matches!(k.to_ascii_lowercase().as_str(), "content-length" | "host") {
+        // reqwest is built without decompression, so ask for an identity body
+        if matches!(
+            k.to_ascii_lowercase().as_str(),
+            "content-length" | "host" | "accept-encoding"
+        ) {
             continue;
         }
         if let (Ok(k), Ok(v)) = (
@@ -112,6 +116,24 @@ pub fn replayed_flow(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replay_does_not_ask_for_compressed_bodies() {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", l.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = s.read(&mut buf).unwrap();
+            s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok").unwrap();
+            String::from_utf8_lossy(&buf[..n]).to_lowercase()
+        });
+        let headers = vec![("Accept-Encoding".to_string(), "gzip, br".to_string())];
+        let sent = send("GET", &url, &headers, b"").unwrap();
+        assert_eq!(sent.response.body, b"ok");
+        assert!(!server.join().unwrap().contains("accept-encoding: gzip"));
+    }
 
     #[test]
     fn schemeless_url_defaults_to_https_and_root_path() {
