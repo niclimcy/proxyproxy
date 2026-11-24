@@ -63,16 +63,7 @@ pub fn show(
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
                 vm.show_sidebar = !vm.show_sidebar;
             }
-            let paused = vm.capture_paused();
-            let (icon, label, state, tip) = if paused {
-                (ph::PAUSE_CIRCLE, "Paused".to_string(), warning(), format!("Capture paused. Click to resume (proxy on 127.0.0.1:{port})"))
-            } else {
-                (ph::RECORD, format!("Capturing · :{port}"), success(), format!("Capturing on 127.0.0.1:{port}. Click to pause"))
-            };
-            let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
-            if pill_resp.on_hover_text(tip).clicked() {
-                out.push(ToolbarIntent::ToggleCapture);
-            }
+            record_pill(ui, vm.capture_paused(), port, &mut out);
             ui.add_space(8.0);
             let search = ui.add(
                 TextEdit::singleline(&mut vm.filter)
@@ -149,7 +140,7 @@ pub fn show(
                     vm.follow = !vm.follow;
                 }
                 let hidden = vm.hidden_cols();
-                toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
+                toolbar_menu(ui, ph::COLUMNS, "Columns", false, |ui| {
                     for c in ALL_COLS.iter().skip(1) {
                         let mut on = !hidden.iter().any(|h| h == c);
                         if checkbox(ui, &mut on, c).changed() {
@@ -201,7 +192,7 @@ fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<Tool
             {
                 vm.follow = !vm.follow;
             }
-            toolbar_menu(ui, ph::COLUMNS, "Columns", |ui| {
+            toolbar_menu(ui, ph::COLUMNS, "Columns", false, |ui| {
                 for c in ALL_COLS.iter().skip(1) {
                     let mut on = !vm.hidden_cols().iter().any(|h| h == c);
                     if checkbox(ui, &mut on, c).changed() {
@@ -247,16 +238,7 @@ fn compact_primary_rows(
         if sidebar_toggle(ui, vm.show_sidebar).clicked() {
             vm.show_sidebar = !vm.show_sidebar;
         }
-        let paused = vm.capture_paused();
-        let (icon, label, state, tip) = if paused {
-            (ph::PAUSE_CIRCLE, "Paused".to_string(), warning(), format!("Capture paused. Click to resume (proxy on 127.0.0.1:{port})"))
-        } else {
-            (ph::RECORD, format!("Capturing · :{port}"), success(), format!("Capturing on 127.0.0.1:{port}. Click to pause"))
-        };
-        let pill_resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, &label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
-        if pill_resp.on_hover_text(tip).clicked() {
-            out.push(ToolbarIntent::ToggleCapture);
-        }
+        record_pill(ui, vm.capture_paused(), port, out);
         let search_width = (ui.available_width() - 8.0).max(180.0);
         let search = ui.add(
             TextEdit::singleline(&mut vm.filter)
@@ -322,6 +304,19 @@ fn compact_primary_rows(
             }
         });
     });
+}
+
+/// Only controls recording: the proxy keeps forwarding while paused. Routing lives in the Sources menu.
+fn record_pill(ui: &mut egui::Ui, paused: bool, port: u16, out: &mut Vec<ToolbarIntent>) {
+    let (icon, label, state, tip) = if paused {
+        (ph::PAUSE_CIRCLE, "Paused", warning(), format!("Recording paused. Traffic still flows through :{port} but is not saved. Click to resume"))
+    } else {
+        (ph::RECORD, "Recording", success(), format!("Recording traffic arriving on 127.0.0.1:{port}. Click to pause"))
+    };
+    let resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
+    if resp.on_hover_text(tip).clicked() {
+        out.push(ToolbarIntent::ToggleCapture);
+    }
 }
 
 fn paused_pill(ui: &mut egui::Ui, n: usize) -> egui::Response {
@@ -404,6 +399,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
         ui,
         ph::FOLDER_OPEN,
         if compact { "" } else { "Session" },
+        false,
         |ui| {
             let items = [
                 "New session",
@@ -484,7 +480,7 @@ struct Setup<'a> {
 }
 
 fn help_menu(ui: &mut egui::Ui, label: &str, out: &mut Vec<ToolbarIntent>) {
-    toolbar_menu(ui, ph::QUESTION, label, |ui| {
+    toolbar_menu(ui, ph::QUESTION, label, false, |ui| {
         let settings = format!("Settings…  ({},)", cmd());
         menu_width(ui, &[&settings, "Setup guide", "About proxyproxy"]);
         if menu_item(ui, &settings).clicked() {
@@ -506,6 +502,8 @@ enum Row {
     Note(String),
     Separator,
     Device(String, DeviceAction),
+    // checked state is shown in the row, so the label never flips between Enable and Disable
+    Toggle(String, bool, DeviceAction),
     Copy(String, String),
 }
 
@@ -514,33 +512,30 @@ fn device_rows(s: Setup) -> Vec<Row> {
     let device = |label: &str, action| Row::Device(label.to_string(), action);
     let note = |text: &str| Row::Note(text.to_string());
     let mut rows = vec![
+        Row::Note(format!("Listening on 127.0.0.1:{port}")),
+        Row::Separator,
         note("This computer"),
         device("Trust CA on this computer", DeviceAction::TrustCa),
     ];
-    if s.devices.system_proxy_enabled {
-        rows.push(note(&match s.devices.hosts_only() {
-            Some(n) => format!("System capture: enabled · {n} host(s) only"),
-            None => "System capture: enabled · all traffic".to_string(),
-        }));
-        rows.push(device(
-            "Disable system proxy",
-            DeviceAction::ToggleSystemProxy,
-        ));
+    let hosts_only = s.devices.hosts_only();
+    rows.push(Row::Toggle(
+        match hosts_only {
+            Some(n) => format!("System proxy · {n} host(s) only"),
+            None => "System proxy".into(),
+        },
+        s.devices.system_proxy_enabled,
+        DeviceAction::ToggleSystemProxy,
+    ));
+    rows.push(note(if s.devices.system_proxy_enabled {
+        "Routes this Mac and iOS Simulators"
     } else {
-        rows.push(note("System capture: disabled"));
-        rows.push(device(
-            "Enable system proxy",
-            DeviceAction::ToggleSystemProxy,
-        ));
-    }
+        "Off: this Mac and iOS Simulators connect directly"
+    }));
     if cfg!(target_os = "macos") {
         let (on, n) = s.devices.proxy_only_setting();
-        rows.push(device(
-            &if on {
-                format!("Route all traffic (stop host-only, {n} listed)")
-            } else {
-                format!("Route only listed hosts ({n})")
-            },
+        rows.push(Row::Toggle(
+            format!("Only route listed hosts ({n})"),
+            on,
             DeviceAction::ToggleProxyOnly,
         ));
     } else {
@@ -552,17 +547,7 @@ fn device_rows(s: Setup) -> Vec<Row> {
             DeviceAction::LaunchChrome,
         ),
         Row::Separator,
-        note("Terminal & scripts"),
-        Row::Copy(
-            "Copy `proxyproxy run -- <cmd>` hint".into(),
-            format!("proxyproxy run --port {port} -- "),
-        ),
-        Row::Copy(
-            "Copy shell env snippet".into(),
-            crate::services::devices::env_snippet(port, s.cert),
-        ),
-        Row::Separator,
-        note("iOS Simulators"),
+        note("iOS Simulators (follow System proxy)"),
     ]);
     if s.devices.running().next().is_none() {
         rows.push(note("No running iOS simulator"));
@@ -573,7 +558,8 @@ fn device_rows(s: Setup) -> Vec<Row> {
             IosCaStatus::Missing => "CA missing",
             IosCaStatus::Unknown => "CA status unknown",
         };
-        rows.push(note(&format!("{} · {ca}", sim.name)));
+        let route = if s.devices.system_proxy_enabled { "routed" } else { "not routed" };
+        rows.push(note(&format!("{} · {route} · {ca}", sim.name)));
         rows.push(if sim.ca_status == IosCaStatus::Installed {
             Row::Device(
                 format!("Reboot {}", sim.name),
@@ -586,15 +572,33 @@ fn device_rows(s: Setup) -> Vec<Row> {
             )
         });
     }
+    rows.push(Row::Separator);
+    rows.push(note("Android (set per device, independent of System proxy)"));
+    if s.devices.android.is_empty() {
+        rows.push(note("No Android device or emulator found by adb"));
+    }
+    for d in &s.devices.android {
+        rows.push(Row::Toggle(
+            format!("{} ({})", d.name, d.serial),
+            d.proxied,
+            DeviceAction::AndroidToggleProxy(d.serial.clone()),
+        ));
+    }
     rows.extend([
-        note("Android"),
-        device("Android: set proxy (adb)", DeviceAction::AndroidSetProxy),
-        device("Android: clear proxy", DeviceAction::AndroidClearProxy),
-        device("Android: push CA", DeviceAction::AndroidInstallCa),
+        device("Push CA to Android devices", DeviceAction::AndroidInstallCa),
         Row::Separator,
-        Row::Copy("Copy CA path".into(), s.cert.to_string()),
+        // rarely needed, so grouped into one submenu instead of four rows
         Row::Copy(
-            format!("Copy REST API URL (127.0.0.1:{api_port})"),
+            "Shell environment".into(),
+            crate::services::devices::env_snippet(port, s.cert),
+        ),
+        Row::Copy(
+            "proxyproxy run command".into(),
+            format!("proxyproxy run --port {port} -- "),
+        ),
+        Row::Copy("CA certificate path".into(), s.cert.to_string()),
+        Row::Copy(
+            format!("REST API URL (127.0.0.1:{api_port})"),
             format!("http://127.0.0.1:{api_port}"),
         ),
     ]);
@@ -608,20 +612,24 @@ fn devices_menu(
     out: &mut Vec<ToolbarIntent>,
     compact: bool,
 ) {
+    let label = setup.devices.sources_label().unwrap_or_else(|| "Sources".into());
     toolbar_menu(
         ui,
         ph::DEVICE_MOBILE,
-        if compact { "" } else { "Connect" },
+        if compact { "" } else { &label },
+        true,
         |ui| {
             let rows = device_rows(setup);
             let labels: Vec<&str> = rows
                 .iter()
                 .filter_map(|row| match row {
-                    Row::Note(l) | Row::Device(l, _) | Row::Copy(l, _) => Some(l.as_str()),
+                    Row::Note(l) | Row::Device(l, _) | Row::Toggle(l, ..) | Row::Copy(l, _) => Some(l.as_str()),
                     Row::Separator => None,
                 })
                 .collect();
             menu_width(ui, &labels);
+            let (copies, rows): (Vec<Row>, Vec<Row>) =
+                rows.into_iter().partition(|r| matches!(r, Row::Copy(..)));
             for row in rows {
                 match row {
                     Row::Note(text) => {
@@ -636,14 +644,31 @@ fn devices_menu(
                             ui.close();
                         }
                     }
-                    Row::Copy(label, text) => {
-                        if menu_item(ui, &label).clicked() {
-                            ctx.copy_text(text);
-                            ui.close();
+                    Row::Toggle(label, on, action) => {
+                        let icon = if on { ph::CHECK_SQUARE } else { ph::SQUARE };
+                        // stays open so the flipped checkbox confirms the change
+                        if menu_item(ui, &ico(icon, &label)).clicked() {
+                            out.push(ToolbarIntent::Device(action));
                         }
                     }
+                    Row::Copy(..) => {}
                 }
             }
+            submenu_item(ui, &ico(ph::COPY, "Copy"), |ui| {
+                let labels: Vec<&str> = copies
+                    .iter()
+                    .filter_map(|r| if let Row::Copy(l, _) = r { Some(l.as_str()) } else { None })
+                    .collect();
+                menu_width(ui, &labels);
+                for row in copies {
+                    if let Row::Copy(label, text) = row
+                        && menu_item(ui, &label).clicked()
+                    {
+                        ctx.copy_text(text);
+                        ui.close();
+                    }
+                }
+            });
         },
     );
 }

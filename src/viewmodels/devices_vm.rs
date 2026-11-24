@@ -5,7 +5,7 @@ use crate::domain::pac::Route;
 use crate::domain::repaint::Repaint;
 use crate::services::devices::{self, DeviceSnapshot};
 use crate::services::sysproxy;
-pub use crate::services::devices::{IosCaStatus, IosSimulator, IosSimulatorState};
+pub use crate::services::devices::{AndroidDevice, IosCaStatus, IosSimulator, IosSimulatorState};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -20,6 +20,7 @@ const POLL_AFTER_ACTION: Duration = Duration::from_secs(1);
 /// several subprocesses.
 pub struct DevicesVm {
     pub ios_simulators: Vec<IosSimulator>,
+    pub android: Vec<AndroidDevice>,
     /// Global or PAC proxy active on any network service.
     pub system_proxy_enabled: bool,
     global_enabled: bool,
@@ -47,6 +48,7 @@ impl DevicesVm {
         let (tx, rx) = channel();
         Self {
             ios_simulators: vec![],
+            android: vec![],
             system_proxy_enabled: false,
             global_enabled: false,
             pac_enabled: false,
@@ -114,6 +116,7 @@ impl DevicesVm {
         self.polling = false;
         self.next_poll = Instant::now() + POLL_EVERY;
         self.ios_simulators = snapshot.ios_simulators;
+        self.android = snapshot.android;
         if let Some(ours) = snapshot.system_proxy_ours {
             self.global_enabled = ours;
         }
@@ -149,6 +152,23 @@ impl DevicesVm {
             Some(Route::All) => None,
             None => self.pac_enabled.then_some(0),
         }
+    }
+
+    /// Routes feeding the proxy, for the toolbar chip. None when nothing is routed.
+    pub fn sources_label(&self) -> Option<String> {
+        let mut parts = vec![];
+        if self.system_proxy_enabled {
+            parts.push(match self.hosts_only() {
+                Some(1) => "System · 1 host".to_string(),
+                Some(n) => format!("System · {n} hosts"),
+                None => "System".to_string(),
+            });
+        }
+        match self.android.iter().filter(|d| d.proxied).count() {
+            0 => {}
+            n => parts.push(format!("{n} Android")),
+        }
+        (!parts.is_empty()).then(|| parts.join(" · "))
     }
 
     pub fn proxy_only_setting(&self) -> (bool, usize) {
@@ -217,8 +237,13 @@ impl DevicesVm {
             }
             DeviceAction::IosSimReboot(udid) => jobs.spawn(move || devices::ios_sim_reboot(&udid)),
             DeviceAction::AndroidSetProxy => jobs.spawn(move || devices::android_set_proxy(port)),
-            DeviceAction::AndroidClearProxy => {
-                jobs.spawn(move || devices::android_clear_proxy(port))
+            DeviceAction::AndroidToggleProxy(serial) => {
+                let enable = !self.android.iter().any(|d| d.serial == serial && d.proxied);
+                if let Some(d) = self.android.iter_mut().find(|d| d.serial == serial) {
+                    // optimistic, so the checkbox flips now; the next poll confirms it
+                    d.proxied = enable;
+                }
+                jobs.spawn(move || devices::android_toggle_proxy(&serial, port, enable))
             }
             DeviceAction::AndroidInstallCa => {
                 jobs.spawn(move || devices::android_install_ca(&cert))
@@ -265,6 +290,7 @@ mod tests {
         );
         vm.apply(DeviceSnapshot {
             ios_simulators: sims,
+            android: vec![],
             system_proxy_ours: Some(false),
             pac_ours: Some(false),
         });
@@ -292,6 +318,7 @@ mod tests {
         vm.global_enabled = true;
         vm.apply(DeviceSnapshot {
             ios_simulators: vec![],
+            android: vec![],
             system_proxy_ours: None,
             pac_ours: None,
         });
@@ -333,10 +360,35 @@ mod tests {
     }
 
     #[test]
+    fn sources_label_names_active_routes() {
+        let mut vm = vm_with(vec![]);
+        assert_eq!(vm.sources_label(), None);
+        vm.system_proxy_enabled = true;
+        vm.applied = Some(Route::All);
+        assert_eq!(vm.sources_label().as_deref(), Some("System"));
+        vm.applied = Some(Route::Hosts(vec!["a.com".into()]));
+        assert_eq!(vm.sources_label().as_deref(), Some("System · 1 host"));
+        vm.applied = Some(Route::Hosts(vec!["a.com".into(), "b.com".into()]));
+        assert_eq!(vm.sources_label().as_deref(), Some("System · 2 hosts"));
+        vm.android = vec![AndroidDevice {
+            serial: "emulator-5554".into(),
+            name: "Pixel".into(),
+            proxied: true,
+        }];
+        assert_eq!(
+            vm.sources_label().as_deref(),
+            Some("System · 2 hosts · 1 Android")
+        );
+        vm.system_proxy_enabled = false;
+        assert_eq!(vm.sources_label().as_deref(), Some("1 Android"));
+    }
+
+    #[test]
     fn pac_poll_counts_as_system_proxy_on() {
         let mut vm = vm_with(vec![]);
         vm.apply(DeviceSnapshot {
             ios_simulators: vec![],
+            android: vec![],
             system_proxy_ours: Some(false),
             pac_ours: Some(true),
         });

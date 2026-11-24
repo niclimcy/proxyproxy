@@ -92,7 +92,7 @@ pub fn show(
                                 ctx.copy_text(command);
                                 out.push(RowIntent::TestCommandCopied);
                             }
-                            ui.label(muted("or use Connect → Enable system proxy"));
+                            ui.label(muted("or use Sources → System proxy"));
                         });
                         ui.add_space(12.0);
                         ui.label(muted("The first request will appear here. Select it to inspect the request and response."));

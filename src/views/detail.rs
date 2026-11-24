@@ -147,7 +147,7 @@ pub fn show(
                 }
                 segmented(ui, &mut vm.tab, &tabs);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    toolbar_menu(ui, ph::COPY, "Copy as", |ui| {
+                    toolbar_menu(ui, ph::COPY, "Copy as", false, |ui| {
                         menu_width(ui, &["Python requests"]);
                         for (l, s) in [
                             ("URL", f.url()),

@@ -57,52 +57,78 @@ fn each_android(f: impl Fn(&str) -> Res) -> Res {
 }
 
 // `adb reverse` lets emulators and USB devices reach the host proxy via localhost
-pub fn android_set_proxy(port: u16) -> Res {
+fn set_proxy_on(serial: &str, port: u16) -> Res {
     let p = port.to_string();
-    let addr = format!("127.0.0.1:{port}");
-    each_android(|d| {
-        run(
-            "adb",
-            &["-s", d, "reverse", &format!("tcp:{p}"), &format!("tcp:{p}")],
-        )?;
-        run(
-            "adb",
-            &[
-                "-s",
-                d,
-                "shell",
-                "settings",
-                "put",
-                "global",
-                "http_proxy",
-                &addr,
-            ],
-        )
-    })
-    .map(|s| format!("Proxy enabled on {s}"))
+    run(
+        "adb",
+        &["-s", serial, "reverse", &format!("tcp:{p}"), &format!("tcp:{p}")],
+    )?;
+    run(
+        "adb",
+        &["-s", serial, "shell", "settings", "put", "global", "http_proxy", &proxy_addr(port)],
+    )
 }
 
-pub fn android_clear_proxy(port: u16) -> Res {
-    each_android(|d| {
-        let _ = run(
-            "adb",
-            &["-s", d, "reverse", "--remove", &format!("tcp:{port}")],
-        );
-        run(
-            "adb",
-            &[
-                "-s",
-                d,
-                "shell",
-                "settings",
-                "put",
-                "global",
-                "http_proxy",
-                ":0",
-            ],
-        )
-    })
-    .map(|s| format!("Proxy cleared on {s}"))
+fn clear_proxy_on(serial: &str, port: u16) -> Res {
+    let _ = run(
+        "adb",
+        &["-s", serial, "reverse", "--remove", &format!("tcp:{port}")],
+    );
+    run(
+        "adb",
+        &["-s", serial, "shell", "settings", "put", "global", "http_proxy", ":0"],
+    )
+}
+
+fn proxy_addr(port: u16) -> String {
+    format!("127.0.0.1:{port}")
+}
+
+pub fn android_set_proxy(port: u16) -> Res {
+    each_android(|d| set_proxy_on(d, port)).map(|s| format!("Proxy enabled on {s}"))
+}
+
+pub fn android_toggle_proxy(serial: &str, port: u16, enable: bool) -> Res {
+    if enable {
+        set_proxy_on(serial, port).map(|_| format!("Proxy enabled on {serial}"))
+    } else {
+        clear_proxy_on(serial, port).map(|_| format!("Proxy cleared on {serial}"))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AndroidDevice {
+    pub serial: String,
+    pub name: String,
+    /// Pointing at our proxy right now.
+    pub proxied: bool,
+}
+
+// One adb call per device: line 1 is the global proxy setting, line 2 the model.
+fn parse_android_state(serial: &str, out: &str, port: u16) -> AndroidDevice {
+    let mut lines = out.lines().map(str::trim);
+    let proxy = lines.next().unwrap_or("");
+    let model = lines.next().unwrap_or("");
+    AndroidDevice {
+        serial: serial.to_string(),
+        name: if model.is_empty() { serial } else { model }.to_string(),
+        proxied: proxy == proxy_addr(port),
+    }
+}
+
+fn android_devices(port: u16) -> Vec<AndroidDevice> {
+    adb_devices()
+        .unwrap_or_default()
+        .iter()
+        .map(|serial| {
+            let out = run(
+                "adb",
+                &["-s", serial, "shell", "settings get global http_proxy; getprop ro.product.model"],
+            )
+            .unwrap_or_default();
+            parse_android_state(serial, &out, port)
+        })
+        .collect()
 }
 
 // Android 7+ apps ignore user CAs unless their network security config opts in
@@ -292,6 +318,7 @@ pub fn ios_sim_reboot(_: &str) -> Res {
 
 pub struct DeviceSnapshot {
     pub ios_simulators: Vec<IosSimulator>,
+    pub android: Vec<AndroidDevice>,
     /// `None` where we can't read the system proxy setting.
     pub system_proxy_ours: Option<bool>,
     /// `None` where we can't read the auto-proxy (PAC) setting.
@@ -313,6 +340,7 @@ pub fn snapshot(cert: &str, port: u16) -> DeviceSnapshot {
     };
     DeviceSnapshot {
         ios_simulators: ios,
+        android: android_devices(port),
         system_proxy_ours: sysproxy::system_proxy_status(port).ok(),
         pac_ours: sysproxy::pac_status().ok(),
     }
@@ -399,6 +427,19 @@ pub fn launch_chrome(port: u16) -> Res {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
+    use super::parse_android_state;
+
+    #[test]
+    fn android_state_reads_proxy_and_model() {
+        let d = parse_android_state("emulator-5554", "127.0.0.1:9090\nPixel 8\n", 9090);
+        assert!(d.proxied);
+        assert_eq!(d.name, "Pixel 8");
+        let d = parse_android_state("emulator-5554", "null\n\n", 9090);
+        assert!(!d.proxied, "unset proxy reads as null");
+        assert_eq!(d.name, "emulator-5554", "falls back to the serial");
+        assert!(!parse_android_state("s", "127.0.0.1:1234\nx", 9090).proxied);
+    }
+
     use super::*;
 
     #[test]

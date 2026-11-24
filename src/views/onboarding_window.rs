@@ -319,9 +319,9 @@ fn web_setup(ui: &mut egui::Ui, devices: &DevicesVm, out: &mut Vec<OnboardingInt
     }
     ui.add_space(8.0);
     let (state, color, action) = if devices.system_proxy_enabled {
-        ("System capture enabled", success(), "Disable system proxy")
+        ("System proxy on", success(), "Disable system proxy")
     } else {
-        ("System capture disabled", fg_muted(), "Enable system proxy")
+        ("System proxy off", fg_muted(), "Enable system proxy")
     };
     ui.label(RichText::new(state).color(color));
     if action_button_sized(ui, ph::GEAR_SIX, action, accent(), 240.0, true).clicked() {

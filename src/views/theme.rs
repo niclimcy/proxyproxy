@@ -659,9 +659,17 @@ fn panel_toggle(
 }
 
 /// Toolbar menu trigger, styled like `icon_button`.
-pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, add: impl FnOnce(&mut egui::Ui)) {
+/// `keep_open`: clicks inside don't close the menu, so rows must call `ui.close()` themselves.
+pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, keep_open: bool, add: impl FnOnce(&mut egui::Ui)) {
+    let close = if keep_open {
+        egui::PopupCloseBehavior::CloseOnClickOutside
+    } else {
+        egui::PopupCloseBehavior::CloseOnClick
+    };
     secondary(ui, |ui| {
-        ui.menu_button(RichText::new(ico(icon, label)).size(FS_SMALL), add);
+        egui::containers::menu::MenuButton::new(RichText::new(ico(icon, label)).size(FS_SMALL))
+            .config(egui::containers::menu::MenuConfig::new().close_behavior(close))
+            .ui(ui, add);
     });
 }
 
@@ -693,6 +701,31 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
 }
 
 /// Size a popup to its longest label instead of inheriting toolbar width.
+/// A `menu_item` that opens a submenu; stays highlighted while it is open so the
+/// parent row still reads as the origin.
+pub fn submenu_item(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
+    // reserve a slot below the row's own shapes, filled once we know the submenu is open
+    let open_bg = ui.painter().add(egui::Shape::Noop);
+    let resp = menu_item(ui, label);
+    ui.painter().text(
+        egui::pos2(resp.rect.max.x - 14.0, resp.rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        egui_phosphor::regular::CARET_RIGHT,
+        egui::FontId::proportional(FS_SMALL),
+        fg_muted(),
+    );
+    if egui::containers::menu::SubMenu::new().show(ui, &resp, add).is_some() {
+        ui.painter().set(
+            open_bg,
+            egui::Shape::rect_filled(
+                resp.rect,
+                CornerRadius::same(RADIUS_SM),
+                ui.visuals().widgets.hovered.weak_bg_fill,
+            ),
+        );
+    }
+}
+
 pub fn menu_width(ui: &mut egui::Ui, labels: &[&str]) {
     let width = labels
         .iter()

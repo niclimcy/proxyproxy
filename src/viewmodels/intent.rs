@@ -84,7 +84,7 @@ pub enum DeviceAction {
     InstallMissingIosCas,
     IosSimReboot(String),
     AndroidSetProxy,
-    AndroidClearProxy,
+    AndroidToggleProxy(String),
     AndroidInstallCa,
 }
 
