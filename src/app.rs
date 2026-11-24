@@ -161,7 +161,7 @@ impl App {
             port: self.port,
             cert: &self.cert,
             devices: &self.devices,
-            show_rules: &mut self.rules.show,
+            show_rules: self.rules.show,
             active_rules,
             status: &self.status.text,
             api_port: self.api_port,
@@ -184,6 +184,7 @@ impl App {
                     self.rules.tab = RulesTab::Scope;
                 }
                 ToolbarIntent::Onboarding => self.onboarding.open(),
+                ToolbarIntent::ToggleRules => self.rules.show = !self.rules.show,
                 other => self.capture.handle_toolbar(other),
             }
         }

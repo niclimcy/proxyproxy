@@ -222,6 +222,8 @@ impl CaptureVm {
                 let mut c = self.cfg.lock().unwrap();
                 c.capture_paused = !c.capture_paused;
             }
+            ToolbarIntent::ToggleSidebar => self.show_sidebar = !self.show_sidebar,
+            ToolbarIntent::ToggleFollow => self.follow = !self.follow,
             ToolbarIntent::ToggleToken(t) => self.toggle_token(t),
             ToolbarIntent::LoadQuery(q) => self.filter = q,
             ToolbarIntent::SaveQuery => {
@@ -253,6 +255,7 @@ impl CaptureVm {
             | ToolbarIntent::ShowBreakpoint
             | ToolbarIntent::ShowScope
             | ToolbarIntent::Onboarding
+            | ToolbarIntent::ToggleRules
             | ToolbarIntent::Session(_)
             | ToolbarIntent::Device(_) => {}
         }
@@ -379,7 +382,7 @@ impl CaptureVm {
 
     pub fn handle_shortcut(&mut self, intent: ShortcutIntent) -> Option<Effect> {
         match intent {
-            ShortcutIntent::ToggleSidebar => self.show_sidebar = !self.show_sidebar,
+            ShortcutIntent::ToggleSidebar => self.handle_toolbar(ToolbarIntent::ToggleSidebar),
             ShortcutIntent::FocusSearch => self.focus_search = true,
             ShortcutIntent::ClearFilter => self.filter.clear(),
             ShortcutIntent::Step(down) => self.step(down),
@@ -494,6 +497,17 @@ mod tests {
         assert_eq!(vm.sort, None);
         vm.cycle_sort(4);
         assert_eq!(vm.sort, Some((4, true)));
+    }
+
+    #[test]
+    fn sidebar_and_follow_toggle_through_intents() {
+        let (mut vm, _) = setup(0);
+        let (sidebar, follow) = (vm.show_sidebar, vm.follow);
+        vm.handle_toolbar(ToolbarIntent::ToggleSidebar);
+        vm.handle_toolbar(ToolbarIntent::ToggleFollow);
+        assert_eq!((vm.show_sidebar, vm.follow), (!sidebar, !follow));
+        vm.handle_shortcut(ShortcutIntent::ToggleSidebar);
+        assert_eq!(vm.show_sidebar, sidebar);
     }
 
     #[test]

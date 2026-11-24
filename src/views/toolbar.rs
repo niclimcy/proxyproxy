@@ -10,7 +10,7 @@ pub struct Props<'a> {
     pub port: u16,
     pub cert: &'a str,
     pub devices: &'a DevicesVm,
-    pub show_rules: &'a mut bool,
+    pub show_rules: bool,
     pub active_rules: usize,
     pub status: &'a str,
     pub api_port: u16,
@@ -51,7 +51,7 @@ pub fn show(
                 port,
                 cert,
                 devices,
-                show_rules: &mut *show_rules,
+                show_rules,
                 active_rules,
                 status,
                 api_port,
@@ -62,7 +62,7 @@ pub fn show(
         } else {
             ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
-                vm.show_sidebar = !vm.show_sidebar;
+                out.push(ToolbarIntent::ToggleSidebar);
             }
             record_pill(ui, vm.capture_paused(), port, &mut out);
             ui.add_space(8.0);
@@ -82,9 +82,9 @@ pub fn show(
             saved_menu(ui, vm, &mut out);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
-                let tip = format!("{} rules panel", if *show_rules { "Hide" } else { "Show" });
-                if right_panel_toggle(ui, *show_rules, &label, tip).clicked() {
-                    *show_rules = !*show_rules;
+                let tip = format!("{} rules panel", if show_rules { "Hide" } else { "Show" });
+                if right_panel_toggle(ui, show_rules, &label, tip).clicked() {
+                    out.push(ToolbarIntent::ToggleRules);
                 }
                 capsule(ui, |ui| {
                     // right_to_left parent: add in reverse visual order
@@ -138,7 +138,7 @@ pub fn show(
                     .on_hover_text("Keep the newest request in view")
                     .clicked()
                 {
-                    vm.follow = !vm.follow;
+                    out.push(ToolbarIntent::ToggleFollow);
                 }
                 let hidden = vm.hidden_cols();
                 toolbar_menu(ui, ph::COLUMNS, "Columns", false, |ui| {
@@ -191,7 +191,7 @@ fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<Tool
                 .on_hover_text("Keep the newest request in view")
                 .clicked()
             {
-                vm.follow = !vm.follow;
+                out.push(ToolbarIntent::ToggleFollow);
             }
             toolbar_menu(ui, ph::COLUMNS, "Columns", false, |ui| {
                 for c in ALL_COLS.iter().skip(1) {
@@ -237,7 +237,7 @@ fn compact_primary_rows(
     };
     ui.horizontal(|ui| {
         if sidebar_toggle(ui, vm.show_sidebar).clicked() {
-            vm.show_sidebar = !vm.show_sidebar;
+            out.push(ToolbarIntent::ToggleSidebar);
         }
         record_pill(ui, vm.capture_paused(), port, out);
         let search_width = (ui.available_width() - 8.0).max(180.0);
@@ -295,13 +295,13 @@ fn compact_primary_rows(
             };
             if right_panel_toggle(
                 ui,
-                *show_rules,
+                show_rules,
                 &label,
-                format!("{} rules panel", if *show_rules { "Hide" } else { "Show" }),
+                format!("{} rules panel", if show_rules { "Hide" } else { "Show" }),
             )
             .clicked()
             {
-                *show_rules = !*show_rules;
+                out.push(ToolbarIntent::ToggleRules);
             }
         });
     });

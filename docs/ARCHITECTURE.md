@@ -24,7 +24,7 @@ src/
 
 - `domain/`, `services/`, `proxy/` and `viewmodels/` don't import `egui` or `eframe`.
 - Repaint requests go through the `domain::repaint::Repaint` trait. `app.rs` implements it for `egui::Context`.
-- A view reads a viewmodel and returns intents. Text fields may edit a viewmodel field directly; everything else is an intent.
+- A view reads a viewmodel and returns intents. A widget may bind a viewmodel field directly only when the field is pure view state: text being typed, the selected tab or view mode, whether a window or panel is open, and one-shot focus requests the view consumes. Anything that changes captured flows, config, or another viewmodel is an intent.
 
 ## Data flow
 
