@@ -52,6 +52,7 @@ fn choice_card(
     width: f32,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 132.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, title));
     let hovered = response.hovered();
     let painter = ui.painter();
     painter.rect_filled(

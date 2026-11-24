@@ -674,6 +674,7 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
 /// Size a popup to its longest label instead of inheriting toolbar width.
 pub fn menu_width(ui: &mut egui::Ui, labels: &[&str]) {
     let width = labels
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         .iter()
         .map(|label| {
             ui.painter()
@@ -863,6 +864,7 @@ pub fn action_button_sized(
         rect,
         CornerRadius::same(RADIUS_SM),
         fill,
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, text));
         stroke,
         egui::StrokeKind::Inside,
     );
