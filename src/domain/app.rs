@@ -72,6 +72,7 @@ pub fn is_android_emulator(process: &str) -> bool {
     p.starts_with("qemu-system") || p.starts_with("emulator")
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // only macOS builds produce this
 pub fn parse_info(v: &serde_json::Value, bundle: &Path) -> BundleInfo {
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty());
     let stem = bundle

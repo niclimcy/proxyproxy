@@ -40,6 +40,7 @@ impl AppMenu {
     }
 }
 
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))] // only native menus emit these
 #[derive(Debug, PartialEq, Eq)]
 pub enum MenuRequest {
     SetupGuide,

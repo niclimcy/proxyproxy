@@ -168,6 +168,7 @@ pub struct IosSimulator {
     pub data_path: String,
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // only macOS builds produce these
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IosSimulatorState {
     Booted,
@@ -175,6 +176,7 @@ pub enum IosSimulatorState {
     Other,
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // only macOS builds produce these
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IosCaStatus {
     Installed,
