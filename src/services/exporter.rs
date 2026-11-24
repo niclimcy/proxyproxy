@@ -247,6 +247,7 @@ mod tests {
             duration_ms: Some(12),
             tag: String::new(),
             app: String::new(),
+            app_id: None,
             pinned: false,
             comment: String::new(),
             color: None,

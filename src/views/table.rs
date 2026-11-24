@@ -1,6 +1,7 @@
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::viewmodels::intent::RowIntent;
 use crate::viewmodels::rules_vm::RuleKind;
+use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::theme::*;
 use eframe::egui::{self, Frame, Margin, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -182,7 +183,19 @@ pub fn show(
                             ui.label(RichText::new(f.id.to_string()).monospace().color(fg_muted()));
                         }
                         "App" => {
-                            ui.label(RichText::new(f.app_label()).color(fg_muted()));
+                            let name = f.app_label();
+                            // a flow whose own lookup failed borrows the icon of the same-named app
+                            let own = f.display_identity();
+                            let ident = own
+                                .as_deref()
+                                .filter(|i| !i.icon_key.is_empty())
+                                .or_else(|| vm.app_ids.get(&name))
+                                .or(own.as_deref());
+                            let icon = app_icon(ui, &vm.icons, &name, ident);
+                            if app_label_hover(icon, &name, ident).clicked() {
+                                out.push(RowIntent::FilterApp(name.clone()));
+                            }
+                            ui.label(RichText::new(name).color(fg_muted()));
                         }
                         "Method" => {
                             badge(ui, if f.is_ws { "WS" } else { &f.method }, if f.is_ws { violet() } else { method_color(&f.method) });

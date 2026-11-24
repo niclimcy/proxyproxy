@@ -55,6 +55,29 @@ pub fn has_path_entries(entries: &[String]) -> bool {
     })
 }
 
+/// `file:` URL for a PAC path: `file:///C:/Users/a%20b/x.pac` on Windows, `file:///home/x.pac`
+/// elsewhere. Takes a string so the Windows shapes are testable on any host.
+pub fn file_url(path: &str) -> String {
+    let p = path.replace('\\', "/");
+    let p = p.strip_prefix("//?/").unwrap_or(&p);
+    let enc: String = p
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    if let Some(unc) = enc.strip_prefix("//") {
+        format!("file://{unc}")
+    } else if enc.starts_with('/') {
+        format!("file://{enc}")
+    } else {
+        format!("file:///{enc}")
+    }
+}
+
 /// `hosts` must come from `normalize_hosts`. A bare host also covers its subdomains,
 /// matching how scope entries behave.
 pub fn pac_script(hosts: &[String], port: u16) -> String {
@@ -151,5 +174,14 @@ mod tests {
     fn old_config_without_proxy_only_still_loads() {
         let c: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
         assert!(!c.proxy_only && c.proxy_only_hosts.is_empty());
+    }
+
+    #[test]
+    fn file_urls_per_platform() {
+        assert_eq!(file_url("/Users/a b/Library/x.pac"), "file:///Users/a%20b/Library/x.pac");
+        assert_eq!(file_url(r"C:\Users\a b\AppData\Roaming\proxyproxy\x.pac"), "file:///C:/Users/a%20b/AppData/Roaming/proxyproxy/x.pac");
+        assert_eq!(file_url(r"\\?\C:\x.pac"), "file:///C:/x.pac");
+        assert_eq!(file_url(r"\\srv\share\x.pac"), "file://srv/share/x.pac");
+        assert_eq!(file_url("/h/é.pac"), "file:///h/%C3%A9.pac");
     }
 }

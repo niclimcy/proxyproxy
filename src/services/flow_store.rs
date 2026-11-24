@@ -56,9 +56,12 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
             }
             true
         }
-        Event::App { id, app } => {
+        Event::App { id, app, identity } => {
             if let Some(f) = find(flows, *id) {
                 f.app = app.clone();
+                if identity.is_some() {
+                    f.app_id = identity.clone();
+                }
             }
             true
         }
@@ -167,6 +170,7 @@ impl FlowStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::app::AppIdentity;
     use crate::domain::flow::{Dir, Message, WsMsg};
     use std::time::Instant;
 
@@ -186,6 +190,7 @@ mod tests {
             duration_ms: None,
             tag: String::new(),
             app: String::new(),
+            app_id: None,
             pinned: false,
             comment: String::new(),
             color: None,
@@ -282,10 +287,33 @@ mod tests {
             &mut fs,
             &Event::App {
                 id: 1,
-                app: "curl".into()
+                app: "curl".into(),
+                identity: None
             }
         ));
         assert_eq!(fs[0].app, "curl");
+        let identity = AppIdentity {
+            name: "Maps".into(),
+            ..Default::default()
+        };
+        apply(
+            &mut fs,
+            &Event::App {
+                id: 1,
+                app: "Maps".into(),
+                identity: Some(identity.clone()),
+            },
+        );
+        assert_eq!(fs[0].app_id, Some(identity));
+        apply(
+            &mut fs,
+            &Event::App {
+                id: 1,
+                app: "Maps".into(),
+                identity: None,
+            },
+        );
+        assert!(fs[0].app_id.is_some());
     }
 
     #[test]
@@ -312,7 +340,8 @@ mod tests {
         assert_eq!(s.rev(), r);
         assert!(s.ingest(&Event::App {
             id: 1,
-            app: "a".into()
+            app: "a".into(),
+            identity: None
         }));
         assert!(s.rev() > r);
     }

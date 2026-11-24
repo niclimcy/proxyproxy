@@ -1,13 +1,18 @@
+use super::sysproxy;
 use crate::domain::pac::Route;
 use std::process::Command;
 
 type Res = Result<String, String>;
 
-fn run(cmd: &str, args: &[&str]) -> Res {
-    let out = Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("{cmd}: {e}"))?;
+pub(crate) fn run(cmd: &str, args: &[&str]) -> Res {
+    let mut c = Command::new(cmd);
+    c.args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000); // no console flash
+    }
+    let out = c.output().map_err(|e| format!("{cmd}: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if out.status.success() {
         Ok(text)
@@ -294,222 +299,32 @@ pub struct DeviceSnapshot {
 }
 
 /// Runs several subprocesses; call it off the UI thread.
-#[cfg(target_os = "macos")]
 pub fn snapshot(cert: &str, port: u16) -> DeviceSnapshot {
-    let mut ios_simulators = ios_simulators().unwrap_or_default();
-    refresh_ios_ca_status(&mut ios_simulators, cert);
+    #[cfg(target_os = "macos")]
+    let ios = {
+        let mut sims = ios_simulators().unwrap_or_default();
+        refresh_ios_ca_status(&mut sims, cert);
+        sims
+    };
+    #[cfg(not(target_os = "macos"))]
+    let ios = {
+        let _ = cert;
+        vec![]
+    };
     DeviceSnapshot {
-        ios_simulators,
-        system_proxy_ours: system_proxy_status(port).ok(),
-        pac_ours: pac_status().ok(),
+        ios_simulators: ios,
+        system_proxy_ours: sysproxy::system_proxy_status(port).ok(),
+        pac_ours: sysproxy::pac_status().ok(),
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn snapshot(_: &str, _: u16) -> DeviceSnapshot {
-    DeviceSnapshot {
-        ios_simulators: vec![],
-        system_proxy_ours: None,
-        pac_ours: None,
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn services() -> Result<Vec<String>, String> {
-    Ok(run("networksetup", &["-listallnetworkservices"])?
-        .lines()
-        .skip(1)
-        .filter(|l| !l.starts_with('*'))
-        .map(String::from)
-        .collect())
-}
-
-#[cfg(target_os = "macos")]
-fn networksetup_field(text: &str, name: &str) -> Option<String> {
-    text.lines()
-        .filter_map(|l| l.split_once(':'))
-        .find(|(k, _)| k.trim() == name)
-        .map(|(_, v)| v.trim().to_string())
-}
-
-// A proxy the user configured themselves (e.g. a corporate one) is not ours.
-#[cfg(target_os = "macos")]
-fn web_proxy_is_ours(getwebproxy: &str, port: u16) -> bool {
-    let field = |name| networksetup_field(getwebproxy, name);
-    field("Enabled").as_deref() == Some("Yes")
-        && field("Server").as_deref() == Some("127.0.0.1")
-        && field("Port") == Some(port.to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn pac_path() -> std::path::PathBuf {
-    crate::proxy::tls::dir().join("proxyproxy.pac")
-}
-
-// `networksetup` takes a URL, and the app data dir has a space on macOS
-#[cfg(target_os = "macos")]
-fn pac_url() -> String {
-    format!("file://{}", pac_path().display().to_string().replace(' ', "%20"))
-}
-
-#[cfg(target_os = "macos")]
-fn pac_is_ours(getautoproxyurl: &str) -> bool {
-    networksetup_field_url(getautoproxyurl).as_deref() == Some(pac_url().as_str())
-        && networksetup_field(getautoproxyurl, "Enabled").as_deref() == Some("Yes")
-}
-
-// the URL value contains ':' so the generic field split would cut it
-#[cfg(target_os = "macos")]
-fn networksetup_field_url(text: &str) -> Option<String> {
-    text.lines()
-        .find_map(|l| l.strip_prefix("URL:"))
-        .map(|v| v.trim().to_string())
-}
-
-#[cfg(target_os = "macos")]
-pub fn pac_status() -> Result<bool, String> {
-    for service in services()? {
-        if pac_is_ours(&run("networksetup", &["-getautoproxyurl", &service])?) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn pac_status() -> Result<bool, String> {
-    Err("reading the PAC setting is only supported on macOS".into())
-}
-
-/// Whether the system web proxy points at this proxy on any network service.
-#[cfg(target_os = "macos")]
-pub fn system_proxy_status(port: u16) -> Result<bool, String> {
-    for service in services()? {
-        let text = run("networksetup", &["-getwebproxy", &service])?;
-        if web_proxy_is_ours(&text, port) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn system_proxy_status(_: u16) -> Result<bool, String> {
-    Err("reading the system proxy is only supported on macOS".into())
-}
-
-#[cfg(target_os = "macos")]
-pub fn system_proxy(enable: bool, port: u16) -> Res {
-    let p = port.to_string();
-    let state = if enable { "on" } else { "off" };
-    for s in services()? {
-        // PAC and a global proxy are exclusive modes
-        if pac_is_ours(&run("networksetup", &["-getautoproxyurl", &s])?) {
-            run("networksetup", &["-setautoproxystate", &s, "off"])?;
-        }
-        if enable {
-            run("networksetup", &["-setwebproxy", &s, "127.0.0.1", &p])?;
-            run("networksetup", &["-setsecurewebproxy", &s, "127.0.0.1", &p])?;
-        }
-        run("networksetup", &["-setwebproxystate", &s, state])?;
-        run("networksetup", &["-setsecurewebproxystate", &s, state])?;
-    }
-    Ok(format!("System proxy {state}"))
 }
 
 /// Routes all traffic, or only the listed hosts, through the proxy. Rerunning it with a
 /// new list rewrites the PAC file; connections already open keep their old route.
 pub fn apply_route(route: &Route, port: u16) -> Res {
     match route {
-        Route::All => system_proxy(true, port),
-        Route::Hosts(hosts) => pac_proxy(hosts, port),
+        Route::All => sysproxy::system_proxy(true, port),
+        Route::Hosts(hosts) => sysproxy::pac_proxy(hosts, port),
     }
-}
-
-#[cfg(target_os = "macos")]
-fn pac_proxy(hosts: &[String], port: u16) -> Res {
-    std::fs::write(pac_path(), crate::domain::pac::pac_script(hosts, port))
-        .map_err(|e| format!("write PAC: {e}"))?;
-    let url = pac_url();
-    for s in services()? {
-        // never touch a web proxy the user configured themselves
-        if web_proxy_is_ours(&run("networksetup", &["-getwebproxy", &s])?, port) {
-            run("networksetup", &["-setwebproxystate", &s, "off"])?;
-            run("networksetup", &["-setsecurewebproxystate", &s, "off"])?;
-        }
-        run("networksetup", &["-setautoproxyurl", &s, &url])?;
-        run("networksetup", &["-setautoproxystate", &s, "on"])?;
-    }
-    Ok(format!("System proxy on for {} host(s) only", hosts.len()))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn pac_proxy(_: &[String], _: u16) -> Res {
-    Err("routing only some hosts needs macOS".into())
-}
-
-#[cfg(target_os = "linux")]
-pub fn system_proxy(enable: bool, port: u16) -> Res {
-    let p = port.to_string();
-    if enable {
-        for k in ["http", "https"] {
-            let schema = format!("org.gnome.system.proxy.{k}");
-            run("gsettings", &["set", &schema, "host", "127.0.0.1"])?;
-            run("gsettings", &["set", &schema, "port", &p])?;
-        }
-    }
-    run(
-        "gsettings",
-        &[
-            "set",
-            "org.gnome.system.proxy",
-            "mode",
-            if enable { "manual" } else { "none" },
-        ],
-    )?;
-    Ok(format!(
-        "System proxy {}",
-        if enable { "on" } else { "off" }
-    ))
-}
-
-#[cfg(target_os = "windows")]
-pub fn system_proxy(enable: bool, port: u16) -> Res {
-    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-    run(
-        "reg",
-        &[
-            "add",
-            key,
-            "/v",
-            "ProxyEnable",
-            "/t",
-            "REG_DWORD",
-            "/d",
-            if enable { "1" } else { "0" },
-            "/f",
-        ],
-    )?;
-    if enable {
-        run(
-            "reg",
-            &[
-                "add",
-                key,
-                "/v",
-                "ProxyServer",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &format!("127.0.0.1:{port}"),
-                "/f",
-            ],
-        )?;
-    }
-    Ok(format!(
-        "System proxy {}",
-        if enable { "on" } else { "off" }
-    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -585,28 +400,6 @@ pub fn launch_chrome(port: u16) -> Res {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_a_web_proxy_on_our_port_counts_as_ours() {
-        let ours = "Enabled: Yes\nServer: 127.0.0.1\nPort: 9090\nAuthenticated Proxy Enabled: 0";
-        assert!(web_proxy_is_ours(ours, 9090));
-        assert!(!web_proxy_is_ours(ours, 9091));
-        assert!(!web_proxy_is_ours(&ours.replace("Yes", "No"), 9090));
-        assert!(!web_proxy_is_ours(
-            &ours.replace("127.0.0.1", "proxy.corp"),
-            9090
-        ));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pac_is_ours_needs_our_url_and_enabled() {
-        let out = |url: &str, on: &str| format!("URL: {url}\nEnabled: {on}\n");
-        assert!(pac_is_ours(&out(&pac_url(), "Yes")));
-        assert!(!pac_is_ours(&out(&pac_url(), "No")));
-        assert!(!pac_is_ours(&out("http://corp/proxy.pac", "Yes")));
-        assert!(!pac_url().contains(' '));
-    }
 
     #[test]
     fn truststore_sha256_match_is_case_insensitive() {

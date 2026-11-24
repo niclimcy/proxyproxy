@@ -13,8 +13,11 @@ dirs = "7.0.0"
 eframe = "0.37.0"
 egui-pop-phosphor = "0.15.0"
 egui_extras = "0.37.0"
+flate2 = "1"
+lzfse_rust = "0.2"
 futures-util = "0.3.34"
 http-body-util = "0.1.5"
+image = { version = "0.25", default-features = false, features = ["png"] }
 hudsucker = { version = "0.25.0", features = ["rcgen-ca", "rustls-client"] }
 hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "tls12", "webpki-tokio"] }
 tower-service = "0.3.3"

@@ -1,9 +1,11 @@
 use crate::domain::flow::{Dir, Flow, Message};
+use crate::services::app_icons::IconStore;
 use crate::services::decode;
 use crate::services::decoders::{ModeId, PRETTY, TREE};
 use crate::services::exporter as ex;
 use crate::viewmodels::detail_vm::{DTab, DetailVm, Side, raw_text, side_tabs};
 use crate::viewmodels::intent::DetailIntent;
+use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::body;
 use crate::views::theme::*;
 use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, TextEdit};
@@ -72,6 +74,7 @@ pub fn show(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     vm: &mut DetailVm,
+    icons: &IconStore,
     selected: Option<u64>,
     has_flows: bool,
 ) -> Vec<DetailIntent> {
@@ -101,6 +104,8 @@ pub fn show(
                 .inner_margin(Margin::symmetric(8, 4))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        let name = f.app_label();
+                        app_label_hover(app_icon(ui, icons, &name, f.app_id.as_ref()), &name, f.app_id.as_ref());
                         badge(
                             ui,
                             if f.is_ws { "WS" } else { &f.method },

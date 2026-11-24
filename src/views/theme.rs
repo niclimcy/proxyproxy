@@ -156,6 +156,7 @@ pub const RADIUS: u8 = 8;
 pub const RADIUS_SM: u8 = 6;
 pub const RADIUS_PILL: u8 = 20;
 pub const HIT: f32 = 28.0;
+pub const ICON_SIZE: f32 = 18.0;
 
 fn visuals(p: &Palette) -> egui::Visuals {
     let mut v = if p.dark {
@@ -723,9 +724,15 @@ pub fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
 }
 
 /// Full-width list row: label left, count right, filled when selected.
+/// Leading slot of a `list_row`: a glyph, or caller-painted content (e.g. an app icon).
+pub enum RowIcon<'a> {
+    Glyph(&'a str),
+    Paint(&'a dyn Fn(&egui::Painter, egui::Rect)),
+}
+
 pub fn list_row(
     ui: &mut egui::Ui,
-    icon: Option<&str>,
+    icon: Option<RowIcon>,
     label: &str,
     count: Option<usize>,
     selected: bool,
@@ -745,15 +752,26 @@ pub fn list_row(
     p.rect_filled(rect, CornerRadius::same(RADIUS_SM), fill);
     let ink = if dim { fg_muted() } else { fg() };
     let mut x = rect.left() + 8.0;
-    if let Some(icon) = icon {
-        p.text(
-            egui::pos2(x, rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            icon,
-            egui::FontId::proportional(FS_BODY),
-            fg_muted(),
-        );
-        x += 22.0;
+    match icon {
+        Some(RowIcon::Glyph(g)) => {
+            p.text(
+                egui::pos2(x, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                g,
+                egui::FontId::proportional(FS_BODY),
+                fg_muted(),
+            );
+            x += 22.0;
+        }
+        Some(RowIcon::Paint(f)) => {
+            let r = egui::Rect::from_min_size(
+                egui::pos2(x, rect.center().y - ICON_SIZE / 2.0),
+                egui::vec2(ICON_SIZE, ICON_SIZE),
+            );
+            f(p, r);
+            x += ICON_SIZE + 6.0;
+        }
+        None => {}
     }
     let right = count.map(|n| {
         let g = p.layout_no_wrap(
@@ -778,7 +796,7 @@ pub fn list_row(
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_w.max(0.0));
     let g = p.layout_job(job);
     p.galley(egui::pos2(x, rect.center().y - g.size().y / 2.0), g, ink);
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    resp
 }
 
 /// Compact monospace badge for table cells (method, status).

@@ -1,5 +1,4 @@
 mod actions;
-mod app_lookup;
 pub mod connector;
 mod handler;
 pub mod http_util;

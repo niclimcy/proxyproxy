@@ -2748,6 +2748,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
+name = "lzfse_rust"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5edeac3ec657925dececc672bdd58fa2212291886ddcb3e08aa46924c78340c6"
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3913,10 +3919,13 @@ dependencies = [
  "eframe",
  "egui-pop-phosphor",
  "egui_extras",
+ "flate2",
  "futures-util",
  "http-body-util",
  "hudsucker",
  "hyper-rustls",
+ "image",
+ "lzfse_rust",
  "muda",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",

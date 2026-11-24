@@ -1,10 +1,12 @@
 use super::actions::{self, Rule};
-use super::app_lookup::lookup_app;
+use crate::services::client_proc::lookup_app;
 use super::http_util::{header_map, headers, strip_default_port, text_response};
 use super::pipeline::{
     self, apply_request_actions, apply_response_actions, request_delay, short_circuit,
 };
 use super::sink::FlowSink;
+use crate::services::app_icons::resolve;
+use crate::domain::app::AppIdentity;
 use crate::domain::config::Shared;
 use crate::domain::flow::{
     self, BpEdit, Decision, Dir, Event, Flow, Message, Paused, Stage, WsMsg,
@@ -139,9 +141,26 @@ impl HttpHandler for Capture {
                 hctx.client_addr.port(),
                 std::process::id(),
             );
+            let header = |n: &str| parts.headers.get(n).and_then(|v| v.to_str().ok()).unwrap_or_default();
+            let package = crate::domain::app::package_hint(header("x-requested-with"), header("user-agent"));
+            let ua_platform = hctx
+                .client_addr
+                .ip()
+                .is_loopback()
+                .then(|| crate::domain::app::platform_from_ua(header("user-agent")))
+                .flatten();
             std::thread::spawn(move || {
-                if let Some(app) = lookup_app(port, own) {
-                    sink.emit(Event::App { id, app });
+                let Some((app, pid)) = lookup_app(port, own) else {
+                    if let Some(p) = ua_platform {
+                        let identity = AppIdentity { platform: p.into(), ..Default::default() };
+                        sink.emit(Event::App { id, app: String::new(), identity: Some(identity) });
+                    }
+                    return;
+                };
+                sink.emit(Event::App { id, app: app.clone(), identity: None });
+                // bundle and icon work is slower, so the name shows first
+                if let Some(identity) = resolve(pid, &app, package) {
+                    sink.emit(Event::App { id, app: identity.name.clone(), identity: Some(identity) });
                 }
             });
         }
@@ -169,6 +188,7 @@ impl HttpHandler for Capture {
             duration_ms: None,
             tag: plan.tag,
             app: String::new(),
+            app_id: None,
             pinned: false,
             comment: String::new(),
             color: None,

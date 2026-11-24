@@ -3,18 +3,24 @@ use super::status::{Flash, Status};
 use crate::domain::config::{Config, Shared};
 use crate::domain::filter::Query;
 use crate::domain::flow::Flow;
+use crate::services::app_icons::IconStore;
 use crate::services::flow_store::FlowStore;
-use std::collections::BTreeMap;
+use crate::domain::app::AppIdentity;
+use std::collections::{BTreeMap, HashMap};
 
 pub const ALL_COLS: [&str; 8] = [
     "#", "App", "Method", "Status", "Host", "Path", "Time", "Size",
 ];
+
+/// How long a new flow may wait for its identity before the sidebar lists it by process name.
+const IDENTITY_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 pub type Tree = Vec<(String, Vec<(String, usize)>)>;
 type VisKey = (u64, String, Option<(usize, bool)>);
 
 pub struct CaptureVm {
     pub store: FlowStore,
+    pub icons: IconStore,
     pub cfg: Shared,
     pub selected: Option<u64>,
     pub filter: String,
@@ -24,7 +30,12 @@ pub struct CaptureVm {
     vis_key: VisKey,
     pub sort: Option<(usize, bool)>,
     pub tree: Tree,
+    /// Simulator and emulator apps, one folder per platform, kept apart from host apps.
+    pub platforms: Vec<(String, Tree)>,
+    pub app_ids: HashMap<String, AppIdentity>,
     tree_rev: u64,
+    /// Flows still waiting for their app identity; the sidebar keeps repainting until they settle.
+    pub tree_pending: usize,
     pub show_sidebar: bool,
     pub follow: bool,
     pub focus_search: bool,
@@ -55,9 +66,10 @@ fn exclude_pattern(f: &Flow) -> String {
 }
 
 impl CaptureVm {
-    pub fn new(store: FlowStore, cfg: Shared) -> Self {
+    pub fn new(store: FlowStore, cfg: Shared, icons: IconStore) -> Self {
         Self {
             store,
+            icons,
             cfg,
             selected: None,
             filter: String::new(),
@@ -67,7 +79,10 @@ impl CaptureVm {
             vis_key: (0, String::new(), None),
             sort: None,
             tree: vec![],
+            platforms: vec![],
+            app_ids: HashMap::new(),
             tree_rev: 0,
+            tree_pending: 0,
             show_sidebar: true,
             follow: true,
             focus_search: false,
@@ -107,20 +122,42 @@ impl CaptureVm {
         if self.tree_rev == st.rev() {
             return;
         }
-        let mut m: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+        type Counts = BTreeMap<String, BTreeMap<String, usize>>;
+        let mut host: Counts = BTreeMap::new();
+        let mut by_platform: BTreeMap<String, Counts> = BTreeMap::new();
+        let mut ids = HashMap::new();
+        let mut pending = 0;
         for f in &st.flows {
-            *m.entry(f.app_label())
-                .or_default()
-                .entry(f.hostname().to_string())
-                .or_default() += 1;
+            // A flow lands under its process name first and moves into its platform folder once the
+            // identity resolves, so hold it back briefly instead of letting the sidebar jump.
+            if f.app_id.is_none() && f.started.elapsed().is_ok_and(|e| e < IDENTITY_GRACE) {
+                pending += 1;
+                continue;
+            }
+            let platform = f.app_id.as_ref().map(|i| i.platform.as_str()).unwrap_or_default();
+            if let Some(id) = f.display_identity() {
+                // identities without an icon (lookup misses) must not shadow a real one
+                let slot = ids.entry(f.app_label()).or_insert_with(|| id.clone().into_owned());
+                if slot.icon_key.is_empty() && !id.icon_key.is_empty() {
+                    *slot = id.into_owned();
+                }
+            }
+            let m = if platform.is_empty() { &mut host } else { by_platform.entry(platform.to_string()).or_default() };
+            *m.entry(f.app_label()).or_default().entry(f.hostname().to_string()).or_default() += 1;
         }
-        self.tree = m
-            .into_iter()
-            .map(|(a, h)| (a, h.into_iter().collect()))
-            .collect();
-        self.tree
-            .sort_by_key(|(_, h)| std::cmp::Reverse(h.iter().map(|(_, n)| n).sum::<usize>()));
-        self.tree_rev = st.rev();
+        let by_volume = |m: Counts| -> Tree {
+            let mut t: Tree = m.into_iter().map(|(a, h)| (a, h.into_iter().collect())).collect();
+            t.sort_by_key(|(_, h)| std::cmp::Reverse(h.iter().map(|(_, n)| n).sum::<usize>()));
+            t
+        };
+        self.tree = by_volume(host);
+        self.platforms = by_platform.into_iter().map(|(p, m)| (p, by_volume(m))).collect();
+        self.app_ids = ids;
+        self.tree_pending = pending;
+        // left stale while flows are pending so the next frame recomputes
+        if pending == 0 {
+            self.tree_rev = st.rev();
+        }
     }
 
     pub fn flow_count(&self) -> usize {
@@ -220,6 +257,14 @@ impl CaptureVm {
     pub fn handle_row(&mut self, intent: RowIntent, status: &mut Status) -> Option<Effect> {
         match intent {
             RowIntent::Select(id) => self.selected = Some(id),
+            RowIntent::FilterApp(app) => {
+                let term = if app.contains(char::is_whitespace) {
+                    format!("app:\"{app}\"")
+                } else {
+                    format!("app:{app}")
+                };
+                self.filter = if self.filter.trim() == term { String::new() } else { term };
+            }
             RowIntent::Sort(c) => self.cycle_sort(c),
             RowIntent::ClearFilter => self.filter.clear(),
             RowIntent::Pin(id) => {
@@ -396,7 +441,11 @@ mod tests {
             f.status = Some(if id % 2 == 0 { 500 } else { 200 });
             store.lock().push(f);
         }
-        let vm = CaptureVm::new(store, Arc::new(Mutex::new(Config::default())));
+        let vm = CaptureVm::new(
+            store,
+            Arc::new(Mutex::new(Config::default())),
+            IconStore::new(std::env::temp_dir(), Arc::new(NoRepaint)),
+        );
         (vm, Status::new(String::new(), Arc::new(NoRepaint)))
     }
 
@@ -635,6 +684,15 @@ mod tests {
     }
 
     #[test]
+    fn filter_app_toggles_and_quotes_names_with_spaces() {
+        let (mut vm, mut status) = setup(1);
+        vm.handle_row(RowIntent::FilterApp("Google Chrome".into()), &mut status);
+        assert_eq!(vm.filter, "app:\"Google Chrome\"");
+        vm.handle_row(RowIntent::FilterApp("Google Chrome".into()), &mut status);
+        assert_eq!(vm.filter, "");
+    }
+
+    #[test]
     fn tree_groups_by_app_then_host_sorted_by_volume() {
         let (mut vm, _) = setup(0);
         for (id, app, host) in [
@@ -657,6 +715,67 @@ mod tests {
             )
         );
         assert_eq!(vm.tree[1].0, "node");
+    }
+
+    #[test]
+    fn platform_filter_scopes_app_and_host_terms() {
+        let (mut vm, _) = setup(0);
+        for (id, platform) in [(1, "iOS Simulator"), (2, "")] {
+            let mut f = Flow::sample(id);
+            f.app = "Safari".into();
+            f.app_id = Some(AppIdentity { platform: platform.into(), ..Default::default() });
+            vm.store.lock().push(f);
+        }
+        vm.set_filter("platform:=\"iOS Simulator\" app:=\"Safari\"".into());
+        vm.refresh_visible();
+        assert_eq!(vm.visible.len(), 1);
+    }
+
+    #[test]
+    fn simulator_safari_page_loads_are_labelled_safari_but_webviews_are_not() {
+        let mk = |ua: &str| {
+            let mut f = Flow::sample(1);
+            f.app = "iOS Simulator".into();
+            f.app_id = Some(AppIdentity { name: "iOS Simulator".into(), platform: "iOS Simulator".into(), ..Default::default() });
+            f.request.headers.push(("user-agent".into(), ua.into()));
+            f
+        };
+        let safari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1";
+        let webview = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
+        assert_eq!(mk(safari).app_label(), "Safari");
+        assert_eq!(mk(webview).app_label(), "iOS Simulator");
+    }
+
+    #[test]
+    fn unresolved_new_flows_stay_out_of_the_tree_until_the_grace_passes() {
+        let (mut vm, _) = setup(0);
+        let mut f = Flow::sample(1);
+        f.app = "curl".into();
+        f.started = std::time::SystemTime::now();
+        vm.store.lock().push(f);
+        vm.refresh_tree();
+        assert!(vm.tree.is_empty());
+        assert_eq!(vm.tree_pending, 1);
+        vm.store.lock().find_mut(1).unwrap().started -= std::time::Duration::from_secs(10);
+        vm.refresh_tree();
+        assert_eq!(vm.tree.len(), 1);
+        assert_eq!(vm.tree_pending, 0);
+    }
+
+    #[test]
+    fn simulator_apps_get_their_own_platform_folder() {
+        let (mut vm, _) = setup(0);
+        for (id, app, platform) in [(1, "curl", ""), (2, "Maps", "iOS Simulator"), (3, "Maps", "iOS Simulator")] {
+            let mut f = Flow::sample(id);
+            f.app = app.into();
+            f.app_id = Some(AppIdentity { name: app.into(), platform: platform.into(), ..Default::default() });
+            vm.store.lock().push(f);
+        }
+        vm.refresh_tree();
+        assert_eq!(vm.tree.len(), 1);
+        assert_eq!(vm.platforms.len(), 1);
+        assert_eq!(vm.platforms[0].0, "iOS Simulator");
+        assert_eq!(vm.platforms[0].1[0].0, "Maps");
     }
 
     #[test]
@@ -703,5 +822,23 @@ mod tests {
         assert!(vm.config_snapshot().muted.is_empty());
         vm.handle_sidebar(SidebarIntent::Pick("host:a".into()));
         assert_eq!(vm.filter, "host:a");
+    }
+
+    #[test]
+    fn safari_page_loads_from_the_shared_sim_process_get_safari_icon() {
+        let (mut vm, _) = setup(0);
+        let mut f = Flow::sample(1);
+        f.app = "iOS Simulator".into();
+        f.app_id = Some(AppIdentity {
+            name: "iOS Simulator".into(),
+            platform: "iOS Simulator".into(),
+            safari_icon_key: "safari-1".into(),
+            ..Default::default()
+        });
+        f.request.headers.push(("user-agent".into(), "Mozilla/5.0 (iPhone) Mobile/15E148 Safari/604.1".into()));
+        f.started -= std::time::Duration::from_secs(10);
+        vm.store.lock().push(f);
+        vm.refresh_tree();
+        assert_eq!(vm.app_ids["Safari"].icon_key, "safari-1");
     }
 }

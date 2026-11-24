@@ -180,7 +180,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         Rig {
             s: SessionVm::new(store.clone(), cfg.clone()),
-            c: CaptureVm::new(store.clone(), cfg.clone()),
+            c: CaptureVm::new(
+                store.clone(),
+                cfg.clone(),
+                crate::services::app_icons::IconStore::new(dir.clone(), Arc::new(NoRepaint)),
+            ),
             r: RulesVm::new(cfg, store),
             st: Status::new(String::new(), Arc::new(NoRepaint)),
             dir,

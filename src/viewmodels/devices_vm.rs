@@ -4,6 +4,7 @@ use crate::domain::config::Shared;
 use crate::domain::pac::Route;
 use crate::domain::repaint::Repaint;
 use crate::services::devices::{self, DeviceSnapshot};
+use crate::services::sysproxy;
 pub use crate::services::devices::{IosCaStatus, IosSimulator, IosSimulatorState};
 use std::sync::{
     Arc,
@@ -190,7 +191,7 @@ impl DevicesVm {
                     self.spawn_proxy_job(status, move || devices::apply_route(&route, port));
                 } else {
                     self.applied = None;
-                    self.spawn_proxy_job(status, move || devices::system_proxy(false, port));
+                    self.spawn_proxy_job(status, move || sysproxy::system_proxy(false, port));
                 }
                 self.next_poll = Instant::now() + POLL_EVERY;
                 return;
@@ -229,9 +230,9 @@ impl DevicesVm {
     /// Turns the system proxy off only if it is ours, never a proxy the user set up.
     pub fn shutdown(&self) {
         let ours = self.proxy_ours
-            || devices::system_proxy_status(self.port).unwrap_or(false)
-            || devices::pac_status().unwrap_or(false);
-        if ours && let Err(e) = devices::system_proxy(false, self.port) {
+            || sysproxy::system_proxy_status(self.port).unwrap_or(false)
+            || sysproxy::pac_status().unwrap_or(false);
+        if ours && let Err(e) = sysproxy::system_proxy(false, self.port) {
             eprintln!("failed to clear system proxy: {e}");
         }
     }

@@ -29,7 +29,7 @@ pub struct Query {
 
 pub const FIELDS: &[&str] = &[
     "host", "path", "url", "method", "status", "app", "type", "size", "time", "body", "req", "res",
-    "header", "query", "is", "gql", "comment", "tag",
+    "header", "query", "is", "gql", "comment", "tag", "platform",
 ];
 
 fn tokens(s: &str) -> Vec<String> {
@@ -157,6 +157,7 @@ fn term_matches(t: &Term, f: &Flow) -> bool {
         "url" => text_op(&t.op, &f.url()),
         "method" => text_op(&t.op, &f.method),
         "app" => text_op(&t.op, &f.app_label()),
+        "platform" => text_op(&t.op, f.app_id.as_ref().map_or("", |i| i.platform.as_str())),
         "tag" => text_op(&t.op, &f.tag),
         "comment" => text_op(&t.op, &f.comment),
         "status" => f
@@ -240,6 +241,7 @@ mod tests {
             duration_ms: Some(120),
             tag: String::new(),
             app: "curl".into(),
+            app_id: None,
             pinned: false,
             comment: String::new(),
             color: None,
@@ -300,6 +302,7 @@ mod characterization {
             duration_ms: None,
             tag: String::new(),
             app: String::new(),
+            app_id: None,
             pinned: false,
             comment: String::new(),
             color: None,

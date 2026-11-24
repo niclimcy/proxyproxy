@@ -22,6 +22,8 @@ pub enum OnboardingIntent {
 
 pub enum RowIntent {
     Select(u64),
+    /// toggle the `app:` filter for this app name
+    FilterApp(String),
     Sort(usize),
     ClearFilter,
     Pin(u64),

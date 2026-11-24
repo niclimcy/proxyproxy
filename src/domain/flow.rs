@@ -96,6 +96,8 @@ pub struct Flow {
     #[serde(default)]
     pub app: String,
     #[serde(default)]
+    pub app_id: Option<crate::domain::app::AppIdentity>,
+    #[serde(default)]
     pub pinned: bool,
     #[serde(default)]
     pub comment: String,
@@ -133,11 +135,36 @@ impl Flow {
         self.response.as_ref().map(|r| r.body.len()).unwrap_or(0)
     }
 
+    // Simulator page loads come from the shared WebKit networking process, not the Safari app.
+    // Only Safari's UA has the `Safari/` token; a WKWebView inside another app omits it.
+    fn is_sim_safari(&self) -> bool {
+        let ua = self.request.header("user-agent").unwrap_or("");
+        let shared_sim_process = self.app_id.as_ref().is_some_and(|i| !i.platform.is_empty() && i.bundle_id.is_empty());
+        shared_sim_process && (ua.contains("iPhone") || ua.contains("iPad")) && ua.contains("Safari/")
+    }
+
+    /// The identity to draw: the shared simulator process borrows Safari's icon for Safari page loads.
+    pub fn display_identity(&self) -> Option<std::borrow::Cow<'_, crate::domain::app::AppIdentity>> {
+        use std::borrow::Cow;
+        let id = self.app_id.as_ref()?;
+        if self.is_sim_safari() && !id.safari_icon_key.is_empty() {
+            return Some(Cow::Owned(crate::domain::app::AppIdentity {
+                name: "Safari".into(),
+                icon_key: id.safari_icon_key.clone(),
+                ..id.clone()
+            }));
+        }
+        Some(Cow::Borrowed(id))
+    }
+
     pub fn app_label(&self) -> String {
+        let ua = self.request.header("user-agent").unwrap_or("");
+        if self.is_sim_safari() {
+            return "Safari".into();
+        }
         if !self.app.is_empty() {
             return self.app.clone();
         }
-        let ua = self.request.header("user-agent").unwrap_or("");
         for k in ["Edg", "Firefox", "Chrome", "Safari"] {
             if ua.contains(k) {
                 return match k {
@@ -166,7 +193,8 @@ impl Flow {
             host: "a.com".into(),
             path: "/".into(),
             version: "HTTP/1.1".into(),
-            started: SystemTime::now(),
+            // old enough that the sidebar doesn't hold it back as unresolved
+            started: SystemTime::now() - std::time::Duration::from_secs(60),
             started_at: Instant::now(),
             request: Message::default(),
             status: None,
@@ -174,6 +202,7 @@ impl Flow {
             duration_ms: None,
             tag: String::new(),
             app: String::new(),
+            app_id: None,
             pinned: false,
             comment: String::new(),
             color: None,
@@ -238,6 +267,7 @@ pub enum Event {
     App {
         id: u64,
         app: String,
+        identity: Option<crate::domain::app::AppIdentity>,
     },
     Log(String),
 }

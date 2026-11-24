@@ -88,7 +88,14 @@ impl App {
         let status_text = session.restore().unwrap_or_default();
         Self {
             rx,
-            capture: CaptureVm::new(store.clone(), cfg.clone()),
+            capture: CaptureVm::new(
+                store.clone(),
+                cfg.clone(),
+                services::app_icons::IconStore::new(
+                    services::app_icons::icons_dir(),
+                    repaint.clone(),
+                ),
+            ),
             detail: DetailVm::new(store.clone()),
             rules: RulesVm::new(cfg.clone(), store.clone()),
             replay: ReplayVm::new(store.clone(), repaint.clone()),
@@ -249,6 +256,7 @@ impl App {
             ui,
             ctx,
             &mut self.detail,
+            &self.capture.icons,
             self.capture.selected,
             self.capture.has_flows(),
         ) {

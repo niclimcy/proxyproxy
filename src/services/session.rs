@@ -44,6 +44,7 @@ mod tests {
             duration_ms: Some(3),
             tag: "t".into(),
             app: "curl".into(),
+            app_id: None,
             pinned: true,
             comment: "c".into(),
             color: Some(2),
@@ -65,6 +66,14 @@ mod tests {
         assert_eq!(b.response.as_ref().unwrap().body, vec![0, 1, 2, 255]);
         assert!(crate::domain::flow::next_id() > 4242);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn flows_saved_before_app_identity_still_load() {
+        let mut v = serde_json::to_value(Flow::sample(1)).unwrap();
+        v.as_object_mut().unwrap().remove("app_id");
+        let f: Flow = serde_json::from_value(v).unwrap();
+        assert!(f.app_id.is_none());
     }
 
     #[test]

@@ -99,6 +99,7 @@ pub fn replayed_flow(
         duration_ms: Some(sent.ms),
         tag: "Replayed".into(),
         app: "proxyproxy".into(),
+        app_id: None,
         pinned: false,
         comment: String::new(),
         color: None,
