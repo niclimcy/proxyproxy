@@ -335,13 +335,15 @@ pub fn run(port: u16) -> eframe::Result {
                 tx,
                 Arc::new(EguiRepaint(cc.egui_ctx.clone())),
             ));
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                if let Err(e) = rt.block_on(proxy::run(port, sink, proxy_cfg)) {
-                    eprintln!("proxy error: {e}");
-                }
+            let app = App::new(cc, port, rx, cfg, store, api_port, cfg_note);
+            // the proxy only returns on failure (say, the port is taken), so that lands in the status line
+            app.status.jobs.spawn(move || {
+                let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+                rt.block_on(proxy::run(port, sink, proxy_cfg))
+                    .map_err(|e| format!("proxy on port {port} stopped: {e}"))?;
+                Ok(String::new())
             });
-            Ok(Box::new(App::new(cc, port, rx, cfg, store, api_port, cfg_note)))
+            Ok(Box::new(app))
         }),
     )
 }
