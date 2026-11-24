@@ -60,7 +60,7 @@ impl SessionVm {
     pub fn save_config_if_changed(&mut self) {
         let cur = cfg_json(&self.cfg);
         if cur != self.cfg_saved {
-            config_store::save(&self.cfg.lock().unwrap());
+            config_store::save(&config_store::path(), &self.cfg.lock().unwrap());
             self.cfg_saved = cur;
         }
     }
@@ -74,7 +74,7 @@ impl SessionVm {
 
     pub fn shutdown(&mut self) {
         self.save_now();
-        config_store::save(&self.cfg.lock().unwrap());
+        config_store::save(&config_store::path(), &self.cfg.lock().unwrap());
     }
 
     pub fn handle(

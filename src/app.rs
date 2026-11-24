@@ -77,6 +77,7 @@ impl App {
         cfg: Shared,
         store: FlowStore,
         api_port: u16,
+        cfg_note: Option<String>,
     ) -> Self {
         let ctx = &cc.egui_ctx;
         let icon = views::icon::data();
@@ -85,7 +86,8 @@ impl App {
         let cert = proxy::tls::cert_path().display().to_string();
         let session = SessionVm::new(store.clone(), cfg.clone());
         let onboarding = OnboardingVm::new(cfg.clone());
-        let status_text = session.restore().unwrap_or_default();
+        let restored = session.restore();
+        let status_text = cfg_note.or(restored).unwrap_or_default();
         Self {
             rx,
             capture: CaptureVm::new(
@@ -306,7 +308,8 @@ impl eframe::App for App {
 pub fn run(port: u16) -> eframe::Result {
     let api_port = services::api::port_for(port);
     let (tx, rx) = channel();
-    let cfg: Shared = Arc::new(Mutex::new(services::config_store::load()));
+    let (cfg, cfg_note) = services::config_store::load(&services::config_store::path());
+    let cfg: Shared = Arc::new(Mutex::new(cfg));
     let proxy_cfg = cfg.clone();
     let store = FlowStore::default();
     services::api::serve(api_port, store.clone(), cfg.clone());
@@ -338,7 +341,7 @@ pub fn run(port: u16) -> eframe::Result {
                     eprintln!("proxy error: {e}");
                 }
             });
-            Ok(Box::new(App::new(cc, port, rx, cfg, store, api_port)))
+            Ok(Box::new(App::new(cc, port, rx, cfg, store, api_port, cfg_note)))
         }),
     )
 }
