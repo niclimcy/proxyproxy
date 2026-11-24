@@ -45,7 +45,7 @@ impl Ctx {
     }
 }
 
-// Runs `onRequest` / `onResponse` from user code against ctx. Returns an error string on failure.
+// fresh runtime per call, so one request's script state never leaks into the next
 pub fn run(code: &str, hook: &str, ctx: &mut Ctx, log: &Sender<String>) -> Result<(), String> {
     let rt = Runtime::new().map_err(|e| e.to_string())?;
     rt.set_memory_limit(64 << 20);

@@ -138,7 +138,6 @@ impl ReplayVm {
         });
     }
 
-    // successful replays are recorded as flows
     pub fn poll(&mut self) {
         while let Ok((id, res)) = self.rx.try_recv() {
             self.finish(id, res);

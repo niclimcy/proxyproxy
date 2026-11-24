@@ -304,7 +304,6 @@ impl Writer {
         }
     }
 
-    // inside a selection set: decide whether t starts a new line
     fn block_item(&mut self, t: &Tok, prev: Option<&Tok>, prev2: Option<&Tok>) {
         let starts = matches!(t, Tok::Name(_) | Tok::Spread);
         let after_on =
