@@ -1,4 +1,4 @@
-use crate::domain::flow::Flow;
+use crate::domain::flow::{Flow, Message};
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -63,6 +63,20 @@ fn hdrs(h: &[(String, String)]) -> Vec<Value> {
         .collect()
 }
 
+// binary bodies go out as base64 (HAR 1.2 `encoding`) so they survive a round trip
+fn content(m: &Message) -> Value {
+    let mut c = json!({"size": m.body.len(), "mimeType": m.header("content-type").unwrap_or("")});
+    match std::str::from_utf8(&m.body) {
+        Ok(t) => c["text"] = json!(t),
+        Err(_) => {
+            use base64::Engine;
+            c["text"] = json!(base64::engine::general_purpose::STANDARD.encode(&m.body));
+            c["encoding"] = json!("base64");
+        }
+    }
+    c
+}
+
 fn entry(f: &Flow) -> Value {
     let query: Vec<Value> = f
         .path
@@ -91,8 +105,7 @@ fn entry(f: &Flow) -> Value {
         Some(r) => json!({
             "status": f.status.unwrap_or(0), "statusText": "", "httpVersion": f.version,
             "cookies": [], "headers": hdrs(&r.headers),
-            "content": {"size": r.body.len(), "mimeType": r.header("content-type").unwrap_or(""),
-                        "text": String::from_utf8_lossy(&r.body)},
+            "content": content(r),
             "redirectURL": r.header("location").unwrap_or(""), "headersSize": -1, "bodySize": r.body.len(),
         }),
         None => json!({
@@ -239,6 +252,16 @@ pub fn csv(flows: &[&Flow]) -> String {
 mod tests {
     use super::*;
     use crate::domain::flow::Message;
+
+    #[test]
+    fn binary_response_bodies_round_trip_through_har() {
+        let mut f = flow();
+        let bin = vec![0x89, b'P', 0xff, 0x00];
+        f.response = Some(Message { headers: vec![], body: bin.clone() });
+        f.status = Some(200);
+        let back = crate::services::importer::import_bytes(har(&[&f]).as_bytes()).unwrap();
+        assert_eq!(back[0].response.as_ref().unwrap().body, bin);
+    }
 
     #[test]
     fn csv_cells_cannot_start_formulas_and_quote_carriage_returns() {
