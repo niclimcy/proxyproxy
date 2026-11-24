@@ -35,13 +35,9 @@ fn handle(store: &FlowStore, target: &str) -> (u16, Value) {
     let get = |k: &str| q.iter().find(|(a, _)| *a == k).map(|(_, v)| *v);
     match path.trim_end_matches('/') {
         "/flows" => {
+            // `+` before decoding, so an encoded `%2B` stays a plus
             let query = get("q")
-                .map(|s| {
-                    s.replace('+', " ")
-                        .replace("%20", " ")
-                        .replace("%3A", ":")
-                        .replace("%3a", ":")
-                })
+                .map(|s| crate::proxy::http_util::percent_decode(&s.replace('+', " ")))
                 .unwrap_or_default();
             let query = crate::domain::filter::Query::parse(&query);
             let limit = get("limit")
@@ -253,6 +249,20 @@ mod tests {
     }
 
     const MCP: &str = "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:9091\r\nContent-Type: application/json\r\nContent-Length: 2\r\n";
+
+    #[test]
+    fn flow_query_is_percent_decoded() {
+        let store = FlowStore::default();
+        for (id, host) in [(1, "a.com"), (2, "b.com")] {
+            let mut f = Flow::sample(id);
+            f.host = host.into();
+            store.push(f);
+        }
+        let (code, v) = handle(&store, "/flows?q=host%3Ab%2Ecom");
+        assert_eq!(code, 200);
+        let ids: Vec<u64> = v.as_array().unwrap().iter().map(|f| f["id"].as_u64().unwrap()).collect();
+        assert_eq!(ids, vec![2]);
+    }
 
     #[test]
     fn reads_body_up_to_content_length() {
