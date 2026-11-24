@@ -16,8 +16,11 @@ use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use http_body_util::{BodyExt, Full};
 use hudsucker::{
     Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
-    decode_request, decode_response,
-    hyper::{Method, Request, Response, StatusCode, Uri, header::CONTENT_LENGTH},
+    decode_request,
+    hyper::{
+        HeaderMap, Method, Request, Response, StatusCode, Uri,
+        header::{CONTENT_ENCODING, CONTENT_LENGTH, HeaderValue},
+    },
     tokio_tungstenite::tungstenite::Message as WsMessage,
 };
 use std::{
@@ -28,6 +31,38 @@ use std::{
 use tokio::sync::oneshot;
 
 pub type WsMap = Arc<Mutex<HashMap<String, u64>>>;
+
+// Decodes a copy so an unsupported or corrupt encoding forwards the original bytes and
+// headers instead of an empty body (hudsucker consumes the body before it errors).
+async fn decode_body(headers: &mut HeaderMap, body: Body) -> Bytes {
+    let raw = body.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+    if !headers.contains_key(CONTENT_ENCODING) {
+        return raw;
+    }
+    let mut probe = Request::new(Body::from(Full::new(raw.clone())));
+    *probe.headers_mut() = headers.clone();
+    // hudsucker matches encoding names case-sensitively
+    let lower: Vec<HeaderValue> = headers
+        .get_all(CONTENT_ENCODING)
+        .iter()
+        .filter_map(|v| HeaderValue::from_bytes(&v.as_bytes().to_ascii_lowercase()).ok())
+        .collect();
+    probe.headers_mut().remove(CONTENT_ENCODING);
+    for v in lower {
+        probe.headers_mut().append(CONTENT_ENCODING, v);
+    }
+    let Ok(decoded) = decode_request(probe) else {
+        return raw;
+    };
+    let (p, b) = decoded.into_parts();
+    match b.collect().await {
+        Ok(b) => {
+            *headers = p.headers;
+            b.to_bytes()
+        }
+        Err(_) => raw,
+    }
+}
 
 // The upgrade request and the socket handler see the same URL in different forms
 // (`https`/`a.com` vs `wss`/`a.com:443`), so both go through here.
@@ -90,13 +125,8 @@ impl HttpHandler for Capture {
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
 
-        let req = decode_request(req).unwrap_or_else(|_| Request::new(Body::empty()));
         let (mut parts, body) = req.into_parts();
-        let mut bytes = body
-            .collect()
-            .await
-            .map(|b| b.to_bytes())
-            .unwrap_or_default();
+        let mut bytes = decode_body(&mut parts.headers, body).await;
 
         let scheme = parts.uri.scheme_str().unwrap_or("https").to_string();
         let host = parts
@@ -295,15 +325,8 @@ impl HttpHandler for Capture {
     }
 
     async fn handle_response(&mut self, _: &HttpContext, res: Response<Body>) -> Response<Body> {
-        let Ok(res) = decode_response(res) else {
-            return Response::new(Body::empty());
-        };
         let (mut parts, body) = res.into_parts();
-        let mut bytes = body
-            .collect()
-            .await
-            .map(|b| b.to_bytes())
-            .unwrap_or_default();
+        let mut bytes = decode_body(&mut parts.headers, body).await;
         let Some(id) = self.current.take() else {
             return Response::from_parts(parts, Body::from(Full::new(bytes)));
         };
@@ -441,6 +464,45 @@ impl WebSocketHandler for WsCap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    fn gzip(data: &[u8]) -> Vec<u8> {
+        let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        e.write_all(data).unwrap();
+        e.finish().unwrap()
+    }
+
+    fn encoded(enc: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(CONTENT_ENCODING, HeaderValue::from_str(enc).unwrap());
+        h.insert(CONTENT_LENGTH, HeaderValue::from_static("3"));
+        h
+    }
+
+    fn body(b: Vec<u8>) -> Body {
+        Body::from(Full::new(Bytes::from(b)))
+    }
+
+    #[tokio::test]
+    async fn gzip_decodes_whatever_the_case() {
+        for enc in ["gzip", "GZIP"] {
+            let mut h = encoded(enc);
+            let out = decode_body(&mut h, body(gzip(b"hello"))).await;
+            assert_eq!(&out[..], b"hello");
+            assert!(!h.contains_key(CONTENT_ENCODING) && !h.contains_key(CONTENT_LENGTH));
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_or_corrupt_encoding_passes_original_through() {
+        for (enc, data) in [("compress", b"abc".to_vec()), ("gzip", b"not gzip".to_vec())] {
+            let mut h = encoded(enc);
+            let out = decode_body(&mut h, body(data.clone())).await;
+            assert_eq!(out.to_vec(), data);
+            assert_eq!(h.get(CONTENT_ENCODING).unwrap(), enc);
+            assert!(h.contains_key(CONTENT_LENGTH));
+        }
+    }
 
     #[test]
     fn ws_key_matches_between_upgrade_and_socket_forms() {
