@@ -1,10 +1,13 @@
 use super::intent::DeviceAction;
 use super::status::Status;
+use crate::domain::config::Shared;
+use crate::domain::pac::Route;
 use crate::domain::repaint::Repaint;
 use crate::services::devices::{self, DeviceSnapshot};
 pub use crate::services::devices::{IosCaStatus, IosSimulator, IosSimulatorState};
 use std::sync::{
     Arc,
+    atomic::{AtomicUsize, Ordering},
     mpsc::{Receiver, Sender, channel},
 };
 use std::time::{Duration, Instant};
@@ -16,38 +19,58 @@ const POLL_AFTER_ACTION: Duration = Duration::from_secs(1);
 /// several subprocesses.
 pub struct DevicesVm {
     pub ios_simulators: Vec<IosSimulator>,
+    /// Global or PAC proxy active on any network service.
     pub system_proxy_enabled: bool,
+    global_enabled: bool,
+    pac_enabled: bool,
+    // what we last applied, so list edits while enabled can rewrite the PAC
+    applied: Option<Route>,
+    cfg: Shared,
     // set when we turn the system proxy on, so quitting only undoes our own change
     proxy_ours: bool,
     port: u16,
     cert: String,
     next_poll: Instant,
     polling: bool,
+    // system-proxy changes in flight, and a counter bumped at each start/finish; a poll
+    // that overlapped either would read a half-applied setting and flip the checkbox back
+    proxy_busy: Arc<AtomicUsize>,
+    proxy_gen: Arc<AtomicUsize>,
     tx: Sender<DeviceSnapshot>,
     rx: Receiver<DeviceSnapshot>,
     repaint: Arc<dyn Repaint>,
 }
 
 impl DevicesVm {
-    pub fn new(port: u16, cert: String, repaint: Arc<dyn Repaint>) -> Self {
+    pub fn new(port: u16, cert: String, cfg: Shared, repaint: Arc<dyn Repaint>) -> Self {
         let (tx, rx) = channel();
         Self {
             ios_simulators: vec![],
             system_proxy_enabled: false,
+            global_enabled: false,
+            pac_enabled: false,
+            applied: None,
+            cfg,
             proxy_ours: false,
             port,
             cert,
             next_poll: Instant::now(),
             polling: false,
+            proxy_busy: Arc::default(),
+            proxy_gen: Arc::default(),
             tx,
             rx,
             repaint,
         }
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, status: &Status) {
         while let Ok(snapshot) = self.rx.try_recv() {
             self.apply(snapshot);
+        }
+        if let Some(route) = self.route_change() {
+            let port = self.port;
+            self.spawn_proxy_job(status, move || devices::apply_route(&route, port));
         }
         if self.polling || Instant::now() < self.next_poll {
             return;
@@ -55,9 +78,34 @@ impl DevicesVm {
         self.polling = true;
         let (tx, repaint) = (self.tx.clone(), self.repaint.clone());
         let (cert, port) = (self.cert.clone(), self.port);
+        let (busy, generation) = (self.proxy_busy.clone(), self.proxy_gen.clone());
         std::thread::spawn(move || {
-            let _ = tx.send(devices::snapshot(&cert, port));
+            let before = generation.load(Ordering::SeqCst);
+            let mut snapshot = devices::snapshot(&cert, port);
+            let settled = busy.load(Ordering::SeqCst) == 0
+                && generation.load(Ordering::SeqCst) == before;
+            if !settled {
+                snapshot.system_proxy_ours = None;
+                snapshot.pac_ours = None;
+            }
+            let _ = tx.send(snapshot);
             repaint.request();
+        });
+    }
+
+    fn spawn_proxy_job(
+        &self,
+        status: &Status,
+        job: impl FnOnce() -> Result<String, String> + Send + 'static,
+    ) {
+        let (busy, generation) = (self.proxy_busy.clone(), self.proxy_gen.clone());
+        busy.fetch_add(1, Ordering::SeqCst);
+        generation.fetch_add(1, Ordering::SeqCst);
+        status.jobs.spawn(move || {
+            let result = job();
+            generation.fetch_add(1, Ordering::SeqCst);
+            busy.fetch_sub(1, Ordering::SeqCst);
+            result
         });
     }
 
@@ -66,8 +114,45 @@ impl DevicesVm {
         self.next_poll = Instant::now() + POLL_EVERY;
         self.ios_simulators = snapshot.ios_simulators;
         if let Some(ours) = snapshot.system_proxy_ours {
-            self.system_proxy_enabled = ours;
+            self.global_enabled = ours;
         }
+        if let Some(ours) = snapshot.pac_ours {
+            self.pac_enabled = ours;
+        }
+        self.system_proxy_enabled = self.global_enabled || self.pac_enabled;
+    }
+
+    fn desired_route(&self) -> Route {
+        self.cfg.lock().unwrap().proxy_route()
+    }
+
+    /// The route to apply now because the config changed while the proxy is on.
+    fn route_change(&mut self) -> Option<Route> {
+        let want = self.desired_route();
+        match &self.applied {
+            Some(have) if *have != want => {
+                self.applied = Some(want.clone());
+                Some(want)
+            }
+            _ => None,
+        }
+    }
+
+    /// Host count when only some hosts go through the proxy.
+    pub fn hosts_only(&self) -> Option<usize> {
+        if !self.system_proxy_enabled {
+            return None;
+        }
+        match &self.applied {
+            Some(Route::Hosts(h)) => Some(h.len()),
+            Some(Route::All) => None,
+            None => self.pac_enabled.then_some(0),
+        }
+    }
+
+    pub fn proxy_only_setting(&self) -> (bool, usize) {
+        let c = self.cfg.lock().unwrap();
+        (c.proxy_only, c.proxy_only_hosts.len())
     }
 
     pub fn running(&self) -> impl Iterator<Item = &IosSimulator> {
@@ -99,8 +184,21 @@ impl DevicesVm {
                 // optimistic, so the label flips now; the next poll confirms it
                 self.system_proxy_enabled = enable;
                 self.proxy_ours = enable;
-                jobs.spawn(move || devices::system_proxy(enable, port));
+                if enable {
+                    let route = self.desired_route();
+                    self.applied = Some(route.clone());
+                    self.spawn_proxy_job(status, move || devices::apply_route(&route, port));
+                } else {
+                    self.applied = None;
+                    self.spawn_proxy_job(status, move || devices::system_proxy(false, port));
+                }
                 self.next_poll = Instant::now() + POLL_EVERY;
+                return;
+            }
+            DeviceAction::ToggleProxyOnly => {
+                let mut c = self.cfg.lock().unwrap();
+                c.proxy_only = !c.proxy_only;
+                // `tick` re-applies when the system proxy is already on
                 return;
             }
             DeviceAction::LaunchChrome => jobs.spawn(move || devices::launch_chrome(port)),
@@ -130,7 +228,9 @@ impl DevicesVm {
 
     /// Turns the system proxy off only if it is ours, never a proxy the user set up.
     pub fn shutdown(&self) {
-        let ours = self.proxy_ours || devices::system_proxy_status(self.port).unwrap_or(false);
+        let ours = self.proxy_ours
+            || devices::system_proxy_status(self.port).unwrap_or(false)
+            || devices::pac_status().unwrap_or(false);
         if ours && let Err(e) = devices::system_proxy(false, self.port) {
             eprintln!("failed to clear system proxy: {e}");
         }
@@ -140,6 +240,8 @@ impl DevicesVm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::config::Config;
+    use std::sync::Mutex;
     use crate::viewmodels::status::NoRepaint;
 
     fn sim(udid: &str, state: IosSimulatorState, ca: IosCaStatus) -> IosSimulator {
@@ -154,10 +256,16 @@ mod tests {
     }
 
     fn vm_with(sims: Vec<IosSimulator>) -> DevicesVm {
-        let mut vm = DevicesVm::new(9090, String::new(), Arc::new(NoRepaint));
+        let mut vm = DevicesVm::new(
+            9090,
+            String::new(),
+            Arc::new(Mutex::new(Config::default())),
+            Arc::new(NoRepaint),
+        );
         vm.apply(DeviceSnapshot {
             ios_simulators: sims,
             system_proxy_ours: Some(false),
+            pac_ours: Some(false),
         });
         vm
     }
@@ -180,10 +288,56 @@ mod tests {
     #[test]
     fn unknown_proxy_state_keeps_the_last_value() {
         let mut vm = vm_with(vec![]);
-        vm.system_proxy_enabled = true;
+        vm.global_enabled = true;
         vm.apply(DeviceSnapshot {
             ios_simulators: vec![],
             system_proxy_ours: None,
+            pac_ours: None,
+        });
+        assert!(vm.system_proxy_enabled);
+    }
+
+    fn set_hosts(vm: &DevicesVm, on: bool, hosts: &[&str]) {
+        let mut c = vm.cfg.lock().unwrap();
+        c.proxy_only = on;
+        c.proxy_only_hosts = hosts.iter().map(|h| h.to_string()).collect();
+    }
+
+    #[test]
+    fn list_edit_while_enabled_triggers_one_reapply() {
+        let mut vm = vm_with(vec![]);
+        set_hosts(&vm, true, &["a.com"]);
+        assert_eq!(vm.route_change(), None, "nothing applied yet");
+        vm.applied = Some(vm.desired_route());
+        assert_eq!(vm.route_change(), None);
+        set_hosts(&vm, true, &["a.com", "b.com"]);
+        assert_eq!(
+            vm.route_change(),
+            Some(Route::Hosts(vec!["a.com".into(), "b.com".into()]))
+        );
+        assert_eq!(vm.route_change(), None);
+        set_hosts(&vm, false, &["a.com", "b.com"]);
+        assert_eq!(vm.route_change(), Some(Route::All));
+    }
+
+    #[test]
+    fn hosts_only_reports_the_applied_route_while_enabled() {
+        let mut vm = vm_with(vec![]);
+        vm.applied = Some(Route::Hosts(vec!["a.com".into(), "b.com".into()]));
+        assert_eq!(vm.hosts_only(), None, "proxy is off");
+        vm.system_proxy_enabled = true;
+        assert_eq!(vm.hosts_only(), Some(2));
+        vm.applied = Some(Route::All);
+        assert_eq!(vm.hosts_only(), None);
+    }
+
+    #[test]
+    fn pac_poll_counts_as_system_proxy_on() {
+        let mut vm = vm_with(vec![]);
+        vm.apply(DeviceSnapshot {
+            ios_simulators: vec![],
+            system_proxy_ours: Some(false),
+            pac_ours: Some(true),
         });
         assert!(vm.system_proxy_enabled);
     }

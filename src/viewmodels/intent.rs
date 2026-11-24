@@ -32,6 +32,9 @@ pub enum RowIntent {
     Mute(String),
     Scope(String),
     ScopePath(u64),
+    /// route only this host through the proxy (replaces the list)
+    ProxyOnlyHost(String),
+    ProxyOnlyAdd(String),
     Exclude(u64),
     NoTls(String),
     Delete(u64),
@@ -73,6 +76,7 @@ pub enum SessionIntent {
 pub enum DeviceAction {
     TrustCa,
     ToggleSystemProxy,
+    ToggleProxyOnly,
     LaunchChrome,
     IosSimInstallCa(String),
     InstallMissingIosCas,
@@ -127,6 +131,7 @@ pub enum ListKind {
     Exclude,
     Muted,
     BypassTls,
+    ProxyOnly,
 }
 
 pub enum RuleIntent {
@@ -137,6 +142,8 @@ pub enum RuleIntent {
     CancelEdit,
     Submit,
     SetScopeOnly(bool),
+    SetProxyOnly(bool),
+    SeedProxyOnlyFromScope,
     AddHost(ListKind),
     RemoveHost(ListKind, usize),
     ClearConsole,

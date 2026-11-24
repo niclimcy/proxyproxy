@@ -7,6 +7,8 @@
 - Scope entries can be URL patterns such as `api.example.com/v2/*` or `https://*.example.com/graphql`, and a new Exclude list hides matching URLs from the record. Saved host-only scopes keep working.
 - The request context menu has Scope to this host, Scope to this URL path and Exclude this URL; the Scope tab shows how many recorded requests match, and the toolbar shows a Scoped pill while scope or exclude is active.
 
+- Proxy-only hosts: a Scope tab list (plus Add hosts from Scope) and a Connect menu toggle route only those hosts through the system proxy using a generated PAC file; other traffic connects directly. The request context menu has Route only this host through proxy and Add to proxy-only list, and the toolbar shows an N hosts only pill. macOS only; edits rewrite the PAC while the proxy is on, and already-open connections keep their route.
+
 ### Changed
 
 - Compose, Replay and the breakpoint editor open as native windows instead of floating inside the app. Cmd+Enter sends or executes; the breakpoint window comes to the front when traffic pauses.

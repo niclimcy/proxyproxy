@@ -483,6 +483,24 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         &sv.bypass_tls,
         3,
     );
+    section(
+        ui,
+        "Proxy only these hosts",
+        "Network level: with the system proxy on, only these hosts go through proxyproxy (via a PAC file); everything else connects directly. Hosts only: URL paths are dropped. Open connections keep their route.",
+        ListKind::ProxyOnly,
+        &sv.proxy_only_hosts,
+        4,
+    );
+    let mut proxy_only = sv.proxy_only;
+    if checkbox(ui, &mut proxy_only, "Route only the hosts above (needs macOS)").changed() {
+        out.push(RuleIntent::SetProxyOnly(proxy_only));
+    }
+    if icon_button(ui, ph::TARGET, "Add hosts from Scope", true).clicked() {
+        out.push(RuleIntent::SeedProxyOnlyFromScope);
+    }
+    if sv.scope_has_paths {
+        ui.label(muted("Scope path patterns are reduced to their host."));
+    }
 }
 
 fn console_tab(ui: &mut egui::Ui, vm: &RulesVm, out: &mut Vec<RuleIntent>) {

@@ -17,6 +17,11 @@ pub struct Config {
     pub scope: Vec<String>,
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// network-level: route only these hosts through the system proxy (via PAC)
+    #[serde(default)]
+    pub proxy_only: bool,
+    #[serde(default)]
+    pub proxy_only_hosts: Vec<String>,
     #[serde(default)]
     pub muted: Vec<String>,
     #[serde(default)]

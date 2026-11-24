@@ -253,6 +253,8 @@ impl CaptureVm {
                 let pattern = self.store.lock().find(id).map(scope_path_pattern)?;
                 self.add_scope(pattern, status);
             }
+            RowIntent::ProxyOnlyHost(h) => self.set_proxy_only(h, true, status),
+            RowIntent::ProxyOnlyAdd(h) => self.set_proxy_only(h, false, status),
             RowIntent::Exclude(id) => {
                 let pattern = self.store.lock().find(id).map(exclude_pattern)?;
                 let mut c = self.cfg.lock().unwrap();
@@ -288,6 +290,21 @@ impl CaptureVm {
         status.set(format!(
             "Recording only {} — other traffic still flows, unrecorded",
             c.scope.join(", ")
+        ));
+    }
+
+    fn set_proxy_only(&self, host: String, replace: bool, status: &mut Status) {
+        let mut c = self.cfg.lock().unwrap();
+        if replace {
+            c.proxy_only_hosts.clear();
+        }
+        if !c.proxy_only_hosts.contains(&host) {
+            c.proxy_only_hosts.push(host);
+        }
+        c.proxy_only = true;
+        status.set(format!(
+            "Proxy-only: {} — applies when the system proxy is on; open connections keep their route",
+            c.proxy_only_hosts.join(", ")
         ));
     }
 
@@ -461,6 +478,20 @@ mod tests {
         assert!(!vm.config_snapshot().captured("https://h1.com/"));
         assert!(status.text.starts_with("Muted h1.com"));
         assert_eq!(vm.flow_count(), 2);
+    }
+
+    #[test]
+    fn proxy_only_intents_replace_or_extend_the_list() {
+        let (mut vm, mut status) = setup(0);
+        vm.handle_row(RowIntent::ProxyOnlyAdd("a.com".into()), &mut status);
+        vm.handle_row(RowIntent::ProxyOnlyAdd("b.com".into()), &mut status);
+        vm.handle_row(RowIntent::ProxyOnlyAdd("a.com".into()), &mut status);
+        let c = vm.config_snapshot();
+        assert!(c.proxy_only && c.proxy_only_hosts == ["a.com", "b.com"]);
+        vm.handle_row(RowIntent::ProxyOnlyHost("c.com".into()), &mut status);
+        assert_eq!(vm.config_snapshot().proxy_only_hosts, ["c.com"]);
+        assert!(status.text.contains("c.com"));
+        assert!(vm.config_snapshot().captured("https://b.com/"), "recording is untouched");
     }
 
     #[test]

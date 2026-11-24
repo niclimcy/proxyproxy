@@ -229,6 +229,10 @@ pub fn show(
                         c
                     };
                     let host = f.hostname().to_string();
+                    let (route_only, route_add) = (
+                        ico(ph::ARROWS_SPLIT, "Route only this host through proxy"),
+                        ico(ph::ARROWS_SPLIT, "Add to proxy-only list"),
+                    );
                     let (replay, mute, only, only_path, exclude) = (
                         ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd())),
                         ico(ph::EYE_SLASH, &format!("Mute {host}")),
@@ -236,7 +240,7 @@ pub fn show(
                         ico(ph::TARGET, "Scope to this URL path"),
                         ico(ph::EYE_SLASH, "Exclude this URL"),
                     );
-                    menu_width(ui, &[&replay, &mute, &only, &only_path, &exclude, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
+                    menu_width(ui, &[&replay, &mute, &only, &only_path, &exclude, &route_only, &route_add, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
                     if b(ui, &replay) {
                         out.push(RowIntent::Replay(id));
                     }
@@ -288,6 +292,12 @@ pub fn show(
                     }
                     if b(ui, &only_path) {
                         out.push(RowIntent::ScopePath(id));
+                    }
+                    if b(ui, &route_only) {
+                        out.push(RowIntent::ProxyOnlyHost(host.clone()));
+                    }
+                    if b(ui, &route_add) {
+                        out.push(RowIntent::ProxyOnlyAdd(host.clone()));
                     }
                     if b(ui, &exclude) {
                         out.push(RowIntent::Exclude(id));

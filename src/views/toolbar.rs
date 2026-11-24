@@ -117,6 +117,9 @@ pub fn show(
                     if scope_active && scope_pill(ui).clicked() {
                         out.push(ToolbarIntent::ShowScope);
                     }
+                    if let Some(n) = devices.hosts_only() && hosts_pill(ui, n).clicked() {
+                        out.push(ToolbarIntent::ShowScope);
+                    }
                     if !status.is_empty() {
                         ui.add(egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate()).on_hover_text(status);
                     }
@@ -292,6 +295,9 @@ fn compact_primary_rows(
         if scope_active && scope_pill(ui).clicked() {
             out.push(ToolbarIntent::ShowScope);
         }
+        if let Some(n) = devices.hosts_only() && hosts_pill(ui, n).clicked() {
+            out.push(ToolbarIntent::ShowScope);
+        }
         if !status.is_empty() {
             ui.add(
                 egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate(),
@@ -344,6 +350,18 @@ fn scope_pill(ui: &mut egui::Ui) -> egui::Response {
         )
     })
     .on_hover_text("Only part of the traffic is recorded. Open scope settings")
+}
+
+fn hosts_pill(ui: &mut egui::Ui, n: usize) -> egui::Response {
+    flat(ui, |ui| {
+        ui.add(
+            egui::Button::new(RichText::new(ico(ph::ARROWS_SPLIT, &format!("{n} hosts only"))).size(FS_SMALL).color(accent()))
+                .fill(tint(accent(), Tint::Normal))
+                .min_size(egui::vec2(0.0, HIT))
+                .corner_radius(RADIUS_PILL),
+        )
+    })
+    .on_hover_text("Only these hosts go through the proxy; the rest connect directly. Open the list")
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
@@ -500,7 +518,10 @@ fn device_rows(s: Setup) -> Vec<Row> {
         device("Trust CA on this computer", DeviceAction::TrustCa),
     ];
     if s.devices.system_proxy_enabled {
-        rows.push(note("System capture: enabled"));
+        rows.push(note(&match s.devices.hosts_only() {
+            Some(n) => format!("System capture: enabled · {n} host(s) only"),
+            None => "System capture: enabled · all traffic".to_string(),
+        }));
         rows.push(device(
             "Disable system proxy",
             DeviceAction::ToggleSystemProxy,
@@ -511,6 +532,19 @@ fn device_rows(s: Setup) -> Vec<Row> {
             "Enable system proxy",
             DeviceAction::ToggleSystemProxy,
         ));
+    }
+    if cfg!(target_os = "macos") {
+        let (on, n) = s.devices.proxy_only_setting();
+        rows.push(device(
+            &if on {
+                format!("Route all traffic (stop host-only, {n} listed)")
+            } else {
+                format!("Route only listed hosts ({n})")
+            },
+            DeviceAction::ToggleProxyOnly,
+        ));
+    } else {
+        rows.push(note("Host-only routing needs macOS"));
     }
     rows.extend([
         device(

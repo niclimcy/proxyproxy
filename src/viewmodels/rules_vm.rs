@@ -1,6 +1,7 @@
 use super::intent::{Effect, ListKind, RuleIntent};
 use super::status::Status;
 use crate::domain::config::Shared;
+use crate::domain::pac;
 use crate::domain::flow::{BpEdit, Decision, Flow, Paused, Stage};
 use crate::domain::policy::url_matches;
 use crate::domain::rule::{Action, Rule};
@@ -341,7 +342,7 @@ pub struct RulesVm {
     pub tab: RulesTab,
     pub form: RuleForm,
     pub editing: Option<u64>,
-    pub list_inputs: [String; 4],
+    pub list_inputs: [String; 5],
     pub console: Vec<String>,
     pub paused: Vec<BpDraft>,
     /// raise the breakpoint window on the next frame
@@ -354,6 +355,10 @@ pub struct ScopeView {
     pub exclude: Vec<String>,
     pub muted: Vec<String>,
     pub bypass_tls: Vec<String>,
+    pub proxy_only: bool,
+    pub proxy_only_hosts: Vec<String>,
+    /// scope entries carry paths that seeding the proxy-only list drops
+    pub scope_has_paths: bool,
     /// recorded flows that pass scope, exclude and mute, out of all recorded flows
     pub matching: usize,
     pub total: usize,
@@ -439,6 +444,9 @@ impl RulesVm {
             exclude: c.exclude.clone(),
             muted: c.muted.clone(),
             bypass_tls: c.bypass_tls.clone(),
+            proxy_only: c.proxy_only,
+            proxy_only_hosts: c.proxy_only_hosts.clone(),
+            scope_has_paths: pac::has_path_entries(&c.scope),
             matching: st.flows.iter().filter(|f| c.in_record_scope(&f.url())).count(),
             total: st.flows.len(),
         }
@@ -499,12 +507,19 @@ impl RulesVm {
             }
             RuleIntent::Submit => self.submit(),
             RuleIntent::SetScopeOnly(on) => self.cfg.lock().unwrap().scope_only = on,
+            RuleIntent::SetProxyOnly(on) => self.cfg.lock().unwrap().proxy_only = on,
+            RuleIntent::SeedProxyOnlyFromScope => {
+                let mut cfg = self.cfg.lock().unwrap();
+                let merged = [cfg.proxy_only_hosts.clone(), cfg.scope.clone()].concat();
+                cfg.proxy_only_hosts = pac::normalize_hosts(&merged);
+            }
             RuleIntent::AddHost(kind) => {
                 let slot = match kind {
                     ListKind::Scope => 0,
                     ListKind::Exclude => 1,
                     ListKind::Muted => 2,
                     ListKind::BypassTls => 3,
+                    ListKind::ProxyOnly => 4,
                 };
                 let v = self.list_inputs[slot].trim().to_string();
                 if !v.is_empty() {
@@ -514,6 +529,7 @@ impl RulesVm {
                         ListKind::Exclude => cfg.exclude.push(v),
                         ListKind::Muted => cfg.muted.push(v),
                         ListKind::BypassTls => cfg.bypass_tls.push(v),
+                        ListKind::ProxyOnly => cfg.proxy_only_hosts.push(v),
                     }
                     self.list_inputs[slot].clear();
                 }
@@ -525,6 +541,7 @@ impl RulesVm {
                     ListKind::Exclude => &mut cfg.exclude,
                     ListKind::Muted => &mut cfg.muted,
                     ListKind::BypassTls => &mut cfg.bypass_tls,
+                    ListKind::ProxyOnly => &mut cfg.proxy_only_hosts,
                 };
                 if i < list.len() {
                     list.remove(i);
@@ -843,6 +860,26 @@ mod tests {
         vm.list_inputs[3] = "pinned.com".into();
         vm.handle(RuleIntent::AddHost(ListKind::BypassTls));
         assert!(!vm.cfg.lock().unwrap().should_decrypt("pinned.com"));
+    }
+
+    #[test]
+    fn proxy_only_list_seeds_from_scope_hosts_without_touching_scope() {
+        let mut vm = vm();
+        vm.list_inputs[4] = "keep.com".into();
+        vm.handle(RuleIntent::AddHost(ListKind::ProxyOnly));
+        {
+            let mut c = vm.cfg.lock().unwrap();
+            c.scope = vec!["a.com/v2/*".into(), "https://b.com".into(), "keep.com".into()];
+        }
+        assert!(vm.scope_view().scope_has_paths);
+        vm.handle(RuleIntent::SeedProxyOnlyFromScope);
+        vm.handle(RuleIntent::SetProxyOnly(true));
+        let sv = vm.scope_view();
+        assert_eq!(sv.proxy_only_hosts, ["keep.com", "a.com", "b.com"]);
+        assert!(sv.proxy_only);
+        assert_eq!(sv.scope.len(), 3);
+        vm.handle(RuleIntent::RemoveHost(ListKind::ProxyOnly, 0));
+        assert_eq!(vm.scope_view().proxy_only_hosts, ["a.com", "b.com"]);
     }
 
     #[test]

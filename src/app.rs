@@ -93,9 +93,9 @@ impl App {
             rules: RulesVm::new(cfg.clone(), store.clone()),
             replay: ReplayVm::new(store.clone(), repaint.clone()),
             network: NetworkVm::new(cfg.clone()),
-            schemas: SchemasVm::new(cfg),
+            schemas: SchemasVm::new(cfg.clone()),
             session,
-            devices: DevicesVm::new(port, cert.clone(), repaint.clone()),
+            devices: DevicesVm::new(port, cert.clone(), cfg, repaint.clone()),
             status: Status::new(status_text, repaint),
             store,
             port,
@@ -271,7 +271,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         views::theme::sync(&ctx);
         self.drain();
-        self.devices.tick();
+        self.devices.tick(&self.status);
         self.replay.poll();
         if self.onboarding.show {
             self.onboarding(ui, &ctx);
