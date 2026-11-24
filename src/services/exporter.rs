@@ -196,10 +196,16 @@ pub fn raw_http(f: &Flow) -> String {
 }
 
 fn csv_cell(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
+    // captured paths and comments are untrusted; spreadsheets run cells that start like formulas
+    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{s}")
     } else {
         s.to_string()
+    };
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
     }
 }
 
@@ -233,6 +239,14 @@ pub fn csv(flows: &[&Flow]) -> String {
 mod tests {
     use super::*;
     use crate::domain::flow::Message;
+
+    #[test]
+    fn csv_cells_cannot_start_formulas_and_quote_carriage_returns() {
+        assert_eq!(csv_cell("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(csv_cell("@cmd"), "'@cmd");
+        assert_eq!(csv_cell("a\rb"), "\"a\rb\"");
+        assert_eq!(csv_cell("/api/v1"), "/api/v1");
+    }
 
     #[test]
     fn hostile_method_is_quoted_in_shell_exports() {
