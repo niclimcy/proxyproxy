@@ -1,4 +1,5 @@
 mod actions;
+mod app_cache;
 pub mod connector;
 mod handler;
 pub mod http_util;
@@ -51,7 +52,7 @@ pub async fn run(
             started: None,
             res_actions: vec![],
             bp_response: false,
-            app_checked: false,
+            apps: Default::default(),
         })
         .with_websocket_handler(WsCap { sink, map: ws })
         .build()?;

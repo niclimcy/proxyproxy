@@ -1,4 +1,5 @@
 use super::actions::{self, Rule};
+use super::app_cache::{AppCache, Found, Join};
 use crate::services::client_proc::lookup_app;
 use super::http_util::{header_map, headers, strip_default_port, text_response};
 use super::pipeline::{
@@ -31,6 +32,22 @@ use std::{
 use tokio::sync::oneshot;
 
 pub type WsMap = Arc<Mutex<HashMap<String, u64>>>;
+
+fn emit_found(sink: &dyn FlowSink, id: u64, found: &Found, ua_platform: Option<&'static str>) {
+    match found {
+        Some((app, identity)) => sink.emit(Event::App {
+            id,
+            app: identity.as_ref().map_or_else(|| app.clone(), |i| i.name.clone()),
+            identity: identity.clone(),
+        }),
+        None => {
+            if let Some(p) = ua_platform {
+                let identity = AppIdentity { platform: p.into(), ..Default::default() };
+                sink.emit(Event::App { id, app: String::new(), identity: Some(identity) });
+            }
+        }
+    }
+}
 
 // Decodes a copy so an unsupported or corrupt encoding forwards the original bytes and
 // headers instead of an empty body (hudsucker consumes the body before it errors).
@@ -79,7 +96,7 @@ pub struct Capture {
     pub started: Option<Instant>,
     pub res_actions: Vec<Rule>,
     pub bp_response: bool,
-    pub app_checked: bool,
+    pub apps: Arc<AppCache>,
 }
 
 impl Capture {
@@ -181,35 +198,34 @@ impl HttpHandler for Capture {
         self.current = Some(id);
         self.started = Some(Instant::now());
 
-        if !self.app_checked {
-            self.app_checked = true;
-            let (sink, port, own) = (
-                self.sink.clone(),
-                hctx.client_addr.port(),
-                std::process::id(),
-            );
-            let header = |n: &str| parts.headers.get(n).and_then(|v| v.to_str().ok()).unwrap_or_default();
-            let package = crate::domain::app::package_hint(header("x-requested-with"), header("user-agent"));
-            let ua_platform = hctx
-                .client_addr
-                .ip()
-                .is_loopback()
-                .then(|| crate::domain::app::platform_from_ua(header("user-agent")))
-                .flatten();
-            std::thread::spawn(move || {
-                let Some((app, pid)) = lookup_app(port, own) else {
-                    if let Some(p) = ua_platform {
-                        let identity = AppIdentity { platform: p.into(), ..Default::default() };
-                        sink.emit(Event::App { id, app: String::new(), identity: Some(identity) });
+        let header = |n: &str| parts.headers.get(n).and_then(|v| v.to_str().ok()).unwrap_or_default();
+        let ua_platform = hctx
+            .client_addr
+            .ip()
+            .is_loopback()
+            .then(|| crate::domain::app::platform_from_ua(header("user-agent")))
+            .flatten();
+        let addr = hctx.client_addr;
+        match self.apps.join(addr, (id, ua_platform), Instant::now()) {
+            Join::Known(found) => emit_found(self.sink.as_ref(), id, &found, ua_platform),
+            Join::Wait => {}
+            Join::Start => {
+                let (sink, apps, own) = (self.sink.clone(), self.apps.clone(), std::process::id());
+                let package = crate::domain::app::package_hint(header("x-requested-with"), header("user-agent"));
+                std::thread::spawn(move || {
+                    let found = lookup_app(addr.port(), own).map(|(app, pid)| {
+                        // bundle and icon work is slower, so the name shows first
+                        for (w, _) in apps.waiting(addr) {
+                            sink.emit(Event::App { id: w, app: app.clone(), identity: None });
+                        }
+                        let identity = resolve(pid, &app, package);
+                        (app, identity)
+                    });
+                    for (w, ua) in apps.finish(addr, found.clone(), Instant::now()) {
+                        emit_found(sink.as_ref(), w, &found, ua);
                     }
-                    return;
-                };
-                sink.emit(Event::App { id, app: app.clone(), identity: None });
-                // bundle and icon work is slower, so the name shows first
-                if let Some(identity) = resolve(pid, &app, package) {
-                    sink.emit(Event::App { id, app: identity.name.clone(), identity: Some(identity) });
-                }
-            });
+                });
+            }
         }
 
         let actions = actions::resolve_all(&actions);

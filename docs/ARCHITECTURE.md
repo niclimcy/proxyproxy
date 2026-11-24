@@ -97,6 +97,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `tls.rs` | CA load, create and import; key logger |
 | `connector/` | DNS overrides, upstream proxy (manual or PAC) |
 | `script.rs` | JavaScript rule hooks |
+| `app_cache.rs` | one client-process lookup per client address (60s), shared across the per-request handler clones |
 | | The client process is found with `services::client_proc` on a background thread, then resolved with `app_icons::resolve` |
 
 ### `viewmodels/`
