@@ -3,9 +3,9 @@ use crate::viewmodels::keymap_vm::KeymapVm;
 use crate::viewmodels::network_vm::NetworkVm;
 use crate::viewmodels::schemas_vm::SchemasVm;
 use crate::viewmodels::settings_vm::{SettingsTab, SettingsVm};
-use crate::views::theme::{PAD, canvas, panel_frame, segmented};
+use crate::views::theme::{bar_frame, pane, segmented, window_frame};
 use crate::views::{network_tab, schemas_tab, shortcuts_tab};
-use eframe::egui::{self, Frame, Margin, ScrollArea};
+use eframe::egui::{self, ScrollArea};
 
 pub fn show(
     ctx: &egui::Context,
@@ -35,29 +35,31 @@ pub fn show(
             if close {
                 vm.show = false;
             }
-            egui::Panel::top(egui::Id::unique("settings-tabs"))
-                .frame(panel_frame().inner_margin(Margin::symmetric(14, 10)))
-                .show(ui, |ui| {
-                    segmented(
-                        ui,
-                        &mut vm.tab,
-                        &[
-                            (SettingsTab::Network, "Network"),
-                            (SettingsTab::Schemas, "Schemas"),
-                            (SettingsTab::Shortcuts, "Shortcuts"),
-                        ],
-                    );
-                });
             egui::CentralPanel::default()
-                .frame(Frame::new().fill(canvas()).inner_margin(Margin::same(PAD)))
+                .frame(window_frame())
                 .show(ui, |ui| {
-                    ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| match vm.tab {
-                            SettingsTab::Network => net = network_tab::show(ui, network),
-                            SettingsTab::Schemas => sch = schemas_tab::show(ui, schemas),
-                            SettingsTab::Shortcuts => keys = shortcuts_tab::show(ui, keymap),
-                        });
+                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                    bar_frame().show(ui, |ui| {
+                        segmented(
+                            ui,
+                            &mut vm.tab,
+                            &[
+                                (SettingsTab::Network, "Network"),
+                                (SettingsTab::Schemas, "Schemas"),
+                                (SettingsTab::Shortcuts, "Shortcuts"),
+                            ],
+                        );
+                    });
+                    pane(ui, |ui| {
+                        ui.set_min_size(ui.available_size());
+                        ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| match vm.tab {
+                                SettingsTab::Network => net = network_tab::show(ui, network),
+                                SettingsTab::Schemas => sch = schemas_tab::show(ui, schemas),
+                                SettingsTab::Shortcuts => keys = shortcuts_tab::show(ui, keymap),
+                            });
+                    });
                 });
         },
     );

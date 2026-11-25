@@ -2,10 +2,10 @@ use crate::domain::flow::Stage;
 use crate::viewmodels::intent::RuleIntent;
 use crate::viewmodels::rules_vm::RulesVm;
 use crate::views::theme::{
-    PAD, accent, action_button_sized, canvas, cmd, danger, fg_muted, muted, overline, panel_frame,
-    pill, warning,
+    GAP, accent, action_button_sized, canvas, cmd, danger, fg_muted, muted, overline, pane, pill,
+    warning, window_frame,
 };
-use eframe::egui::{self, Frame, Margin, ScrollArea, TextEdit};
+use eframe::egui::{self, Margin, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
 pub fn show(ctx: &egui::Context, vm: &mut RulesVm) -> Option<RuleIntent> {
@@ -42,76 +42,111 @@ pub fn show(ctx: &egui::Context, vm: &mut RulesVm) -> Option<RuleIntent> {
             } else if abort {
                 decision = Some(false);
             }
+            // top/bottom/central share one backdrop; each drops the margin facing its neighbour
+            // so card gaps stay `GAP` everywhere
+            let half = GAP / 2;
+            let edge = |top, bottom| {
+                window_frame().inner_margin(Margin {
+                    left: half,
+                    right: half,
+                    top,
+                    bottom,
+                })
+            };
             egui::Panel::top(egui::Id::unique("bp-top"))
-                .frame(panel_frame().inner_margin(Margin::symmetric(14, 10)))
+                .frame(edge(half, 0))
+                .show_separator_line(false)
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        pill(ui, &format!("Paused · {stage}"), warning());
-                        if total > 1 {
-                            pill(ui, &format!("{} more waiting", total - 1), fg_muted());
-                        }
-                    });
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| match d.stage {
-                        Stage::Request => {
-                            ui.add(
-                                TextEdit::singleline(&mut d.method)
-                                    .font(egui::TextStyle::Monospace)
-                                    .margin(Margin::symmetric(10, 6))
-                                    .background_color(canvas())
-                                    .desired_width(96.0),
-                            );
-                            ui.add(
-                                TextEdit::singleline(&mut d.url)
-                                    .font(egui::TextStyle::Monospace)
-                                    .margin(Margin::symmetric(10, 6))
-                                    .background_color(canvas())
-                                    .desired_width(f32::INFINITY),
-                            );
-                        }
-                        Stage::Response => {
-                            ui.label(muted("Status"));
-                            ui.add(
-                                TextEdit::singleline(&mut d.status)
-                                    .font(egui::TextStyle::Monospace)
-                                    .margin(Margin::symmetric(10, 6))
-                                    .background_color(canvas())
-                                    .desired_width(80.0),
-                            );
-                        }
+                    pane(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            pill(ui, &format!("Paused · {stage}"), warning());
+                            if total > 1 {
+                                pill(ui, &format!("{} more waiting", total - 1), fg_muted());
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| match d.stage {
+                            Stage::Request => {
+                                ui.add(
+                                    TextEdit::singleline(&mut d.method)
+                                        .font(egui::TextStyle::Monospace)
+                                        .margin(Margin::symmetric(10, 6))
+                                        .background_color(canvas())
+                                        .desired_width(96.0),
+                                );
+                                ui.add(
+                                    TextEdit::singleline(&mut d.url)
+                                        .font(egui::TextStyle::Monospace)
+                                        .margin(Margin::symmetric(10, 6))
+                                        .background_color(canvas())
+                                        .desired_width(f32::INFINITY),
+                                );
+                            }
+                            Stage::Response => {
+                                ui.label(muted("Status"));
+                                ui.add(
+                                    TextEdit::singleline(&mut d.status)
+                                        .font(egui::TextStyle::Monospace)
+                                        .margin(Margin::symmetric(10, 6))
+                                        .background_color(canvas())
+                                        .desired_width(80.0),
+                                );
+                            }
+                        });
                     });
                 });
             egui::Panel::bottom(egui::Id::unique("bp-actions"))
-                .frame(panel_frame().inner_margin(Margin::symmetric(14, 10)))
+                .frame(edge(0, half))
+                .show_separator_line(false)
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        if action_button_sized(ui, ph::X, "Abort", danger(), 112.0, true)
-                            .on_hover_text(format!(
-                                "Drop this {} ({}.)",
-                                stage.to_lowercase(),
-                                cmd()
-                            ))
-                            .clicked()
-                        {
-                            decision = Some(false);
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if action_button_sized(ui, ph::PLAY, "Execute", accent(), 120.0, true)
-                                .on_hover_text(format!("Continue with your edits ({}Enter)", cmd()))
+                    pane(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            if action_button_sized(ui, ph::X, "Abort", danger(), 112.0, true)
+                                .on_hover_text(format!(
+                                    "Drop this {} ({}.)",
+                                    stage.to_lowercase(),
+                                    cmd()
+                                ))
                                 .clicked()
                             {
-                                decision = Some(true);
+                                decision = Some(false);
                             }
-                            ui.label(muted("Closing the window also continues"));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if action_button_sized(
+                                        ui,
+                                        ph::PLAY,
+                                        "Execute",
+                                        accent(),
+                                        120.0,
+                                        true,
+                                    )
+                                    .on_hover_text(format!(
+                                        "Continue with your edits ({}Enter)",
+                                        cmd()
+                                    ))
+                                    .clicked()
+                                    {
+                                        decision = Some(true);
+                                    }
+                                    ui.label(muted("Closing the window also continues"));
+                                },
+                            );
                         });
                     });
                 });
             egui::CentralPanel::default()
-                .frame(Frame::new().fill(canvas()).inner_margin(Margin::same(PAD)))
+                .frame(edge(0, 0))
                 .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                     ui.columns(2, |cols| {
-                        editor(&mut cols[0], "HEADERS", "bp-h", &mut d.headers);
-                        editor(&mut cols[1], "BODY", "bp-b", &mut d.body);
+                        pane(&mut cols[0], |ui| {
+                            editor(ui, "HEADERS", "bp-h", &mut d.headers);
+                        });
+                        pane(&mut cols[1], |ui| {
+                            editor(ui, "BODY", "bp-b", &mut d.body);
+                        });
                     });
                 });
         },
@@ -120,6 +155,7 @@ pub fn show(ctx: &egui::Context, vm: &mut RulesVm) -> Option<RuleIntent> {
 }
 
 fn editor(ui: &mut egui::Ui, title: &str, salt: &str, text: &mut String) {
+    ui.set_min_size(ui.available_size());
     ui.label(overline(title));
     ScrollArea::vertical()
         .id_salt(salt)

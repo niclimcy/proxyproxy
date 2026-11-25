@@ -2,10 +2,10 @@ use crate::services::decode;
 use crate::viewmodels::replay_vm::{DraftTab, ReplayDraft, ReplayVm};
 use crate::views::body;
 use crate::views::theme::{
-    PAD, accent, action_button_sized, canvas, checkbox, cmd, danger, fmt_size, muted, overline,
-    panel_frame, pill, segmented, status_color,
+    accent, action_button_sized, canvas, checkbox, cmd, danger, fmt_size, muted, overline, pane,
+    pill, segmented, status_color, window_frame,
 };
-use eframe::egui::{self, Frame, Margin, RichText, ScrollArea, TextEdit};
+use eframe::egui::{self, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
 const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -34,15 +34,16 @@ pub fn show(ctx: &egui::Context, vm: &mut ReplayVm) -> Vec<u64> {
             if close {
                 d.open = false;
             }
-            if request_bar(ui, d) || (submit && !d.sending) {
-                send.push(d.id);
-            }
             egui::CentralPanel::default()
-                .frame(Frame::new().fill(canvas()).inner_margin(Margin::same(PAD)))
+                .frame(window_frame())
                 .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                    if request_bar(ui, d) || (submit && !d.sending) {
+                        send.push(d.id);
+                    }
                     ui.columns(2, |cols| {
-                        request_pane(&mut cols[0], d);
-                        response_pane(&mut cols[1], d);
+                        pane(&mut cols[0], |ui| request_pane(ui, d));
+                        pane(&mut cols[1], |ui| response_pane(ui, d));
                     });
                 });
         });
@@ -52,43 +53,42 @@ pub fn show(ctx: &egui::Context, vm: &mut ReplayVm) -> Vec<u64> {
 
 fn request_bar(ui: &mut egui::Ui, d: &mut ReplayDraft) -> bool {
     let mut go = false;
-    egui::Panel::top(egui::Id::unique(("replay-bar", d.id)))
-        .frame(panel_frame().inner_margin(Margin::symmetric(14, 10)))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                egui::ComboBox::from_id_salt(("m", d.id))
-                    .selected_text(RichText::new(&d.method).monospace().strong())
-                    .width(96.0)
-                    .show_ui(ui, |ui| {
-                        for m in METHODS {
-                            ui.selectable_value(&mut d.method, m.to_string(), m);
-                        }
-                    });
-                let send_w = 104.0;
-                let url_w = ui.available_width() - send_w - ui.spacing().item_spacing.x;
-                ui.add(
-                    TextEdit::singleline(&mut d.url)
-                        .font(egui::TextStyle::Monospace)
-                        .margin(Margin::symmetric(10, 6))
-                        .background_color(canvas())
-                        .desired_width(url_w),
-                );
-                go = action_button_sized(
-                    ui,
-                    ph::PAPER_PLANE_TILT,
-                    "Send",
-                    accent(),
-                    send_w,
-                    !d.sending,
-                )
-                .on_hover_text(format!("Send ({}Enter)", cmd()))
-                .clicked();
-            });
+    pane(ui, |ui| {
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt(("m", d.id))
+                .selected_text(RichText::new(&d.method).monospace().strong())
+                .width(96.0)
+                .show_ui(ui, |ui| {
+                    for m in METHODS {
+                        ui.selectable_value(&mut d.method, m.to_string(), m);
+                    }
+                });
+            let send_w = 104.0;
+            let url_w = ui.available_width() - send_w - ui.spacing().item_spacing.x;
+            ui.add(
+                TextEdit::singleline(&mut d.url)
+                    .font(egui::TextStyle::Monospace)
+                    .margin(Margin::symmetric(10, 6))
+                    .background_color(canvas())
+                    .desired_width(url_w),
+            );
+            go = action_button_sized(
+                ui,
+                ph::PAPER_PLANE_TILT,
+                "Send",
+                accent(),
+                send_w,
+                !d.sending,
+            )
+            .on_hover_text(format!("Send ({}Enter)", cmd()))
+            .clicked();
         });
+    });
     go
 }
 
 fn request_pane(ui: &mut egui::Ui, d: &mut ReplayDraft) {
+    ui.set_min_size(ui.available_size());
     ui.label(overline("REQUEST"));
     segmented(
         ui,
@@ -115,6 +115,7 @@ fn request_pane(ui: &mut egui::Ui, d: &mut ReplayDraft) {
 }
 
 fn response_pane(ui: &mut egui::Ui, d: &mut ReplayDraft) {
+    ui.set_min_size(ui.available_size());
     let id = d.id;
     match &d.result {
         Some(Ok(s)) => {

@@ -24,7 +24,7 @@ Use `tint(color, Tint::Subtle|Normal|Strong)` for washes, not `gamma_multiply`.
 
 ## Components
 
-`card`, `card_panel` (workspace panels), `bar_frame` (toolbar), `panel_frame` (bars inside windows), `pill`, `badge` (table cells), `status_dot`, `chip` (filter tab), `segmented`, `list_row` (sidebar), `capsule` (grouped toolbar actions), `sidebar_toggle`, `action_button`, `action_button_sized` (fixed width, hand-drawn), `icon_button`, `checkbox`, `toolbar_menu`, `menu_item`, `menu_width`, `flat`, `muted`, `overline`; `body::kv_table` for key/value lists. Shortcut hints use `cmd()` (⌘ on macOS, Ctrl+ elsewhere). `menu_item` takes an optional hint, drawn right-aligned in `fg_muted` and left out of the spoken label.
+`card`, `card_panel` (workspace panels), `bar_frame` (toolbar), `window_frame` + `pane` (backdrop and cards in secondary windows), `pill`, `badge` (table cells), `status_dot`, `chip` (filter tab), `segmented`, `list_row` (sidebar), `capsule` (grouped toolbar actions), `sidebar_toggle`, `action_button`, `action_button_sized` (fixed width, hand-drawn), `icon_button`, `checkbox`, `toolbar_menu`, `menu_item`, `menu_width`, `flat`, `muted`, `overline`; `body::kv_table` for key/value lists. Shortcut hints use `cmd()` (⌘ on macOS, Ctrl+ elsewhere). `menu_item` takes an optional hint, drawn right-aligned in `fg_muted` and left out of the spoken label.
 
 Button hierarchy:
 - `action_button` is for the primary or destructive action in a view. It uses a strong tint and coloured border.

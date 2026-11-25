@@ -160,6 +160,7 @@ pub const RADIUS_PILL: u8 = 20;
 pub const RADIUS_CARD: u8 = 10;
 /// Space between workspace cards and the window edge.
 pub const GAP: i8 = 6;
+pub const ITEM_SPACING: egui::Vec2 = egui::vec2(8.0, 6.0);
 pub const HIT: f32 = 28.0;
 pub const ICON_SIZE: f32 = 18.0;
 
@@ -261,7 +262,7 @@ pub fn apply_theme(ctx: &egui::Context) {
             FontId, TextStyle,
         };
         s.interaction.resize_grab_radius_side = 6.0;
-        s.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        s.spacing.item_spacing = ITEM_SPACING;
         s.spacing.button_padding = egui::vec2(10.0, 5.0);
         s.spacing.interact_size.y = HIT;
         s.spacing.icon_width = 18.0;
@@ -810,12 +811,6 @@ pub fn card() -> Frame {
         .inner_margin(Margin::same(PAD))
 }
 
-/// Frame for side/top/bottom panels. No stroke: egui draws one separator per seam,
-/// and a four-sided outline would double up against neighbours and the window edge.
-pub fn panel_frame() -> Frame {
-    Frame::new().fill(panel())
-}
-
 /// Inset card for workspace panels. Outer margins of neighbours add up to `GAP`;
 /// the workspace shrinks its area by half a gap so the window edge gets the same.
 pub fn card_panel() -> Frame {
@@ -825,6 +820,25 @@ pub fn card_panel() -> Frame {
         .corner_radius(CornerRadius::same(RADIUS_CARD))
         .outer_margin(Margin::same(GAP / 2))
         .inner_margin(Margin::same(PAD))
+}
+
+/// Root frame for secondary windows: the same backdrop the main workspace sits on, so
+/// `pane` cards inside get the same gaps as the main window's panels.
+pub fn window_frame() -> Frame {
+    Frame::new()
+        .fill(backdrop())
+        .inner_margin(Margin::same(GAP / 2))
+}
+
+/// A `card_panel` for secondary windows. Callers zero the outer item spacing so cards
+/// are exactly `GAP` apart; the spacing is restored for the content.
+pub fn pane<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    card_panel()
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = ITEM_SPACING;
+            add(ui)
+        })
+        .inner
 }
 
 /// egui paints a panel's resize line with the parent's `fg_stroke` (hover/drag), a full-height
