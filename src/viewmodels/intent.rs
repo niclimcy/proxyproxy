@@ -62,6 +62,7 @@ pub enum ShortcutIntent {
     Deselect,
     OpenSettings,
     ToggleCapture,
+    OpenRowMenu,
 }
 
 pub enum SessionIntent {

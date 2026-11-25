@@ -3,8 +3,10 @@ use eframe::egui;
 
 pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
     let mut out = vec![];
-    let typing = ctx.egui_wants_keyboard_input();
-    let (toggle, find, down, up, del, replay, esc, settings, record) = ctx.input(|i| {
+    let typing = ctx.text_edit_focused();
+    // an open menu owns the arrows, Enter and Escape
+    let menu_open = egui::Popup::is_any_open(ctx);
+    let (toggle, find, down, up, del, replay, esc, settings, record, row_menu) = ctx.input(|i| {
         let cmd = i.modifiers.command;
         (
             cmd && i.key_pressed(egui::Key::B),
@@ -16,6 +18,7 @@ pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
             i.key_pressed(egui::Key::Escape),
             cmd && i.key_pressed(egui::Key::Comma),
             cmd && i.modifiers.shift && i.key_pressed(egui::Key::P),
+            (i.modifiers.shift_only() && i.key_pressed(egui::Key::F10)) || i.key_pressed(egui::Key::Menu),
         )
     });
     if toggle {
@@ -36,6 +39,9 @@ pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
         }
         return out;
     }
+    if menu_open {
+        return out;
+    }
     if down || up {
         out.push(ShortcutIntent::Step(down));
     }
@@ -47,6 +53,9 @@ pub fn read(ctx: &egui::Context) -> Vec<ShortcutIntent> {
     }
     if esc {
         out.push(ShortcutIntent::Deselect);
+    }
+    if row_menu {
+        out.push(ShortcutIntent::OpenRowMenu);
     }
     out
 }

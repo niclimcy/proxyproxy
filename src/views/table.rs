@@ -52,10 +52,12 @@ impl ColumnWidths {
 pub fn show(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    vm: &CaptureVm,
+    vm: &mut CaptureVm,
     diff_base: Option<u64>,
     port: u16,
 ) -> Vec<RowIntent> {
+    let open_menu = std::mem::take(&mut vm.row_menu);
+    let vm = &*vm;
     let mut out = vec![];
     let hidden = vm.hidden_cols();
     let cols: Vec<usize> = (0..ALL_COLS.len())
@@ -166,6 +168,7 @@ pub fn show(
         })
         .body(|body| {
             let st = vm.store.lock();
+            let (mut selected_row, mut stray_focus) = (None, false);
             body.rows(HIT, vm.visible.len(), |mut row| {
                 let f = &st.flows[vm.visible[row.index()]];
                 let selected = vm.selected == Some(f.id);
@@ -248,15 +251,56 @@ pub fn show(
                 if resp.clicked() {
                     out.push(RowIntent::Select(f.id));
                 }
-                resp.context_menu(|ui| row_menu(ui, f, &mut out));
+                resp.context_menu(|ui| row_menu(ui, f, false, &mut out));
+                if !selected {
+                    stray_focus |= resp.has_focus();
+                    return;
+                }
+                selected_row = Some(resp.id);
+                // anchored to the row: the right-click menu opens at the pointer, which a keyboard user doesn't have
+                let menu = egui::Popup::from_response(&resp)
+                    .id(resp.id.with("keyboard_menu"))
+                    .kind(egui::PopupKind::Menu)
+                    .layout(egui::Layout::top_down_justified(egui::Align::Min))
+                    .style(egui::containers::menu::menu_style)
+                    .open_memory(open_menu.then_some(egui::SetOpenCommand::Bool(true)));
+                let menu_id = menu.get_id();
+                let focus_first = menu_id.with("focus_first");
+                if open_menu {
+                    ctx.data_mut(|d| d.insert_temp(focus_first, true));
+                }
+                let was_open = menu.is_open();
+                menu.show(|ui| {
+                    // the first pass is a non-interactive sizing pass, so focus waits for the real one
+                    let focus = !ui.is_sizing_pass() && ctx.data_mut(|d| d.remove_temp::<bool>(focus_first)).unwrap_or(false);
+                    row_menu(ui, f, focus, &mut out);
+                });
+                if was_open && !egui::Popup::is_id_open(ctx, menu_id) {
+                    resp.request_focus();
+                }
+                if resp.has_focus() {
+                    // the arrows step the selection; egui would otherwise move focus to a neighbouring widget
+                    let filter = egui::EventFilter { vertical_arrows: true, ..Default::default() };
+                    ctx.memory_mut(|m| m.set_focus_lock_filter(resp.id, filter));
+                }
             });
+            // focus follows the selection when the arrows step away from a focused row; only then, so Tab can leave the table
+            let last = egui::Id::unique("flow_table_selection");
+            let stepped = ctx.data_mut(|d| {
+                let prev = d.get_temp::<Option<u64>>(last);
+                d.insert_temp(last, vm.selected);
+                prev.is_some_and(|p| p != vm.selected)
+            });
+            if let (true, true, Some(id)) = (stray_focus, stepped, selected_row) {
+                ctx.memory_mut(|m| m.request_focus(id));
+            }
         });
     });
     out
 }
 
 /// Row actions, shared by right-click and the keyboard.
-fn row_menu(ui: &mut egui::Ui, f: &Flow, out: &mut Vec<RowIntent>) {
+fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, out: &mut Vec<RowIntent>) {
     let id = f.id;
     let b = |ui: &mut egui::Ui, l: &str| {
         let c = menu_item(ui, l).clicked();
@@ -278,7 +322,12 @@ fn row_menu(ui: &mut egui::Ui, f: &Flow, out: &mut Vec<RowIntent>) {
         ico(ph::EYE_SLASH, "Exclude this URL"),
     );
     menu_width(ui, &[&replay, &mute, &only, &only_path, &exclude, &route_only, &route_add, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
-    if b(ui, &replay) {
+    let first = menu_item(ui, &replay);
+    if focus_first {
+        first.request_focus();
+    }
+    if first.clicked() {
+        ui.close();
         out.push(RowIntent::Replay(id));
     }
     ui.menu_button(ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), |ui| {

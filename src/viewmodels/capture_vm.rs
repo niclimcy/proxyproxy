@@ -39,6 +39,8 @@ pub struct CaptureVm {
     pub show_sidebar: bool,
     pub follow: bool,
     pub focus_search: bool,
+    /// One-shot: the table opens the row menu on the selected row.
+    pub row_menu: bool,
     pub test_command_copied: Flash,
 }
 
@@ -86,6 +88,7 @@ impl CaptureVm {
             show_sidebar: true,
             follow: true,
             focus_search: false,
+            row_menu: false,
             test_command_copied: Flash::default(),
         }
     }
@@ -395,6 +398,7 @@ impl CaptureVm {
             ShortcutIntent::Deselect => self.selected = None,
             ShortcutIntent::OpenSettings => return Some(Effect::OpenSettings),
             ShortcutIntent::ToggleCapture => self.handle_toolbar(ToolbarIntent::ToggleCapture),
+            ShortcutIntent::OpenRowMenu => self.row_menu = self.selected.is_some(),
         }
         None
     }
@@ -661,6 +665,16 @@ mod tests {
         vm.handle_shortcut(ShortcutIntent::DeleteSelected);
         assert_eq!(vm.flow_count(), 1);
         assert_eq!(vm.selected, None);
+    }
+
+    #[test]
+    fn row_menu_shortcut_needs_a_selection() {
+        let (mut vm, _) = setup(2);
+        vm.handle_shortcut(ShortcutIntent::OpenRowMenu);
+        assert!(!vm.row_menu);
+        vm.selected = Some(1);
+        vm.handle_shortcut(ShortcutIntent::OpenRowMenu);
+        assert!(vm.row_menu);
     }
 
     #[test]
