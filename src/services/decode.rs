@@ -74,7 +74,7 @@ pub fn jwts(m: &Message) -> Vec<String> {
             if parts.len() == 3
                 && parts[0].starts_with("eyJ")
                 && parts[1].len() > 4
-                && !found.contains(&w.to_string())
+                && !found.iter().any(|t| t == w)
             {
                 found.push(w.to_string());
             }

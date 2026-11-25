@@ -123,13 +123,16 @@ fn entry(f: &Flow) -> Value {
     })
 }
 
-pub fn har(flows: &[&Flow]) -> String {
-    let log = json!({"log": {
+pub fn har_value<'a>(flows: impl Iterator<Item = &'a Flow>) -> Value {
+    json!({"log": {
         "version": "1.2",
         "creator": {"name": "proxyproxy", "version": env!("CARGO_PKG_VERSION")},
-        "entries": flows.iter().map(|f| entry(f)).collect::<Vec<_>>(),
-    }});
-    serde_json::to_string_pretty(&log).unwrap_or_default()
+        "entries": flows.map(entry).collect::<Vec<_>>(),
+    }})
+}
+
+pub fn har(flows: &[&Flow]) -> String {
+    serde_json::to_string_pretty(&har_value(flows.iter().copied())).unwrap_or_default()
 }
 
 fn skip_hdr(k: &str) -> bool {
@@ -234,7 +237,7 @@ pub fn csv(flows: &[&Flow]) -> String {
             f.status.map_or_default(|s| s.to_string()),
             f.host.clone(),
             f.path.clone(),
-            f.app_label(),
+            f.app_label().into_owned(),
             f.duration_ms.map_or_default(|d| d.to_string()),
             f.res_size().to_string(),
             f.tag.clone(),

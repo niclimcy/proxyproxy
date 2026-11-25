@@ -16,6 +16,7 @@ pub const ALL_COLS: [&str; 8] = [
 /// How long a new flow may wait for its identity before the sidebar lists it by process name.
 const IDENTITY_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
+type Counts = BTreeMap<String, BTreeMap<String, usize>>;
 pub type Tree = Vec<(String, Vec<(String, usize)>)>;
 type VisKey = (u64, String, Option<(usize, bool)>);
 
@@ -55,6 +56,21 @@ fn sort_cmp(col: usize, x: &Flow, y: &Flow) -> std::cmp::Ordering {
         5 => x.path.cmp(&y.path),
         6 => x.duration_ms.cmp(&y.duration_ms),
         _ => x.res_size().cmp(&y.res_size()),
+    }
+}
+
+// Looks up by &str first so only the first sighting of an app or host allocates.
+fn bump(m: &mut Counts, app: &str, host: &str) {
+    if !m.contains_key(app) {
+        m.insert(app.to_owned(), BTreeMap::new());
+    }
+    if let Some(hosts) = m.get_mut(app) {
+        match hosts.get_mut(host) {
+            Some(n) => *n += 1,
+            None => {
+                hosts.insert(host.to_owned(), 1);
+            }
+        }
     }
 }
 
@@ -100,8 +116,8 @@ impl CaptureVm {
             self.query_src = self.filter.clone();
         }
         let st = self.store.lock();
-        let key = (st.rev(), self.filter.clone(), self.sort);
-        if key == self.vis_key {
+        let (rev, ref filter, sort) = self.vis_key;
+        if rev == st.rev() && *filter == self.filter && sort == self.sort {
             return;
         }
         self.visible = st
@@ -118,18 +134,17 @@ impl CaptureVm {
                 if asc { o } else { o.reverse() }
             });
         }
-        self.vis_key = key;
+        self.vis_key = (st.rev(), self.filter.clone(), self.sort);
     }
 
     pub fn refresh_tree(&mut self) {
-        type Counts = BTreeMap<String, BTreeMap<String, usize>>;
         let st = self.store.lock();
         if self.tree_rev == st.rev() {
             return;
         }
         let mut host: Counts = BTreeMap::new();
         let mut by_platform: BTreeMap<String, Counts> = BTreeMap::new();
-        let mut ids = HashMap::new();
+        let mut ids: HashMap<String, AppIdentity> = HashMap::new();
         let mut pending = 0;
         for f in &st.flows {
             // A flow lands under its process name first and moves into its platform folder once the
@@ -139,24 +154,29 @@ impl CaptureVm {
                 continue;
             }
             let platform = f.app_id.as_ref().map_or_default(|i| i.platform.as_str());
+            let label = f.app_label();
             if let Some(id) = f.display_identity() {
                 // identities without an icon (lookup misses) must not shadow a real one
-                let slot = ids
-                    .entry(f.app_label())
-                    .or_insert_with(|| id.clone().into_owned());
-                if slot.icon_key.is_empty() && !id.icon_key.is_empty() {
-                    *slot = id.into_owned();
+                match ids.get_mut(&*label) {
+                    Some(slot) => {
+                        if slot.icon_key.is_empty() && !id.icon_key.is_empty() {
+                            *slot = id.into_owned();
+                        }
+                    }
+                    None => {
+                        ids.insert(label.to_string(), id.into_owned());
+                    }
                 }
+            }
+            if !platform.is_empty() && !by_platform.contains_key(platform) {
+                by_platform.insert(platform.to_string(), Counts::new());
             }
             let m = if platform.is_empty() {
                 &mut host
             } else {
-                by_platform.entry(platform.to_string()).or_default()
+                by_platform.get_mut(platform).unwrap_or(&mut host)
             };
-            *m.entry(f.app_label())
-                .or_default()
-                .entry(f.hostname().to_string())
-                .or_default() += 1;
+            bump(m, &label, f.hostname());
         }
         let by_volume = |m: Counts| -> Tree {
             let mut t: Tree = m

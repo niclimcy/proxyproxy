@@ -52,8 +52,8 @@ impl Message {
             .to_lowercase()
     }
 
-    pub fn text(&self) -> String {
-        String::from_utf8_lossy(&self.body).into_owned()
+    pub fn text(&self) -> std::borrow::Cow<'_, str> {
+        String::from_utf8_lossy(&self.body)
     }
 }
 
@@ -164,31 +164,28 @@ impl Flow {
         Some(Cow::Borrowed(id))
     }
 
-    pub fn app_label(&self) -> String {
+    pub fn app_label(&self) -> std::borrow::Cow<'_, str> {
         let ua = self.request.header("user-agent").unwrap_or("");
         if self.is_sim_safari() {
             return "Safari".into();
         }
         if !self.app.is_empty() {
-            return self.app.clone();
+            return self.app.as_str().into();
         }
         for k in ["Edg", "Firefox", "Chrome", "Safari"] {
             if ua.contains(k) {
-                return match k {
-                    "Edg" => "Edge".into(),
-                    _ => k.into(),
-                };
+                return if k == "Edg" { "Edge" } else { k }.into();
             }
         }
         ua.split(['/', ' '])
             .next()
             .filter(|s| !s.is_empty())
             .unwrap_or("unknown")
-            .to_string()
+            .into()
     }
 
-    pub fn endpoint_key(&self) -> String {
-        format!("{} {}{}", self.method, self.host, self.path_only())
+    pub fn same_endpoint(&self, o: &Flow) -> bool {
+        self.method == o.method && self.host == o.host && self.path_only() == o.path_only()
     }
 
     #[cfg(test)]

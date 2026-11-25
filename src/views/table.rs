@@ -215,11 +215,11 @@ pub fn show(
                             let ident = own
                                 .as_deref()
                                 .filter(|i| !i.icon_key.is_empty())
-                                .or_else(|| vm.app_ids.get(&name))
+                                .or_else(|| vm.app_ids.get(&*name))
                                 .or(own.as_deref());
                             let icon = app_icon(ui, &vm.icons, &name, ident);
                             if app_label_hover(icon, &name, ident).clicked() {
-                                out.push(RowIntent::FilterApp(name.clone()));
+                                out.push(RowIntent::FilterApp(name.to_string()));
                             }
                             ui.label(RichText::new(name).color(fg_muted()));
                         }
@@ -255,9 +255,10 @@ pub fn show(
                     });
                 }
                 let resp = row.response();
-                let status = f.status.map_or_else(|| "pending".to_string(), |s| s.to_string());
-                let spoken = format!("{} {} {status}", f.method, f.url());
-                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Row, true, selected, &spoken));
+                resp.widget_info(|| {
+                    let status = f.status.map_or_else(|| "pending".to_string(), |s| s.to_string());
+                    egui::WidgetInfo::selected(egui::Role::Row, true, selected, format!("{} {} {status}", f.method, f.url()))
+                });
                 if resp.clicked() {
                     out.push(RowIntent::Select(f.id));
                 }

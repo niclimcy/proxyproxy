@@ -110,11 +110,21 @@ impl Query {
     }
 }
 
+// Needles are pre-lowercased. ASCII haystacks (almost all bodies) compare in place instead of
+// allocating a lowercase copy per flow per term.
 fn text_op(op: &Op, hay: &str) -> bool {
     match op {
+        Op::Has(n) if hay.is_ascii() => {
+            n.is_empty()
+                || hay
+                    .as_bytes()
+                    .windows(n.len())
+                    .any(|w| w.eq_ignore_ascii_case(n.as_bytes()))
+        }
         Op::Has(n) => hay.to_lowercase().contains(n),
         Op::Wild(p) => glob(p.as_bytes(), hay.to_lowercase().as_bytes()),
         Op::Re(r) => r.is_match(hay),
+        Op::Eq(e) if hay.is_ascii() => hay.eq_ignore_ascii_case(e),
         Op::Eq(e) => hay.to_lowercase() == *e,
         _ => false,
     }
@@ -355,5 +365,21 @@ mod tests {
     #[test]
     fn bad_regex_reports_error() {
         assert!(Query::parse("host:/(/").error.is_some());
+    }
+
+    #[test]
+    fn text_match_ignores_case_for_ascii_and_unicode_haystacks() {
+        let mut f = base();
+        f.comment = "Straße ÉCLAIR Note".into();
+        for q in [
+            "comment:note",
+            "comment:éclair",
+            "\"comment:=straße ÉCLAIR note\"",
+        ] {
+            assert!(Query::parse(q).matches(&f), "{q}");
+        }
+        f.comment = "NOTE".into();
+        assert!(Query::parse("comment:=note").matches(&f));
+        assert!(!Query::parse("comment:=not").matches(&f));
     }
 }

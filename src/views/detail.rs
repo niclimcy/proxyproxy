@@ -89,7 +89,11 @@ pub fn show(
     has_flows: bool,
 ) -> Vec<DetailIntent> {
     let mut out = vec![];
-    if selected.and_then(|id| vm.flow(id)).is_none() {
+    // the guard stays held for the draw: borrowing beats cloning every body each frame
+    let store = vm.store.clone();
+    let st = store.lock();
+    let selected_flow = selected.and_then(|id| st.find(id));
+    if selected_flow.is_none() {
         if !has_flows {
             return out;
         }
@@ -119,7 +123,7 @@ pub fn show(
         .frame(card_panel())
         .show_collapsible(ui, &mut expanded, |ui| {
             resize_line(ui, false);
-            let Some(f) = selected.and_then(|id| vm.flow(id)) else {
+            let Some(f) = selected_flow else {
                 return;
             };
             let url = f.url();
@@ -187,11 +191,11 @@ pub fn show(
                         menu_width(ui, &["Python requests"]);
                         for (l, s) in [
                             ("URL", f.url()),
-                            ("cURL", ex::curl(&f)),
-                            ("fetch", ex::fetch(&f)),
-                            ("Python requests", ex::python(&f)),
-                            ("HTTPie", ex::httpie(&f)),
-                            ("Raw HTTP", ex::raw_http(&f)),
+                            ("cURL", ex::curl(f)),
+                            ("fetch", ex::fetch(f)),
+                            ("Python requests", ex::python(f)),
+                            ("HTTPie", ex::httpie(f)),
+                            ("Raw HTTP", ex::raw_http(f)),
                         ] {
                             if menu_item(ui, l, None).clicked() {
                                 ctx.copy_text(s);
@@ -216,10 +220,10 @@ pub fn show(
             });
             ui.add_space(4.0);
             match vm.tab {
-                DTab::Split => split_ui(ui, vm, &f),
-                DTab::Overview => overview_ui(ui, vm, &f, &mut out),
-                DTab::Diff => diff_ui(ui, vm, &f, &mut out),
-                DTab::Messages => ws_ui(ui, vm, &f, &mut out),
+                DTab::Split => split_ui(ui, vm, f),
+                DTab::Overview => overview_ui(ui, &st.flows, f, &mut out),
+                DTab::Diff => diff_ui(ui, vm, &st.flows, f, &mut out),
+                DTab::Messages => ws_ui(ui, vm, f, &mut out),
             }
         })
     else {
@@ -335,8 +339,8 @@ fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
     });
 }
 
-fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailIntent>) {
-    let ov = vm.overview(f);
+fn overview_ui(ui: &mut egui::Ui, flows: &[Flow], f: &Flow, out: &mut Vec<DetailIntent>) {
+    let ov = DetailVm::overview(flows, f);
     let mut comment = f.comment.clone();
     ScrollArea::vertical()
         .id_salt("overview")
@@ -352,7 +356,7 @@ fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailI
                         ui.end_row();
                     };
                     row(ui, "URL", f.url());
-                    row(ui, "Client", f.app_label());
+                    row(ui, "Client", f.app_label().into_owned());
                     row(
                         ui,
                         "Protocol",
@@ -448,8 +452,14 @@ fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailI
         });
 }
 
-fn diff_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow, out: &mut Vec<DetailIntent>) {
-    let Some(base) = vm.diff_base_for(f) else {
+fn diff_ui(
+    ui: &mut egui::Ui,
+    vm: &mut DetailVm,
+    flows: &[Flow],
+    f: &Flow,
+    out: &mut Vec<DetailIntent>,
+) {
+    let Some(base) = vm.diff_base_for(flows, f) else {
         ui.label(muted("No earlier call to the same endpoint. Right-click any request → \"Use as diff base\", then select another."));
         return;
     };
@@ -461,7 +471,7 @@ fn diff_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow, out: &mut Vec<DetailI
         }
     });
     let only = vm.diff_only_changes;
-    let lines = vm.diff_lines(&base, f);
+    let lines = vm.diff_lines(base, f);
     if lines.iter().all(|(t, _)| *t == ' ') {
         ui.label(RichText::new("Identical").color(success()));
     }

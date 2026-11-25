@@ -144,7 +144,8 @@ fn scroll_text(ui: &mut egui::Ui, salt: String, text: &str) {
         .id_salt(salt)
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            let mut t = text.to_string();
+            // `&str` is a read-only TextBuffer, so no copy per frame
+            let mut t = text;
             ui.add(
                 TextEdit::multiline(&mut t)
                     .code_editor()

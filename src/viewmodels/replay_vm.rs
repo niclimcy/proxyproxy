@@ -89,7 +89,7 @@ impl ReplayVm {
             method: f.method.clone(),
             url: f.url(),
             headers: hdr_text(&f.request.headers),
-            body: f.request.text(),
+            body: f.request.text().into_owned(),
             result: None,
             sending: false,
             open: true,

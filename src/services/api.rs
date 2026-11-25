@@ -17,11 +17,9 @@ pub fn detail(f: &Flow) -> Value {
     v
 }
 
-// Serializes a copy so the UI and the proxy's store updates don't wait on a large export.
+// Built straight from the store: a deep copy of every body would cost more than the lock hold.
 pub fn har_json(store: &FlowStore) -> Value {
-    let flows = store.lock().flows.clone();
-    let all: Vec<&Flow> = flows.iter().collect();
-    serde_json::from_str(&crate::services::exporter::har(&all)).unwrap_or(Value::Null)
+    crate::services::exporter::har_value(store.lock().flows.iter())
 }
 
 fn handle(store: &FlowStore, target: &str) -> (u16, Value) {

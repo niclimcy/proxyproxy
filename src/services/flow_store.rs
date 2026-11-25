@@ -8,7 +8,7 @@ fn find(flows: &mut [Flow], id: u64) -> Option<&mut Flow> {
     flows.iter_mut().rev().find(|f| f.id == id)
 }
 
-pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
+pub fn apply(flows: &mut [Flow], ev: Event) -> bool {
     match ev {
         Event::Response {
             id,
@@ -16,10 +16,10 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
             response,
             duration_ms,
         } => {
-            if let Some(f) = find(flows, *id) {
-                f.status = Some(*status);
-                f.duration_ms = Some(*duration_ms);
-                f.response = Some(response.clone());
+            if let Some(f) = find(flows, id) {
+                f.status = Some(status);
+                f.duration_ms = Some(duration_ms);
+                f.response = Some(response);
             }
             true
         }
@@ -30,11 +30,11 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
             path,
             request,
         } => {
-            if let Some(f) = find(flows, *id) {
-                f.method.clone_from(method);
-                f.host.clone_from(host);
-                f.path.clone_from(path);
-                f.request.clone_from(request);
+            if let Some(f) = find(flows, id) {
+                f.method = method;
+                f.host = host;
+                f.path = path;
+                f.request = request;
                 if f.tag.is_empty() {
                     f.tag = "Edited".into();
                 }
@@ -42,25 +42,25 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
             true
         }
         Event::Failed { id, error } => {
-            if let Some(f) = find(flows, *id) {
-                f.error = Some(error.clone());
+            if let Some(f) = find(flows, id) {
+                f.error = Some(error);
                 f.status = Some(502);
             }
             true
         }
         Event::Ws { id, msg } => {
-            if let Some(f) = find(flows, *id)
+            if let Some(f) = find(flows, id)
                 && f.ws.len() < 5000
             {
-                f.ws.push(msg.clone());
+                f.ws.push(msg);
             }
             true
         }
         Event::App { id, app, identity } => {
-            if let Some(f) = find(flows, *id) {
-                f.app.clone_from(app);
+            if let Some(f) = find(flows, id) {
+                f.app = app;
                 if identity.is_some() {
-                    f.app_id.clone_from(identity);
+                    f.app_id = identity;
                 }
             }
             true
@@ -99,7 +99,7 @@ impl Inner {
         self.rev += 1;
     }
 
-    pub fn ingest(&mut self, ev: &Event) -> bool {
+    pub fn ingest(&mut self, ev: Event) -> bool {
         if apply(&mut self.flows, ev) {
             self.rev += 1;
             true
@@ -159,7 +159,7 @@ impl FlowStore {
                 Event::Request(f) => st.push(*f),
                 ev @ (Event::Paused(_) | Event::Log(_)) => other(ev),
                 ev => {
-                    st.ingest(&ev);
+                    st.ingest(ev);
                 }
             }
         }
@@ -212,7 +212,7 @@ mod tests {
             },
             duration_ms: 9,
         };
-        assert!(apply(&mut fs, &ev));
+        assert!(apply(&mut fs, ev));
         assert_eq!((fs[1].status, fs[1].duration_ms), (Some(201), Some(9)));
         assert_eq!(fs[1].response.as_ref().unwrap().body, b"ok");
         assert_eq!(fs[0].status, None);
@@ -230,7 +230,7 @@ mod tests {
                 path: "/x".into(),
                 request: Message::default(),
             };
-            assert!(apply(&mut fs, &ev));
+            assert!(apply(&mut fs, ev));
         }
         assert_eq!(
             (
@@ -249,7 +249,7 @@ mod tests {
         let mut fs = vec![flow(1)];
         assert!(apply(
             &mut fs,
-            &Event::Failed {
+            Event::Failed {
                 id: 1,
                 error: "boom".into()
             }
@@ -266,7 +266,7 @@ mod tests {
         for _ in 0..5010 {
             apply(
                 &mut fs,
-                &Event::Ws {
+                Event::Ws {
                     id: 1,
                     msg: WsMsg {
                         dir: Dir::In,
@@ -285,7 +285,7 @@ mod tests {
         let mut fs = vec![flow(1)];
         assert!(apply(
             &mut fs,
-            &Event::App {
+            Event::App {
                 id: 1,
                 app: "curl".into(),
                 identity: None
@@ -298,7 +298,7 @@ mod tests {
         };
         apply(
             &mut fs,
-            &Event::App {
+            Event::App {
                 id: 1,
                 app: "Maps".into(),
                 identity: Some(identity.clone()),
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(fs[0].app_id, Some(identity));
         apply(
             &mut fs,
-            &Event::App {
+            Event::App {
                 id: 1,
                 app: "Maps".into(),
                 identity: None,
@@ -321,14 +321,14 @@ mod tests {
         let mut fs = vec![flow(1)];
         assert!(apply(
             &mut fs,
-            &Event::Failed {
+            Event::Failed {
                 id: 99,
                 error: "x".into()
             }
         ));
         assert_eq!(fs[0].status, None);
-        assert!(!apply(&mut fs, &Event::Log("hi".into())));
-        assert!(!apply(&mut fs, &Event::Request(Box::new(flow(3)))));
+        assert!(!apply(&mut fs, Event::Log("hi".into())));
+        assert!(!apply(&mut fs, Event::Request(Box::new(flow(3)))));
     }
 
     #[test]
@@ -336,9 +336,9 @@ mod tests {
         let mut s = Inner::default();
         s.push(flow(1));
         let r = s.rev();
-        assert!(!s.ingest(&Event::Log("x".into())));
+        assert!(!s.ingest(Event::Log("x".into())));
         assert_eq!(s.rev(), r);
-        assert!(s.ingest(&Event::App {
+        assert!(s.ingest(Event::App {
             id: 1,
             app: "a".into(),
             identity: None

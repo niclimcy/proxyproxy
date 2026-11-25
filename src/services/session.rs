@@ -7,8 +7,10 @@ pub fn autosave_path() -> PathBuf {
 
 pub fn save(path: &Path, flows: &[Flow]) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
-    let data = serde_json::to_vec(flows).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp).map_err(|e| e.to_string())?);
+    serde_json::to_writer(&mut out, flows).map_err(|e| e.to_string())?;
+    std::io::Write::flush(&mut out).map_err(|e| e.to_string())?;
+    drop(out);
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 

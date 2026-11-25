@@ -36,9 +36,9 @@ pub struct DetailVm {
     diff_cache: Option<(DiffKey, Vec<(char, String)>)>,
 }
 
-pub struct Overview {
+pub struct Overview<'a> {
     pub max_ms: u128,
-    pub same: Vec<Flow>,
+    pub same: Vec<&'a Flow>,
 }
 
 fn headers_text(m: &Message) -> String {
@@ -95,45 +95,36 @@ impl DetailVm {
         }
     }
 
-    pub fn flow(&self, id: u64) -> Option<Flow> {
-        self.store.lock().find(id).cloned()
-    }
-
     pub fn on_select(&mut self) {
         self.ws_sel = None;
     }
 
-    pub fn overview(&self, f: &Flow) -> Overview {
-        let st = self.store.lock();
-        let key = f.endpoint_key();
+    // flows are borrowed from the caller's store guard; locking again here would deadlock
+    pub fn overview<'a>(flows: &'a [Flow], f: &Flow) -> Overview<'a> {
         Overview {
-            max_ms: st
-                .flows
+            max_ms: flows
                 .iter()
                 .filter_map(|x| x.duration_ms)
                 .max()
                 .unwrap_or(1),
-            same: st
-                .flows
+            same: flows
                 .iter()
-                .filter(|x| x.id != f.id && x.endpoint_key() == key)
-                .cloned()
+                .filter(|x| x.id != f.id && x.same_endpoint(f))
                 .collect(),
         }
     }
 
     // explicit base first, else the previous answered call to the same endpoint
-    pub fn diff_base_for(&self, f: &Flow) -> Option<Flow> {
-        let st = self.store.lock();
+    pub fn diff_base_for<'a>(&self, flows: &'a [Flow], f: &Flow) -> Option<&'a Flow> {
         self.diff_base
             .filter(|b| *b != f.id)
-            .and_then(|b| st.find(b))
+            .and_then(|b| flows.iter().find(|x| x.id == b))
             .or_else(|| {
-                st.flows.iter().rev().find(|x| {
-                    x.id < f.id && x.endpoint_key() == f.endpoint_key() && x.response.is_some()
-                })
+                flows
+                    .iter()
+                    .rev()
+                    .find(|x| x.id < f.id && x.same_endpoint(f) && x.response.is_some())
             })
-            .cloned()
     }
 
     pub fn diff_lines(&mut self, base: &Flow, f: &Flow) -> &[(char, String)] {
@@ -221,6 +212,16 @@ mod tests {
         f
     }
 
+    fn get(vm: &DetailVm, id: u64) -> Flow {
+        vm.store.lock().find(id).cloned().unwrap()
+    }
+
+    fn base_id(vm: &DetailVm, id: u64) -> Option<u64> {
+        let st = vm.store.lock();
+        vm.diff_base_for(&st.flows, st.find(id).unwrap())
+            .map(|f| f.id)
+    }
+
     fn vm_with(flows: Vec<Flow>) -> DetailVm {
         let store = FlowStore::default();
         for f in flows {
@@ -236,9 +237,8 @@ mod tests {
             flow(2, "/b", "y"),
             flow(3, "/a", "z"),
         ]);
-        let f3 = vm.flow(3).unwrap();
-        assert_eq!(vm.diff_base_for(&f3).unwrap().id, 1);
-        assert!(vm.diff_base_for(&vm.flow(1).unwrap()).is_none());
+        assert_eq!(base_id(&vm, 3), Some(1));
+        assert_eq!(base_id(&vm, 1), None);
     }
 
     #[test]
@@ -250,16 +250,16 @@ mod tests {
         ]);
         vm.use_as_base(2);
         assert_eq!(vm.tab, DTab::Diff);
-        assert_eq!(vm.diff_base_for(&vm.flow(3).unwrap()).unwrap().id, 2);
-        assert_eq!(vm.diff_base_for(&vm.flow(2).unwrap()).map(|f| f.id), None);
+        assert_eq!(base_id(&vm, 3), Some(2));
+        assert_eq!(base_id(&vm, 2), None);
         vm.handle(DetailIntent::ClearBase);
-        assert_eq!(vm.diff_base_for(&vm.flow(3).unwrap()).unwrap().id, 1);
+        assert_eq!(base_id(&vm, 3), Some(1));
     }
 
     #[test]
     fn diff_lines_mark_changes_and_cache_by_key() {
         let mut vm = vm_with(vec![flow(1, "/a", "old"), flow(2, "/a", "new")]);
-        let (a, b) = (vm.flow(1).unwrap(), vm.flow(2).unwrap());
+        let (a, b) = (get(&vm, 1), get(&vm, 2));
         let lines = vm.diff_lines(&a, &b).to_vec();
         assert!(lines.contains(&('-', "old".into())) && lines.contains(&('+', "new".into())));
         assert_eq!(vm.diff_lines(&a, &b), &lines[..]);
@@ -273,7 +273,8 @@ mod tests {
             flow(2, "/a", ""),
             flow(3, "/b", ""),
         ]);
-        let o = vm.overview(&vm.flow(1).unwrap());
+        let st = vm.store.lock();
+        let o = DetailVm::overview(&st.flows, st.find(1).unwrap());
         assert_eq!(o.max_ms, 30);
         assert_eq!(o.same.iter().map(|f| f.id).collect::<Vec<_>>(), vec![2]);
     }
@@ -284,11 +285,11 @@ mod tests {
         let r = vm.store.lock().rev();
         vm.handle(DetailIntent::TogglePin(1));
         vm.handle(DetailIntent::SetComment(1, "note".into()));
-        let f = vm.flow(1).unwrap();
+        let f = get(&vm, 1);
         assert!(f.pinned && f.comment == "note");
         assert!(vm.store.lock().rev() > r);
         vm.handle(DetailIntent::TogglePin(1));
-        assert!(!vm.flow(1).unwrap().pinned);
+        assert!(!get(&vm, 1).pinned);
     }
 
     #[test]
