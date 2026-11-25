@@ -48,8 +48,6 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 
 ## WIP
 
-- Settings UI for managing application configuration.
-- Customizable keyboard shortcuts.
 - DNS overrides and upstream proxy support for passthrough CONNECT and WebSocket traffic.
 
 ## Notes
