@@ -7,10 +7,11 @@ proxyproxy is an HTTP(S) debugging proxy with an egui UI. Single Rust crate.
 ```sh
 cargo build
 cargo test     # 296 tests, no window needed (includes src/e2e.rs)
+cargo clippy --all-targets -- -D warnings
 cargo run -- 19090   # proxy on :19090, REST API on :19091
 ```
 
-A change is done when both build and test pass with no warnings.
+A change is done when build, test and clippy all pass with no warnings.
 
 ## Layout
 

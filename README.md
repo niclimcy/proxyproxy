@@ -64,6 +64,7 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 ```sh
 cargo build
 cargo test
+cargo clippy --all-targets -- -D warnings
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).

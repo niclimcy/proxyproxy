@@ -7,9 +7,10 @@ Layout and layer boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md).
 ```sh
 cargo build
 cargo test
+cargo clippy --all-targets -- -D warnings
 ```
 
-Both should pass with no warnings. Tests don't need a window or network, apart from the proxy and upstream tests, which use loopback.
+All three should pass with no warnings. Tests don't need a window or network, apart from the proxy and upstream tests, which use loopback.
 
 To try it by hand:
 
