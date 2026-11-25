@@ -111,4 +111,21 @@ mod tests {
         assert_eq!(run(r"\d+"), (true, Bytes::from_static(b"a#b#")));
         assert_eq!(run("("), (false, Bytes::from_static(b"a1b22")));
     }
+
+    #[test]
+    fn a_rule_that_matches_nothing_does_not_mark_the_request_edited() {
+        let sink = TestSink::default();
+        for (find, regex) in [("absent", false), ("ab+sent", true), ("hello", false)] {
+            // "hello" replaced by itself is also no change
+            let replace = if find == "hello" { "hello" } else { "x" };
+            let mut b = Bytes::from_static(b"hello world");
+            let edited = ReplaceBody::new(false, find.into(), replace.into(), regex).apply_request(
+                &mut req_parts("http://a/"),
+                &mut b,
+                &sink,
+            );
+            assert!(!edited, "{find}");
+            assert_eq!(&b[..], b"hello world");
+        }
+    }
 }

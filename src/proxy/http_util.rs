@@ -87,11 +87,16 @@ pub fn replace_body(
     regex: Option<&regex::Regex>,
 ) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(body).ok()?;
+    // `None` also means nothing changed, so the caller doesn't flag an edit or copy the body
     let out = match regex {
-        Some(re) => re.replace_all(text, with).into_owned(),
-        None => text.replace(find, with),
+        Some(re) => match re.replace_all(text, with) {
+            std::borrow::Cow::Owned(s) => s,
+            std::borrow::Cow::Borrowed(_) => return None,
+        },
+        None if text.contains(find) => text.replace(find, with),
+        None => return None,
     };
-    Some(out.into_bytes())
+    (out != text).then(|| out.into_bytes())
 }
 
 // drops the default port so "a.com:443" and "a.com" are one host
@@ -131,7 +136,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn regex_replace_and_binary_body_untouched() {
+    fn binary_body_untouched() {
         assert!(replace_body(&[0xff, 0xfe], "a", "b", None).is_none());
     }
 
