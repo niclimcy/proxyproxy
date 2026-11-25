@@ -105,7 +105,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 ### `viewmodels/`
 | File | Holds |
 |---|---|
-| `capture_vm.rs` | filter, sort, selection, visible rows, sidebar tree; row, sidebar and shortcut intents |
+| `capture_vm.rs` | filter, sort, selection, visible rows, sidebar tree; row, sidebar and shortcut intents. A `ShortcutIntent::Selected(RowAction)` becomes the `RowIntent` for the selected flow, so keyboard and menu share one handler |
 | `detail_vm.rs` | tabs, view modes, diff base and cache |
 | `rules_vm.rs` | rule form, breakpoints, console, scope lists, `RuleKind` |
 | `replay_vm.rs` | replay and compose drafts |
@@ -119,7 +119,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `intent.rs` | intent and effect enums |
 
 ### `views/`
-One file per screen area: `toolbar`, `sidebar`, `table`, `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab` and `schemas_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts`, `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
+One file per screen area: `toolbar`, `sidebar`, `table` (its row menu is one function, opened by right-click at the pointer or by Shift+F10 / the Menu key anchored to the selected row), `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab` and `schemas_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts` (reads keys into `ShortcutIntent`s; `ROW_KEYS` holds the row bindings and `hint` labels them in the row menu), `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
 
 ## Extending
 
