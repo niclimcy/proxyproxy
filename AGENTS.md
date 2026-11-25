@@ -6,7 +6,7 @@ proxyproxy is an HTTP(S) debugging proxy with an egui UI. Single Rust crate.
 
 ```sh
 cargo build
-cargo test     # 306 tests, no window needed
+cargo test     # 296 tests, no window needed (includes src/e2e.rs)
 cargo run -- 19090   # proxy on :19090, REST API on :19091
 ```
 
@@ -31,5 +31,5 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). In short:
 - Don't hold the `FlowStore` lock across `.await`.
 - New rule type: implement `RuleAction` in `proxy/actions/`. New body view: implement `BodyDecoder` in `services/decoders/`. Steps are in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 - Don't change these behaviours (tests cover them): rule edits apply to the next request; "don't decrypt" applies to new connections only; mute and scope only affect what is recorded.
-- Add tests next to the code. ViewModel tests need no egui types.
+- Add tests next to the code. ViewModel tests need no egui types. Test app behavior, not Rust or library features; anything that needs real sockets or a running proxy goes in `src/e2e.rs`.
 - Comment only non-obvious reasons, in a short phrase.

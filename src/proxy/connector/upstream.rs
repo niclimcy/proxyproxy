@@ -434,8 +434,7 @@ mod tests {
         assert!(plain_http_auth(&up(UpstreamMode::Socks, "u:p@h:1080")).is_none());
         assert!(plain_http_auth(&up(UpstreamMode::Off, "http://u:p@h:3128")).is_none());
     }
-    use crate::domain::config::{Config, Upstream};
-    use std::sync::{Arc, Mutex};
+    use crate::domain::config::Upstream;
 
     #[test]
     fn manual_parse() {
@@ -524,86 +523,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn connect_through_manual_proxy() {
-        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = l.local_addr().unwrap().port();
-        let srv = tokio::spawn(async move {
-            let (mut s, _) = l.accept().await.unwrap();
-            let mut buf = vec![0u8; 512];
-            let n = s.read(&mut buf).await.unwrap();
-            s.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
-                .await
-                .unwrap();
-            String::from_utf8_lossy(&buf[..n]).into_owned()
-        });
-        let cfg: Shared = Arc::new(Mutex::new(Config {
-            upstream: Upstream {
-                mode: UpstreamMode::Manual,
-                url: format!("127.0.0.1:{port}"),
-                ..Default::default()
-            },
-            ..Default::default()
-        }));
-        let mut c = UpstreamConnector::new(cfg);
-        assert!(
-            c.call("https://example.test".parse().unwrap())
-                .await
-                .is_ok()
-        );
-        assert!(
-            srv.await
-                .unwrap()
-                .starts_with("CONNECT example.test:443 HTTP/1.1\r\n")
-        );
-    }
-
-    #[tokio::test]
-    async fn connect_through_socks5_proxy_with_auth() {
-        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = l.local_addr().unwrap().port();
-        let srv = tokio::spawn(async move {
-            let (mut s, _) = l.accept().await.unwrap();
-            let mut greeting = [0; 4];
-            s.read_exact(&mut greeting).await.unwrap();
-            assert_eq!(greeting, [5, 2, 0, 2]);
-            s.write_all(&[5, 2]).await.unwrap();
-            let mut auth = [0; 3];
-            s.read_exact(&mut auth).await.unwrap();
-            assert_eq!(auth, [1, 1, b'u']);
-            let mut password = [0; 2];
-            s.read_exact(&mut password).await.unwrap();
-            assert_eq!(password, [1, b'p']);
-            s.write_all(&[1, 0]).await.unwrap();
-            let mut request = [0; 5];
-            s.read_exact(&mut request).await.unwrap();
-            assert_eq!(request[..4], [5, 1, 0, 3]);
-            let host_len = request[4] as usize;
-            let mut host = vec![0; host_len + 2];
-            s.read_exact(&mut host).await.unwrap();
-            assert_eq!(&host[..host_len], b"example.test");
-            assert_eq!(
-                u16::from_be_bytes([host[host_len], host[host_len + 1]]),
-                8443
-            );
-            s.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 80])
-                .await
-                .unwrap();
-        });
-        let cfg: Shared = Arc::new(Mutex::new(Config {
-            upstream: Upstream {
-                mode: UpstreamMode::Socks,
-                url: format!("socks5://u:p@127.0.0.1:{port}"),
-                ..Default::default()
-            },
-            ..Default::default()
-        }));
-        let mut c = UpstreamConnector::new(cfg);
-        assert!(
-            c.call("https://example.test:8443".parse().unwrap())
-                .await
-                .is_ok()
-        );
-        srv.await.unwrap();
-    }
 }

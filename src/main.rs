@@ -1,5 +1,7 @@
 mod app;
 mod domain;
+#[cfg(test)]
+mod e2e;
 mod proxy;
 mod services;
 mod viewmodels;

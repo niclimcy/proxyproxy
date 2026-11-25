@@ -6,6 +6,7 @@ One crate, split into model, viewmodel and view layers.
 src/
   main.rs            CLI args, calls app::run
   app.rs             builds the concrete types, routes intents, runs eframe
+  e2e.rs             test-only: real proxy and REST API on loopback, wiremock origins, reqwest clients
   domain/            data and policy
   services/          file, process and network helpers
   proxy/             the MITM proxy

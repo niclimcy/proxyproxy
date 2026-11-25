@@ -514,31 +514,4 @@ mod tests {
         assert!(cfg.lock().unwrap().rules.is_empty());
     }
 
-    #[test]
-    fn replay_records_a_flow_without_holding_the_store_lock() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            use std::io::{Read, Write};
-            let mut request = [0u8; 1024];
-            let _ = stream.read(&mut request);
-            let _ = stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
-        });
-
-        let (store, _cfg) = setup();
-        let result = replay_tool(
-            &store,
-            json!({
-                "method": "POST",
-                "url": format!("http://127.0.0.1:{port}/echo"),
-                "headers": {"Content-Type": "text/plain"},
-                "body": "test"
-            }),
-        )
-        .unwrap();
-        assert_eq!(result["status"], 200);
-        assert_eq!(store.lock().flows.len(), 1);
-    }
 }
