@@ -281,6 +281,10 @@ pub fn apply_theme(ctx: &egui::Context) {
 }
 
 pub fn ico(icon: &str, text: &str) -> String {
+    // no trailing gap, or an icon-only button sits off-centre in its highlight
+    if text.is_empty() {
+        return icon.to_string();
+    }
     format!("{icon}  {text}")
 }
 
@@ -704,6 +708,10 @@ pub fn toolbar_menu(
         egui::PopupCloseBehavior::CloseOnClick
     };
     secondary(ui, |ui| {
+        if label.is_empty() {
+            // same square as `icon_only`, so a collapsed row has even gaps
+            ui.spacing_mut().interact_size.x = HIT;
+        }
         egui::containers::menu::MenuButton::new(RichText::new(ico(icon, label)).size(FS_SMALL))
             .config(egui::containers::menu::MenuConfig::new().close_behavior(close))
             .ui(ui, add);

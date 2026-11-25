@@ -11,6 +11,11 @@ use crate::views::theme::{
 use eframe::egui::{self, Margin, RichText, TextEdit};
 use egui_phosphor::regular as ph;
 
+// the status text can truncate, but not to nothing
+const STATUS_MIN: f32 = 120.0;
+// star menu, capsule padding and the Rules toggle that share the compact action row
+const COMPACT_ROW_RESERVED: f32 = 330.0;
+
 #[derive(Clone, Copy)]
 pub struct Props<'a> {
     pub port: u16,
@@ -51,7 +56,10 @@ pub fn show(
     };
     egui::Panel::top("top").frame(bar_frame()).show_separator_line(false).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
-        let compact = ui.available_width() < 900.0;
+        // measured from the last wide layout so the actions never overlap the search box
+        let wide_min_id = egui::Id::unique("toolbar-wide-min");
+        let wide_min = ui.data(|d| d.get_temp::<f32>(wide_min_id)).unwrap_or(1240.0);
+        let compact = ui.available_width() < wide_min;
         if compact {
             let props = Props {
                 port,
@@ -86,26 +94,16 @@ pub fn show(
             }
             search.on_hover_text(format!("Example: host:api.* status:>=400 method:POST body:\"userId\"\nFields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error modified pending json", filter::FIELDS.join(" ")));
             saved_menu(ui, vm, &mut out);
+            let left_used = ui.min_rect().width();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
                 let tip = format!("{} rules panel", if show_rules { "Hide" } else { "Show" });
                 if right_panel_toggle(ui, show_rules, &label, tip).clicked() {
                     out.push(ToolbarIntent::ToggleRules);
                 }
-                capsule(ui, |ui| {
-                    // right_to_left parent: add in reverse visual order
-                    if show_help {
-                        help_menu(ui, "Help", &mut out);
-                    }
-                    devices_menu(ui, ctx, setup, &mut out, false);
-                    session_menu(ui, &mut out, false);
-                    if icon_button(ui, ph::TRASH, "Clear", true).on_hover_text("Remove all requests except pinned").clicked() {
-                        out.push(ToolbarIntent::ClearUnpinned);
-                    }
-                    if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
-                        out.push(ToolbarIntent::Compose);
-                    }
-                });
+                action_buttons(ui, ctx, setup, show_help, true, true, &mut out);
+                let needed = left_used + ui.min_rect().width() + STATUS_MIN;
+                ui.data_mut(|d| d.insert_temp(wide_min_id, needed));
                 // remaining space between the search box and the actions
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add_space(8.0);
@@ -262,22 +260,13 @@ fn compact_primary_rows(
         search.on_hover_text(format!("Example: host:api.* status:>=400 method:POST body:\"userId\"\nFields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error modified pending json", filter::FIELDS.join(" ")));
     });
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
         saved_menu(ui, vm, out);
-        if icon_button(ui, ph::PLUS, "Compose", true).clicked() {
-            out.push(ToolbarIntent::Compose);
-        }
-        if icon_button(ui, ph::TRASH, "Clear", true)
-            .on_hover_text("Remove all requests except pinned")
-            .clicked()
-        {
-            out.push(ToolbarIntent::ClearUnpinned);
-        }
-        session_menu(ui, out, true);
-        devices_menu(ui, ctx, setup, out, true);
-        if show_help {
-            help_menu(ui, "", out);
-        }
+        // titles collapse together once the labelled group no longer fits beside Rules
+        let labelled_w = ui
+            .data(|d| d.get_temp::<f32>(egui::Id::unique("toolbar-actions-width")))
+            .unwrap_or(520.0);
+        let labels = ui.available_width() >= labelled_w + COMPACT_ROW_RESERVED;
+        action_buttons(ui, ctx, setup, show_help, labels, false, out);
         if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
             out.push(ToolbarIntent::ShowBreakpoint);
         }
@@ -312,6 +301,74 @@ fn compact_primary_rows(
                 out.push(ToolbarIntent::ToggleRules);
             }
         });
+    });
+}
+
+#[derive(Clone, Copy)]
+enum Action {
+    Compose,
+    Clear,
+    Session,
+    Sources,
+    Help,
+}
+
+/// One connected group of actions. `reverse` is for right-to-left parents, which flip the order.
+fn action_buttons(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    setup: Setup,
+    show_help: bool,
+    labels: bool,
+    reverse: bool,
+    out: &mut Vec<ToolbarIntent>,
+) {
+    let mut actions = vec![
+        Action::Compose,
+        Action::Clear,
+        Action::Session,
+        Action::Sources,
+    ];
+    if show_help {
+        actions.push(Action::Help);
+    }
+    if reverse {
+        actions.reverse();
+    }
+    let width_id = egui::Id::unique("toolbar-actions-width");
+    capsule(ui, |ui| {
+        for action in actions {
+            match action {
+                Action::Compose => {
+                    let r = if labels {
+                        icon_button(ui, ph::PLUS, "Compose", true)
+                    } else {
+                        icon_only(ui, ph::PLUS, "Compose")
+                    };
+                    if r.clicked() {
+                        out.push(ToolbarIntent::Compose);
+                    }
+                }
+                Action::Clear => {
+                    let r = if labels {
+                        icon_button(ui, ph::TRASH, "Clear", true)
+                    } else {
+                        icon_only(ui, ph::TRASH, "Clear")
+                    };
+                    if r.on_hover_text("Remove all requests except pinned")
+                        .clicked()
+                    {
+                        out.push(ToolbarIntent::ClearUnpinned);
+                    }
+                }
+                Action::Session => session_menu(ui, out, !labels),
+                Action::Sources => devices_menu(ui, ctx, setup, out, !labels),
+                Action::Help => help_menu(ui, if labels { "Help" } else { "" }, out),
+            }
+        }
+        if labels {
+            ui.data_mut(|d| d.insert_temp(width_id, ui.min_rect().width()));
+        }
     });
 }
 

@@ -44,6 +44,28 @@ fn win32_hwnd(cc: &eframe::CreationContext<'_>) -> Option<isize> {
     }
 }
 
+/// winit never marks its windows full-screen capable, and without that the green button
+/// offers no tiling or full-screen menu.
+#[cfg(target_os = "macos")]
+fn enable_tiling(cc: &eframe::CreationContext<'_>) {
+    use objc2::rc::Retained;
+    use objc2_app_kit::{NSView, NSWindowCollectionBehavior};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = cc.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::AppKit(h) = handle.as_raw() else {
+        return;
+    };
+    // SAFETY: winit hands out a live NSView, and this runs on the main thread in the creator callback.
+    let view: Option<Retained<NSView>> = unsafe { Retained::retain(h.ns_view.as_ptr().cast()) };
+    if let Some(window) = view.and_then(|v| v.window()) {
+        window.setCollectionBehavior(
+            window.collectionBehavior() | NSWindowCollectionBehavior::FullScreenPrimary,
+        );
+    }
+}
+
 #[cfg(not(target_os = "windows"))]
 fn win32_hwnd(_cc: &eframe::CreationContext<'_>) -> Option<isize> {
     None
@@ -348,6 +370,8 @@ pub fn run(port: u16) -> eframe::Result {
                 // macOS would otherwise merge child viewports into tabs
                 objc2_app_kit::NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
             }
+            #[cfg(target_os = "macos")]
+            enable_tiling(cc);
             let sink: Arc<dyn proxy::sink::FlowSink> = Arc::new(proxy::sink::ChannelSink::new(
                 tx,
                 Arc::new(EguiRepaint(cc.egui_ctx.clone())),

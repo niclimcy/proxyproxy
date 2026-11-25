@@ -110,11 +110,12 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
         .append_items(&[
             &PredefinedMenuItem::minimize(None),
             &PredefinedMenuItem::maximize(None),
+            &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::fullscreen(None),
+            &PredefinedMenuItem::bring_all_to_front(None),
         ])
         .ok()?;
     menu.append(&window).ok()?;
-    window.set_as_windows_menu_for_nsapp();
 
     let help = Submenu::new("Help", true);
     help.append_items(&[
@@ -127,6 +128,8 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
     help.set_as_help_menu_for_nsapp();
 
     menu.init_for_nsapp();
+    // AppKit adds its tiling items only to a windows menu that is already in the main menu
+    window.set_as_windows_menu_for_nsapp();
     Some(menu)
 }
 
