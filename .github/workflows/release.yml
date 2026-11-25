@@ -7,7 +7,7 @@ on:
         description: "Tag to create or update"
         required: true
         type: string
-        default: "v0.3.0"
+        default: "v0.4.0"
 
 permissions:
   contents: write

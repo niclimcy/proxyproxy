@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.4.0
+
+Changes since [v0.3.0](https://github.com/niclimcy/proxyproxy/releases/tag/v0.3.0).
+
+### Added
+
+- Row actions from the keyboard: pin, mute, set diff base, comment and colour the selected row, and open the row menu with Shift+F10 or the menu key. The row menu shows each action's shortcut, and the new Shortcuts tab in Settings lets you rebind them.
+- macOS: the green window button offers tiling and full screen, and the Window menu has Fill, Centre, Move & Resize, Full-Screen Tile and Bring All to Front.
+
+### Changed
+
+- Settings, Compose and Breakpoint windows use the card-on-backdrop layout.
+- The toolbar's action group (Compose, Clear, Session, Sources, Help) looks the same in both layouts. When space runs out, all its titles collapse to icons together.
+- Faster: bodies are shared instead of copied, the visible list is patched instead of rebuilt, resolved rules are cached, and the per-frame and per-event paths borrow instead of cloning.
+
+### Fixed
+
+- The toolbar switches to its stacked layout at the width the single row needs, so the status text and action buttons no longer overlap the search box.
+- Method and status badges stay AA-contrast on selected rows, and every control has a spoken name and a keyboard focus ring.
+- Replace-body only reports an edit when the body changed; scripts keep binary bodies intact when they don't change them.
+- Proxy: websocket frames on `wss` are recorded, each websocket stays on its own flow, the original body is forwarded when the content encoding is unsupported or corrupt, and the client process is looked up once per connection.
+- Upstream: proxy credentials are sent on plain http requests through a manual http proxy.
+- Replay drops `accept-encoding` so replayed responses are stored uncompressed.
+- Export: binary HAR bodies are written as base64, CSV cells that look like formulas are neutralized, and curl and httpie commands quote the method. Exported rules no longer include upstream credentials or other settings.
+- A damaged `config.json` is kept aside instead of overwritten, and saves are atomic. Session autosave runs on a background thread.
+- Startup errors from the proxy show in the status line, ports 0 and 65535 are rejected, and the flow search query is percent-decoded.
+- The table refreshes after flows are removed, and keeps its card border and resize grips when squeezed.
+- Breakpoint window actions are routed correctly.
+- Throttling no longer overflows on huge kbps values.
+
 ## v0.3.0
 
 Changes since [v0.2.0](https://github.com/niclimcy/proxyproxy/releases/tag/v0.2.0).
