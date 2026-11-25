@@ -11,7 +11,8 @@ base64 = "0.23.1"
 bytes = "1.12.2"
 dirs = "7.0.0"
 eframe = "0.37.0"
-egui-pop-phosphor = "0.15.0"
+# third-party fork until egui-phosphor supports egui 0.37
+egui-pop-phosphor = "=0.15.0"
 egui_extras = "0.37.0"
 flate2 = "1"
 lzfse_rust = "0.2"
@@ -32,7 +33,6 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 similar = "3.2.1"
 tokio = { version = "1.54.1", features = ["full"] }
-tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
