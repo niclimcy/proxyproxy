@@ -1,6 +1,6 @@
 use crate::domain::flow::Flow;
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
-use crate::viewmodels::intent::RowIntent;
+use crate::viewmodels::intent::{RowAction, RowIntent};
 use crate::viewmodels::rules_vm::RuleKind;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::theme::*;
@@ -301,98 +301,109 @@ pub fn show(
 
 /// Row actions, shared by right-click and the keyboard.
 fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, out: &mut Vec<RowIntent>) {
+    use crate::views::shortcuts::hint;
+    use RowAction as A;
     let id = f.id;
-    let b = |ui: &mut egui::Ui, l: &str| {
-        let c = menu_item(ui, l).clicked();
-        if c {
+    let item = |ui: &mut egui::Ui, l: &str, action: Option<A>| {
+        let r = menu_item(ui, l, action.and_then(hint).as_deref());
+        if r.clicked() {
             ui.close();
         }
-        c
+        r
     };
+    let b = |ui: &mut egui::Ui, l: &str, action: Option<A>| item(ui, l, action).clicked();
     let host = f.hostname().to_string();
-    let (route_only, route_add) = (
-        ico(ph::ARROWS_SPLIT, "Route only this host through proxy"),
-        ico(ph::ARROWS_SPLIT, "Add to proxy-only list"),
-    );
-    let (replay, mute, only, only_path, exclude) = (
-        ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd())),
-        ico(ph::EYE_SLASH, &format!("Mute {host}")),
-        ico(ph::TARGET, "Scope to this host"),
-        ico(ph::TARGET, "Scope to this URL path"),
-        ico(ph::EYE_SLASH, "Exclude this URL"),
-    );
-    menu_width(ui, &[&replay, &mute, &only, &only_path, &exclude, &route_only, &route_add, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
-    let first = menu_item(ui, &replay);
+    let labels = [
+        (ico(ph::PLAY, "Replay / edit…"), Some(A::Replay)),
+        (ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), None),
+        (ico(ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" }), Some(A::Pin)),
+        (ico(ph::NOTE, "Comment…"), Some(A::Comment)),
+        (ico(ph::GIT_DIFF, "Use as diff base"), Some(A::DiffBase)),
+        (ico(ph::EYE_SLASH, &format!("Mute {host}")), Some(A::Mute)),
+        (ico(ph::TARGET, "Scope to this host"), None),
+        (ico(ph::TARGET, "Scope to this URL path"), None),
+        (ico(ph::ARROWS_SPLIT, "Route only this host through proxy"), None),
+        (ico(ph::ARROWS_SPLIT, "Add to proxy-only list"), None),
+        (ico(ph::EYE_SLASH, "Exclude this URL"), None),
+        (ico(ph::LOCK_OPEN, "Don't decrypt this host"), None),
+        (ico(ph::TRASH, "Delete"), Some(A::Delete)),
+    ];
+    // room for the hint column, so a long label never runs into its shortcut
+    let widths: Vec<String> = labels.iter().map(|(l, a)| format!("{l}      {}", a.and_then(hint).unwrap_or_default())).collect();
+    menu_width(ui, &widths.iter().map(String::as_str).collect::<Vec<_>>());
+    let [replay, rule, pin, comment, diff, mute, only, only_path, route_only, route_add, exclude, no_tls, delete] = labels;
+
+    let first = item(ui, &replay.0, replay.1);
     if focus_first {
         first.request_focus();
     }
     if first.clicked() {
-        ui.close();
         out.push(RowIntent::Replay(id));
     }
-    ui.menu_button(ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), |ui| {
+    submenu_item(ui, &rule.0, |ui| {
         use RuleKind as K;
         menu_width(ui, &["Mock this response", "Throttle / delay"]);
         for (k, l) in [(K::Breakpoint, "Breakpoint"), (K::Mock, "Mock this response"), (K::Block, "Block"), (K::Throttle, "Throttle / delay"), (K::Redirect, "Redirect to…"), (K::Header, "Rewrite header"), (K::Script, "Script")] {
-            if b(ui, l) {
+            if b(ui, l, None) {
                 out.push(RowIntent::Rule(id, k));
             }
         }
     });
     ui.separator();
-    if b(ui, &ico(ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" })) {
+    if b(ui, &pin.0, pin.1) {
         out.push(RowIntent::Pin(id));
     }
-    ui.menu_button(ico(ph::PALETTE, "Color"), |ui| {
-        menu_width(ui, &["Purple"]);
-        if b(ui, "None") {
+    submenu_item(ui, &ico(ph::PALETTE, "Color"), |ui| {
+        menu_width(ui, &[&format!("Purple      {}", hint(A::Color(None)).unwrap_or_default())]);
+        if b(ui, "None", Some(A::Color(None))) {
             out.push(RowIntent::Color(id, None));
         }
         for (i, (n, _)) in tag_colors().iter().enumerate() {
-            if b(ui, n) {
-                out.push(RowIntent::Color(id, Some(i as u8)));
+            let c = Some(i as u8);
+            if b(ui, n, Some(A::Color(c))) {
+                out.push(RowIntent::Color(id, c));
             }
         }
     });
-    if b(ui, &ico(ph::NOTE, "Comment…")) {
+    if b(ui, &comment.0, comment.1) {
         out.push(RowIntent::Comment(id));
     }
-    if b(ui, &ico(ph::GIT_DIFF, "Use as diff base")) {
+    if b(ui, &diff.0, diff.1) {
         out.push(RowIntent::DiffBase(id));
     }
     ui.separator();
-    ui.menu_button(ico(ph::COPY, "Copy as"), |ui| {
+    submenu_item(ui, &ico(ph::COPY, "Copy as"), |ui| {
         use crate::services::exporter as ex;
         menu_width(ui, &["Python requests"]);
         for (l, s) in [("URL", f.url()), ("cURL", ex::curl(f)), ("fetch", ex::fetch(f)), ("Python requests", ex::python(f)), ("HTTPie", ex::httpie(f)), ("Raw HTTP", ex::raw_http(f))] {
-            if b(ui, l) {
+            if b(ui, l, None) {
                 ui.ctx().copy_text(s);
             }
         }
     });
-    if b(ui, &mute) {
+    if b(ui, &mute.0, mute.1) {
         out.push(RowIntent::Mute(host.clone()));
     }
-    if b(ui, &only) {
+    if b(ui, &only.0, None) {
         out.push(RowIntent::Scope(host.clone()));
     }
-    if b(ui, &only_path) {
+    if b(ui, &only_path.0, None) {
         out.push(RowIntent::ScopePath(id));
     }
-    if b(ui, &route_only) {
+    if b(ui, &route_only.0, None) {
         out.push(RowIntent::ProxyOnlyHost(host.clone()));
     }
-    if b(ui, &route_add) {
+    if b(ui, &route_add.0, None) {
         out.push(RowIntent::ProxyOnlyAdd(host.clone()));
     }
-    if b(ui, &exclude) {
+    if b(ui, &exclude.0, None) {
         out.push(RowIntent::Exclude(id));
     }
-    if b(ui, &ico(ph::LOCK_OPEN, "Don't decrypt this host")) {
+    if b(ui, &no_tls.0, None) {
         out.push(RowIntent::NoTls(host));
     }
     ui.separator();
-    if b(ui, &ico(ph::TRASH, "Delete")) {
+    if b(ui, &delete.0, delete.1) {
         out.push(RowIntent::Delete(id));
     }
 }

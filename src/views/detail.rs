@@ -90,7 +90,7 @@ pub fn show(
             return out;
         }
         egui::Panel::bottom("detail-empty").exact_size(56.0).show_separator_line(false).frame(card_panel()).show(ui, |ui| {
-            ui.centered_and_justified(|ui| ui.label(muted(format!("Select a request to inspect it  ·  ↑/↓ navigate  ·  {0}R replay  ·  {0}F search", cmd()))));
+            ui.centered_and_justified(|ui| ui.label(muted(format!("Select a request to inspect it  ·  ↑/↓ navigate  ·  ⇧F10 actions  ·  {0}R replay  ·  {0}F search", cmd()))));
         });
         return out;
     }
@@ -181,7 +181,7 @@ pub fn show(
                             ("HTTPie", ex::httpie(&f)),
                             ("Raw HTTP", ex::raw_http(&f)),
                         ] {
-                            if menu_item(ui, l).clicked() {
+                            if menu_item(ui, l, None).clicked() {
                                 ctx.copy_text(s);
                                 ui.close();
                             }

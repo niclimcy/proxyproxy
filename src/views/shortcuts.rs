@@ -1,4 +1,5 @@
 use crate::viewmodels::intent::{RowAction, ShortcutIntent};
+use crate::views::theme::cmd;
 use eframe::egui::{self, Key};
 
 /// Cmd+key bindings for the selected row: key, whether Shift is part of it, action.
@@ -16,6 +17,15 @@ pub const ROW_KEYS: [(Key, bool, RowAction); 11] = [
     (Key::Num5, false, RowAction::Color(Some(4))),
     (Key::Num0, false, RowAction::Color(None)),
 ];
+
+/// Shortcut label for a row action, as the row menu shows it.
+pub fn hint(action: RowAction) -> Option<String> {
+    if action == RowAction::Delete {
+        return Some(Key::Delete.name().to_string());
+    }
+    let (key, shift, _) = ROW_KEYS.into_iter().find(|&(_, _, a)| a == action)?;
+    Some(format!("{}{}{}", cmd(), if shift { "⇧" } else { "" }, key.symbol_or_name()))
+}
 
 pub fn read(ctx: &egui::Context, has_selection: bool) -> Vec<ShortcutIntent> {
     let mut out = vec![];

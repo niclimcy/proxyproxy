@@ -368,7 +368,7 @@ fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
             let mut labels: Vec<&str> = saved.iter().map(|(n, _)| n.as_str()).collect();
             labels.push(&save);
             menu_width(ui, &labels);
-            if !vm.filter.trim().is_empty() && menu_item(ui, &save).clicked() {
+            if !vm.filter.trim().is_empty() && menu_item(ui, &save, None).clicked() {
                 out.push(ToolbarIntent::SaveQuery);
                 ui.close();
                 return;
@@ -383,7 +383,7 @@ fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
                     {
                         out.push(ToolbarIntent::DeleteQuery(i));
                     }
-                    if menu_item(ui, name).on_hover_text(q).clicked() {
+                    if menu_item(ui, name, None).on_hover_text(q).clicked() {
                         out.push(ToolbarIntent::LoadQuery(q.clone()));
                         ui.close();
                     }
@@ -420,7 +420,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
             for (i, l) in items.iter().enumerate() {
                 if *l == "-" {
                     ui.separator();
-                } else if menu_item(ui, l).clicked() {
+                } else if menu_item(ui, l, None).clicked() {
                     act = Some(i as u8);
                     ui.close();
                 }
@@ -481,17 +481,17 @@ struct Setup<'a> {
 
 fn help_menu(ui: &mut egui::Ui, label: &str, out: &mut Vec<ToolbarIntent>) {
     toolbar_menu(ui, ph::QUESTION, label, false, |ui| {
-        let settings = format!("Settings…  ({},)", cmd());
-        menu_width(ui, &[&settings, "Setup guide", "About proxyproxy"]);
-        if menu_item(ui, &settings).clicked() {
+        let settings = format!("{},", cmd());
+        menu_width(ui, &[&format!("Settings…    {settings}"), "Setup guide", "About proxyproxy"]);
+        if menu_item(ui, "Settings…", Some(&settings)).clicked() {
             out.push(ToolbarIntent::Settings);
             ui.close();
         }
-        if menu_item(ui, "Setup guide").clicked() {
+        if menu_item(ui, "Setup guide", None).clicked() {
             out.push(ToolbarIntent::Onboarding);
             ui.close();
         }
-        if menu_item(ui, "About proxyproxy").clicked() {
+        if menu_item(ui, "About proxyproxy", None).clicked() {
             out.push(ToolbarIntent::About);
             ui.close();
         }
@@ -639,7 +639,7 @@ fn devices_menu(
                         ui.separator();
                     }
                     Row::Device(label, action) => {
-                        if menu_item(ui, &label).clicked() {
+                        if menu_item(ui, &label, None).clicked() {
                             out.push(ToolbarIntent::Device(action));
                             ui.close();
                         }
@@ -647,7 +647,7 @@ fn devices_menu(
                     Row::Toggle(label, on, action) => {
                         let icon = if on { ph::CHECK_SQUARE } else { ph::SQUARE };
                         // stays open so the flipped checkbox confirms the change
-                        if menu_item(ui, &ico(icon, &label)).clicked() {
+                        if menu_item(ui, &ico(icon, &label), None).clicked() {
                             out.push(ToolbarIntent::Device(action));
                         }
                     }
@@ -662,7 +662,7 @@ fn devices_menu(
                 menu_width(ui, &labels);
                 for row in copies {
                     if let Row::Copy(label, text) = row
-                        && menu_item(ui, &label).clicked()
+                        && menu_item(ui, &label, None).clicked()
                     {
                         ctx.copy_text(text);
                         ui.close();

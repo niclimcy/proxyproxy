@@ -694,7 +694,8 @@ pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, keep_open: bool,
 }
 
 /// Popup-menu row with a restrained rounded hover fill and no widget border.
-pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
+/// `hint` is a shortcut drawn on the right; screen readers only get the label.
+pub fn menu_item(ui: &mut egui::Ui, label: &str, hint: Option<&str>) -> egui::Response {
     let g = ui.painter().layout_no_wrap(
         label.to_string(),
         egui::FontId::proportional(FS_SMALL),
@@ -717,6 +718,15 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
         g,
         fg(),
     );
+    if let Some(hint) = hint {
+        ui.painter().text(
+            egui::pos2(rect.max.x - 8.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            hint,
+            egui::FontId::proportional(FS_SMALL),
+            fg_muted(),
+        );
+    }
     focus_ring(ui, &resp, RADIUS_SM);
     resp
 }
@@ -727,7 +737,7 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
 pub fn submenu_item(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     // reserve a slot below the row's own shapes, filled once we know the submenu is open
     let open_bg = ui.painter().add(egui::Shape::Noop);
-    let resp = menu_item(ui, label);
+    let resp = menu_item(ui, label, None);
     ui.painter().text(
         egui::pos2(resp.rect.max.x - 14.0, resp.rect.center().y),
         egui::Align2::CENTER_CENTER,

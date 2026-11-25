@@ -174,7 +174,7 @@ fn app_node(
                         items.iter().map(String::as_str).collect();
                     menu_width(ui, &labels);
                     for (i, label) in labels.iter().enumerate() {
-                        if !menu_item(ui, label).clicked() {
+                        if !menu_item(ui, label, None).clicked() {
                             continue;
                         }
                         match i {
@@ -191,7 +191,7 @@ fn app_node(
     });
     head.context_menu(|ui| {
         menu_width(ui, &["Show only this app"]);
-        if menu_item(ui, "Show only this app").clicked() {
+        if menu_item(ui, "Show only this app", None).clicked() {
             out.push(SidebarIntent::Pick(app_term));
             ui.close();
         }
