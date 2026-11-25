@@ -98,7 +98,10 @@ mod tests {
         assert!(web_proxy_is_ours(ours, 9090));
         assert!(!web_proxy_is_ours(ours, 9091));
         assert!(!web_proxy_is_ours(&ours.replace("Yes", "No"), 9090));
-        assert!(!web_proxy_is_ours(&ours.replace("127.0.0.1", "proxy.corp"), 9090));
+        assert!(!web_proxy_is_ours(
+            &ours.replace("127.0.0.1", "proxy.corp"),
+            9090
+        ));
     }
 
     #[test]

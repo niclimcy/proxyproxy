@@ -75,5 +75,4 @@ mod tests {
         let f: Flow = serde_json::from_value(v).unwrap();
         assert!(f.app_id.is_none());
     }
-
 }

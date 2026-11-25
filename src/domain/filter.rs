@@ -126,7 +126,7 @@ fn num_op(op: &Op, v: f64) -> bool {
         Op::Ge(n) => v >= *n,
         Op::Lt(n) => v < *n,
         Op::Le(n) => v <= *n,
-        Op::Has(n) | Op::Eq(n) => n.parse::<f64>().is_ok_and(|n| n == v),
+        Op::Has(n) | Op::Eq(n) => n.parse::<f64>().is_ok_and(|n| (n - v).abs() < f64::EPSILON),
         _ => false,
     }
 }
@@ -162,15 +162,14 @@ fn term_matches(t: &Term, f: &Flow) -> bool {
         "comment" => text_op(&t.op, &f.comment),
         "status" => f
             .status
-            .is_some_and(|s| num_op(&t.op, s as f64) || text_op(&t.op, &s.to_string())),
+            .is_some_and(|s| num_op(&t.op, f64::from(s)) || text_op(&t.op, &s.to_string())),
         "size" => num_op(&t.op, f.res_size() as f64),
         "time" => f.duration_ms.is_some_and(|d| num_op(&t.op, d as f64)),
         "type" => {
             let ct = f
                 .response
                 .as_ref()
-                .map(|r| r.content_type())
-                .unwrap_or_default();
+                .map_or_default(super::flow::Message::content_type);
             text_op(&t.op, &ct) || text_op(&t.op, ct.rsplit(['/', '+']).next().unwrap_or(""))
         }
         "req" => text_op(&t.op, &f.request.text()),

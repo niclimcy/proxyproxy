@@ -53,6 +53,7 @@ pub enum SidebarIntent {
     Unmute(String),
 }
 
+#[derive(Clone, Copy)]
 pub enum ShortcutIntent {
     ToggleSidebar,
     FocusSearch,
@@ -154,6 +155,7 @@ pub enum ListKind {
     ProxyOnly,
 }
 
+#[derive(Clone, Copy)]
 pub enum RuleIntent {
     SetEnabled(u64, bool),
     Delete(u64),

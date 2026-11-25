@@ -20,7 +20,7 @@ impl AppMenu {
         self.0.is_some()
     }
 
-    pub fn take_requests(&self) -> Vec<MenuRequest> {
+    pub fn take_requests() -> Vec<MenuRequest> {
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             let mut out = vec![];

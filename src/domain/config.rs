@@ -81,10 +81,23 @@ mod tests {
 
     #[test]
     fn config_saved_by_an_older_version_loads_with_defaults() {
-        let c: Config = serde_json::from_str(r#"{"rules":[],"scope_only":true,"scope":["a.com"],"muted":["m.com"]}"#).unwrap();
+        let c: Config = serde_json::from_str(
+            r#"{"rules":[],"scope_only":true,"scope":["a.com"],"muted":["m.com"]}"#,
+        )
+        .unwrap();
         assert!(c.exclude.is_empty() && !c.proxy_only && c.proxy_only_hosts.is_empty());
-        assert!(c.captured("https://a.com/x") && !c.captured("https://b.com/x") && !c.captured("https://m.com/x"));
-        assert_eq!(c.binding(crate::domain::keymap::RowAction::Replay), Some(crate::domain::keymap::Binding { key: "R".into(), shift: false }));
+        assert!(
+            c.captured("https://a.com/x")
+                && !c.captured("https://b.com/x")
+                && !c.captured("https://m.com/x")
+        );
+        assert_eq!(
+            c.binding(crate::domain::keymap::RowAction::Replay),
+            Some(crate::domain::keymap::Binding {
+                key: "R".into(),
+                shift: false
+            })
+        );
     }
 
     #[test]
@@ -94,5 +107,4 @@ mod tests {
         assert!(!Config::default().onboarding_completed);
         assert_eq!(cfg.onboarding_profile, OnboardingProfile::Experienced);
     }
-
 }

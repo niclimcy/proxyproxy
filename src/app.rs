@@ -122,7 +122,7 @@ impl App {
 
     fn drain(&mut self) {
         self.status.poll();
-        for r in self.menu.take_requests() {
+        for r in services::app_menu::AppMenu::take_requests() {
             match r {
                 MenuRequest::SetupGuide => self.onboarding.open(),
                 MenuRequest::Settings => self.settings.open(),
@@ -175,7 +175,7 @@ impl App {
             match i {
                 ToolbarIntent::Session(s) => {
                     self.session
-                        .handle(s, &mut self.capture, &mut self.rules, &mut self.status)
+                        .handle(s, &mut self.capture, &mut self.rules, &mut self.status);
                 }
                 ToolbarIntent::Device(a) => self.devices.run(a, &self.status),
                 ToolbarIntent::Compose => self.replay.open_compose(),
@@ -254,7 +254,9 @@ impl App {
 
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.capture.refresh_visible();
-        for i in views::shortcuts::read(ctx, &self.capture.keymap(), self.capture.selected.is_some()) {
+        for i in
+            views::shortcuts::read(ctx, &self.capture.keymap(), self.capture.selected.is_some())
+        {
             let before = self.capture.selected;
             let e = self.capture.handle_shortcut(i, &mut self.status);
             if self.capture.selected != before {
@@ -265,7 +267,9 @@ impl App {
 
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0, views::theme::backdrop());
-        let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(full.shrink(views::theme::GAP as f32 / 2.0)));
+        let mut ui = ui.new_child(
+            egui::UiBuilder::new().max_rect(full.shrink(f32::from(views::theme::GAP) / 2.0)),
+        );
         let ui = &mut ui;
 
         self.toolbar(ui, ctx);

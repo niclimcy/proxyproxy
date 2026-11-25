@@ -92,10 +92,7 @@ pub fn parse_proxy(s: &str) -> Option<ProxyAddr> {
 pub fn parse_pac_result(s: &str) -> Option<ProxyAddr> {
     for entry in s.split(';') {
         let mut it = entry.split_whitespace();
-        match (
-            it.next().map(|k| k.to_ascii_uppercase()).as_deref(),
-            it.next(),
-        ) {
+        match (it.next().map(str::to_ascii_uppercase).as_deref(), it.next()) {
             (Some("DIRECT"), _) => return None,
             (Some("PROXY" | "HTTP"), Some(hp)) => {
                 if let Some(p) = parse_proxy(hp) {
@@ -113,7 +110,7 @@ pub fn parse_pac_result(s: &str) -> Option<ProxyAddr> {
     None
 }
 
-const PRELUDE: &str = r#"
+const PRELUDE: &str = r"
 function dnsResolve(h){var r=__dns(h);return r===''?null:r}
 function isResolvable(h){return dnsResolve(h)!==null}
 function isPlainHostName(h){return h.indexOf('.')<0}
@@ -124,7 +121,7 @@ function dnsDomainLevels(h){return h.split('.').length-1}
 function myIpAddress(){return '127.0.0.1'}
 function __n(s){var p=s.split('.');if(p.length!==4)return null;var n=0;for(var i=0;i<4;i++){var x=parseInt(p[i],10);if(!(x>=0&&x<=255))return null;n=n*256+x}return n}
 function isInNet(h,pat,mask){var ip=/^[0-9.]+$/.test(h)?h:dnsResolve(h);if(!ip)return false;var a=__n(ip),b=__n(pat),m=__n(mask);if(a===null||b===null||m===null)return false;return ((a&m)>>>0)===((b&m)>>>0)}
-"#;
+";
 
 fn resolve_v4(h: &str) -> String {
     if let Ok(ip) = h.parse::<IpAddr>() {
@@ -133,9 +130,8 @@ fn resolve_v4(h: &str) -> String {
     (h, 0)
         .to_socket_addrs()
         .ok()
-        .and_then(|mut a| a.find(|a| a.is_ipv4()))
-        .map(|a| a.ip().to_string())
-        .unwrap_or_default()
+        .and_then(|mut a| a.find(std::net::SocketAddr::is_ipv4))
+        .map_or_default(|a| a.ip().to_string())
 }
 
 pub fn eval_pac(code: &str, url: &str, host: &str) -> Result<String, String> {
@@ -178,7 +174,9 @@ pub fn plain_http_auth(up: &Upstream) -> Option<String> {
     if up.mode != UpstreamMode::Manual {
         return None;
     }
-    parse_proxy(&up.url).filter(|p| p.kind == ProxyKind::Http)?.auth
+    parse_proxy(&up.url)
+        .filter(|p| p.kind == ProxyKind::Http)?
+        .auth
 }
 
 fn pick(cfg: &Shared, uri: &Uri) -> Result<Option<ProxyAddr>, BoxErr> {
@@ -204,8 +202,14 @@ fn pick(cfg: &Shared, uri: &Uri) -> Result<Option<ProxyAddr>, BoxErr> {
             let url = match uri.scheme_str() {
                 Some("https") => format!(
                     "https://{}{}",
-                    uri.authority().map(|a| a.as_str()).unwrap_or(host),
-                    uri.path_and_query().map(|p| p.as_str()).unwrap_or("/")
+                    uri.authority().map_or(
+                        host,
+                        hudsucker::tokio_tungstenite::tungstenite::http::uri::Authority::as_str
+                    ),
+                    uri.path_and_query().map_or(
+                        "/",
+                        hudsucker::tokio_tungstenite::tungstenite::http::uri::PathAndQuery::as_str
+                    )
                 ),
                 _ => uri.to_string(),
             };
@@ -271,8 +275,7 @@ async fn tunnel(io: &mut TcpStream, target: &str, p: &ProxyAddr) -> Result<(), B
     let auth = p
         .auth
         .as_ref()
-        .map(|a| format!("Proxy-Authorization: {a}\r\n"))
-        .unwrap_or_default();
+        .map_or_default(|a| format!("Proxy-Authorization: {a}\r\n"));
     io.write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n{auth}\r\n").as_bytes())
         .await?;
     let mut buf = Vec::with_capacity(256);
@@ -308,7 +311,7 @@ async fn socks5(
     } else {
         &[0][..]
     };
-    io.write_all(&[5, methods.len() as u8]).await?;
+    io.write_all(&[5, u8::try_from(methods.len())?]).await?;
     io.write_all(methods).await?;
     let mut response = [0; 2];
     io.read_exact(&mut response).await?;
@@ -320,12 +323,14 @@ async fn socks5(
         let (user, password) = credentials
             .split_once(':')
             .ok_or("SOCKS5 credentials must be user:password")?;
-        if user.len() > u8::MAX as usize || password.len() > u8::MAX as usize {
+        let (Ok(user_len), Ok(password_len)) =
+            (u8::try_from(user.len()), u8::try_from(password.len()))
+        else {
             return Err("SOCKS5 credentials are too long".into());
-        }
-        io.write_all(&[1, user.len() as u8]).await?;
+        };
+        io.write_all(&[1, user_len]).await?;
         io.write_all(user.as_bytes()).await?;
-        io.write_all(&[password.len() as u8]).await?;
+        io.write_all(&[password_len]).await?;
         io.write_all(password.as_bytes()).await?;
         let mut auth_response = [0; 2];
         io.read_exact(&mut auth_response).await?;
@@ -406,7 +411,7 @@ impl Service<Uri> for UpstreamConnector {
             let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
             match p.kind {
                 ProxyKind::Http if tls => {
-                    tunnel(io.inner_mut(), &format!("{host}:{port}"), &p).await?
+                    tunnel(io.inner_mut(), &format!("{host}:{port}"), &p).await?;
                 }
                 ProxyKind::Http => {}
                 ProxyKind::Socks5 => socks5(io.inner_mut(), host, port, p.auth.as_deref()).await?,
@@ -425,7 +430,11 @@ mod tests {
 
     #[test]
     fn plain_http_auth_only_for_manual_http_proxies_with_credentials() {
-        let up = |mode, url: &str| Upstream { mode, url: url.into(), pac_path: String::new() };
+        let up = |mode, url: &str| Upstream {
+            mode,
+            url: url.into(),
+            pac_path: String::new(),
+        };
         assert_eq!(
             plain_http_auth(&up(UpstreamMode::Manual, "http://u:p@h:3128")).as_deref(),
             Some("Basic dTpw")
@@ -522,5 +531,4 @@ mod tests {
             .is_err()
         );
     }
-
 }

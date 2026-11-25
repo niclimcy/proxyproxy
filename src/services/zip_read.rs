@@ -1,5 +1,6 @@
 //! Minimal ZIP reader (stored and deflate) over any `Read + Seek`, for APKs. Never panics
 //! on malformed input and bounds every allocation.
+use crate::services::bytes::{le16, le16_usize, le32};
 use flate2::read::DeflateDecoder;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -22,14 +23,6 @@ pub struct Zip<R> {
     pub entries: Vec<Entry>,
 }
 
-fn u16le(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at + 2)?.try_into().ok()?))
-}
-
-fn u32le(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
-}
-
 impl<R: Read + Seek> Zip<R> {
     pub fn open(mut r: R) -> Option<Self> {
         let len = r.seek(SeekFrom::End(0)).ok()?;
@@ -38,33 +31,35 @@ impl<R: Read + Seek> Zip<R> {
         r.seek(SeekFrom::Start(len - tail_len)).ok()?;
         let mut tail = vec![0; tail_len as usize];
         r.read_exact(&mut tail).ok()?;
-        let eocd = (0..tail.len().checked_sub(21)?).rev().find(|&i| u32le(&tail, i) == Some(EOCD_SIG))?;
-        let count = u16le(&tail, eocd + 10)? as usize;
-        let cd_size = u64::from(u32le(&tail, eocd + 12)?);
-        let cd_off = u64::from(u32le(&tail, eocd + 16)?);
+        let eocd = (0..tail.len().checked_sub(21)?)
+            .rev()
+            .find(|&i| le32(&tail, i) == Some(EOCD_SIG))?;
+        let count = le16_usize(&tail, eocd + 10)?;
+        let cd_size = u64::from(le32(&tail, eocd + 12)?);
+        let cd_off = u64::from(le32(&tail, eocd + 16)?);
         if count > MAX_ENTRIES || cd_size > 64 << 20 || cd_off.checked_add(cd_size)? > len {
             return None;
         }
         r.seek(SeekFrom::Start(cd_off)).ok()?;
-        let mut cd = vec![0; cd_size as usize];
+        let mut cd = vec![0; usize::try_from(cd_size).ok()?];
         r.read_exact(&mut cd).ok()?;
         let (mut at, mut entries) = (0usize, Vec::new());
         for _ in 0..count {
-            if u32le(&cd, at)? != CEN_SIG {
+            if le32(&cd, at)? != CEN_SIG {
                 break;
             }
             let (nlen, xlen, clen) = (
-                u16le(&cd, at + 28)? as usize,
-                u16le(&cd, at + 30)? as usize,
-                u16le(&cd, at + 32)? as usize,
+                le16_usize(&cd, at + 28)?,
+                le16_usize(&cd, at + 30)?,
+                le16_usize(&cd, at + 32)?,
             );
             let name = String::from_utf8_lossy(cd.get(at + 46..at + 46 + nlen)?).into_owned();
             entries.push(Entry {
                 name,
-                method: u16le(&cd, at + 10)?,
-                comp_size: u64::from(u32le(&cd, at + 20)?),
-                size: u64::from(u32le(&cd, at + 24)?),
-                offset: u64::from(u32le(&cd, at + 42)?),
+                method: le16(&cd, at + 10)?,
+                comp_size: u64::from(le32(&cd, at + 20)?),
+                size: u64::from(le32(&cd, at + 24)?),
+                offset: u64::from(le32(&cd, at + 42)?),
             });
             at += 46 + nlen + xlen + clen;
         }
@@ -83,16 +78,19 @@ impl<R: Read + Seek> Zip<R> {
         self.r.seek(SeekFrom::Start(e.offset)).ok()?;
         let mut head = [0u8; 30];
         self.r.read_exact(&mut head).ok()?;
-        if u32le(&head, 0)? != LOC_SIG {
+        if le32(&head, 0)? != LOC_SIG {
             return None;
         }
-        let skip = i64::from(u16le(&head, 26)?) + i64::from(u16le(&head, 28)?);
+        let skip = i64::from(le16(&head, 26)?) + i64::from(le16(&head, 28)?);
         self.r.seek(SeekFrom::Current(skip)).ok()?;
         let raw = (&mut self.r).take(e.comp_size);
         let mut out = Vec::with_capacity(e.size.min(1 << 20) as usize);
         match e.method {
             0 => raw.take(max).read_to_end(&mut out).ok()?,
-            8 => DeflateDecoder::new(raw).take(max + 1).read_to_end(&mut out).ok()?,
+            8 => DeflateDecoder::new(raw)
+                .take(max + 1)
+                .read_to_end(&mut out)
+                .ok()?,
             _ => return None,
         };
         (out.len() as u64 <= max).then_some(out)

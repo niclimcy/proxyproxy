@@ -31,10 +31,10 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
             request,
         } => {
             if let Some(f) = find(flows, *id) {
-                f.method = method.clone();
-                f.host = host.clone();
-                f.path = path.clone();
-                f.request = request.clone();
+                f.method.clone_from(method);
+                f.host.clone_from(host);
+                f.path.clone_from(path);
+                f.request.clone_from(request);
                 if f.tag.is_empty() {
                     f.tag = "Edited".into();
                 }
@@ -58,9 +58,9 @@ pub fn apply(flows: &mut [Flow], ev: &Event) -> bool {
         }
         Event::App { id, app, identity } => {
             if let Some(f) = find(flows, *id) {
-                f.app = app.clone();
+                f.app.clone_from(app);
                 if identity.is_some() {
-                    f.app_id = identity.clone();
+                    f.app_id.clone_from(identity);
                 }
             }
             true
@@ -402,5 +402,4 @@ mod tests {
         store.pump(&rx, |_| {});
         assert!(store.lock().flows.len() <= MAX_FLOWS);
     }
-
 }

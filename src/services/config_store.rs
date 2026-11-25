@@ -16,8 +16,7 @@ pub fn load(path: &Path) -> (Config, Option<String>) {
             // moved aside so the next save can't overwrite the user's only copy
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+                .map_or(0, |d| d.as_secs());
             let bad = path.with_extension(format!("json.bad-{ts}"));
             let kept = match std::fs::rename(path, &bad) {
                 Ok(()) => format!("kept as {}", bad.display()),
@@ -25,7 +24,9 @@ pub fn load(path: &Path) -> (Config, Option<String>) {
             };
             (
                 Config::default(),
-                Some(format!("Settings could not be read ({e}); started with defaults, old file {kept}")),
+                Some(format!(
+                    "Settings could not be read ({e}); started with defaults, old file {kept}"
+                )),
             )
         }
     }
@@ -66,7 +67,11 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".bad-"))
             .collect();
         assert_eq!(backups.len(), 1);
-        assert!(std::fs::read_to_string(backups[0].path()).unwrap().contains("FutureAction"));
+        assert!(
+            std::fs::read_to_string(backups[0].path())
+                .unwrap()
+                .contains("FutureAction")
+        );
     }
 
     #[test]

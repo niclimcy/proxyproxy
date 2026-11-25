@@ -22,9 +22,9 @@ impl BodyDecoder for Schema {
         Rendered::Text {
             caption: Some(format!(
                 "decoded as {}",
-                d.as_ref().map(|d| d.type_name.as_str()).unwrap_or("?")
+                d.as_ref().map_or("?", |d| d.type_name.as_str())
             )),
-            text: d.map(|d| d.text).unwrap_or_default(),
+            text: d.map_or_default(|d| d.text),
         }
     }
 

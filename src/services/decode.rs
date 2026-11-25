@@ -1,6 +1,7 @@
 use crate::domain::flow::Message;
 use base64::Engine;
 use serde_json::Value;
+use std::fmt::Write as _;
 
 #[derive(Clone, Copy, Default)]
 pub struct Ctx<'a> {
@@ -129,7 +130,7 @@ fn indent_markup(s: &str) -> String {
     while let Some(i) = rest.find('<') {
         out.push_str(&rest[..i]);
         let Some(j) = rest[i..].find('>') else { break };
-        let tag = &rest[i..i + j + 1];
+        let tag = &rest[i..=(i + j)];
         if tag.starts_with("</") {
             depth = depth.saturating_sub(1);
         }
@@ -160,7 +161,7 @@ pub fn protobuf(data: &[u8], depth: usize) -> Option<String> {
         loop {
             let b = *data.get(*i)?;
             *i += 1;
-            v |= ((b & 0x7f) as u64).checked_shl(s)?;
+            v |= u64::from(b & 0x7f).checked_shl(s)?;
             if b & 0x80 == 0 {
                 return Some(v);
             }
@@ -180,25 +181,21 @@ pub fn protobuf(data: &[u8], depth: usize) -> Option<String> {
             return None;
         }
         match wt {
-            0 => out.push_str(&format!("{pad}{field}: {}\n", varint(&mut i)?)),
+            0 => {
+                let _ = writeln!(out, "{pad}{field}: {}", varint(&mut i)?);
+            }
             1 => {
                 let b: [u8; 8] = data.get(i..i + 8)?.try_into().ok()?;
                 i += 8;
-                out.push_str(&format!(
-                    "{pad}{field}: {} (fixed64)\n",
-                    u64::from_le_bytes(b)
-                ));
+                let _ = writeln!(out, "{pad}{field}: {} (fixed64)", u64::from_le_bytes(b));
             }
             5 => {
                 let b: [u8; 4] = data.get(i..i + 4)?.try_into().ok()?;
                 i += 4;
-                out.push_str(&format!(
-                    "{pad}{field}: {} (fixed32)\n",
-                    u32::from_le_bytes(b)
-                ));
+                let _ = writeln!(out, "{pad}{field}: {} (fixed32)", u32::from_le_bytes(b));
             }
             2 => {
-                let n = varint(&mut i)? as usize;
+                let n = usize::try_from(varint(&mut i)?).ok()?;
                 let sub = data.get(i..i.checked_add(n)?)?;
                 i += n;
                 if let Some(nested) = (depth < 6)
@@ -206,11 +203,11 @@ pub fn protobuf(data: &[u8], depth: usize) -> Option<String> {
                     .flatten()
                     .filter(|_| !sub.is_empty())
                 {
-                    out.push_str(&format!("{pad}{field} {{\n{nested}{pad}}}\n"));
+                    let _ = writeln!(out, "{pad}{field} {{\n{nested}{pad}}}");
                 } else if let Ok(s) = std::str::from_utf8(sub) {
-                    out.push_str(&format!("{pad}{field}: {s:?}\n"));
+                    let _ = writeln!(out, "{pad}{field}: {s:?}");
                 } else {
-                    out.push_str(&format!("{pad}{field}: <{n} bytes>\n"));
+                    let _ = writeln!(out, "{pad}{field}: <{n} bytes>");
                 }
             }
             _ => return None,
@@ -221,8 +218,7 @@ pub fn protobuf(data: &[u8], depth: usize) -> Option<String> {
 
 pub fn query_params(path: &str) -> Vec<(String, String)> {
     path.split_once('?')
-        .map(|(_, q)| parse_form(q.split('#').next().unwrap_or(q)))
-        .unwrap_or_default()
+        .map_or_default(|(_, q)| parse_form(q.split('#').next().unwrap_or(q)))
 }
 
 pub fn diff_text(a: &str, b: &str) -> Vec<(char, String)> {

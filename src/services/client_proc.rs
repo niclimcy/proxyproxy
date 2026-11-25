@@ -12,7 +12,9 @@ fn run(cmd: &mut Command) -> Option<String> {
         cmd.creation_flags(0x0800_0000); // no console flash
     }
     let out = cmd.output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Name and pid of the process that owns the client side of the connection.
@@ -29,11 +31,17 @@ pub fn lookup_app(port: u16, own_pid: u32) -> Option<(String, u32)> {
         return None;
     }
     for entry in fs::read_dir("/proc").ok()?.flatten() {
-        let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|s| s.parse::<u32>().ok())
+        else {
             continue;
         };
         // other users' fd dirs are unreadable; skipping them is expected
-        let Ok(fds) = fs::read_dir(entry.path().join("fd")) else { continue };
+        let Ok(fds) = fs::read_dir(entry.path().join("fd")) else {
+            continue;
+        };
         let owns = pid != own_pid
             && fds.flatten().any(|fd| {
                 fs::read_link(fd.path())
@@ -59,7 +67,8 @@ pub fn lookup_app(port: u16, own_pid: u32) -> Option<(String, u32)> {
 pub fn lookup_app(port: u16, own_pid: u32) -> Option<(String, u32)> {
     let table = run(Command::new("netstat").args(["-ano", "-p", "TCP"]))?;
     let pid = os_parse::netstat_pid(&table, port, own_pid)?;
-    let csv = run(Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]))?;
+    let csv =
+        run(Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]))?;
     Some((os_parse::tasklist_name(&csv)?, pid))
 }
 

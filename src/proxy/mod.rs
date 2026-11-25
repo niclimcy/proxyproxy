@@ -52,7 +52,7 @@ pub async fn run(
             started: None,
             res_actions: vec![],
             bp_response: false,
-            apps: Default::default(),
+            apps: Arc::default(),
         })
         .with_websocket_handler(WsCap { sink, map: ws })
         .build()?;

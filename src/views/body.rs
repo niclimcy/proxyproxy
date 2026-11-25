@@ -1,7 +1,10 @@
 use crate::domain::flow::Message;
 use crate::services::decode::{self, Ctx};
 use crate::services::decoders::{self, ModeId, Rendered};
-use crate::views::theme::*;
+use crate::views::theme::{
+    FS_CAPTION, Tint, accent, danger, fg_muted, fmt_size, icon_button, icon_only, muted, overline,
+    pal, segmented, success, tint, violet, warning,
+};
 use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use serde_json::Value;
 
@@ -110,8 +113,7 @@ fn hex_view(ui: &mut egui::Ui, id: &str, data: &[u8]) {
                     .map(|i| {
                         chunk
                             .get(i)
-                            .map(|b| format!("{b:02x} "))
-                            .unwrap_or_else(|| "   ".into())
+                            .map_or_else(|| "   ".into(), |b| format!("{b:02x} "))
                     })
                     .collect();
                 let asc: String = chunk
@@ -170,9 +172,7 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
             fmt_size(m.body.len()),
             m.content_type()
         )));
-        if icon_only(ui, egui_phosphor::regular::COPY, "Copy body")
-            .clicked()
-        {
+        if icon_only(ui, egui_phosphor::regular::COPY, "Copy body").clicked() {
             ui.ctx().copy_text(decode::pretty_text(m));
         }
     });
@@ -200,13 +200,23 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
         Rendered::Tree(v) => {
             let mut expand = None;
             ui.horizontal(|ui| {
-                if icon_button(ui, egui_phosphor::regular::ARROWS_OUT_SIMPLE, "Expand all", true)
-                    .clicked()
+                if icon_button(
+                    ui,
+                    egui_phosphor::regular::ARROWS_OUT_SIMPLE,
+                    "Expand all",
+                    true,
+                )
+                .clicked()
                 {
                     expand = Some(true);
                 }
-                if icon_button(ui, egui_phosphor::regular::ARROWS_IN_SIMPLE, "Collapse all", true)
-                    .clicked()
+                if icon_button(
+                    ui,
+                    egui_phosphor::regular::ARROWS_IN_SIMPLE,
+                    "Collapse all",
+                    true,
+                )
+                .clicked()
                 {
                     expand = Some(false);
                 }

@@ -1,6 +1,6 @@
 use crate::domain::about;
 use crate::viewmodels::about_vm::AboutVm;
-use crate::views::theme::*;
+use crate::views::theme::{FS_TITLE, PAD, muted, panel};
 use eframe::egui::{self, Frame, Margin, RichText};
 
 pub fn show(ctx: &egui::Context, vm: &mut AboutVm) {

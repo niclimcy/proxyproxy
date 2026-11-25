@@ -1,6 +1,7 @@
 //! Android binary XML (`AndroidManifest.xml`) and resource table (`resources.arsc`) readers.
 //! Only what an icon and label lookup needs. Every offset is bounds-checked, so malformed
 //! input yields `None` instead of a panic.
+use crate::services::bytes::{le16, le16_usize, le32, le32_usize};
 
 const RES_STRING_POOL: u16 = 0x0001;
 const RES_TABLE: u16 = 0x0002;
@@ -12,17 +13,9 @@ const TYPE_REFERENCE: u8 = 0x01;
 const TYPE_INT_DEC: u8 = 0x10;
 const MAX_STRINGS: usize = 200_000;
 
-fn u16le(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at.checked_add(2)?)?.try_into().ok()?))
-}
-
-fn u32le(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(b.get(at..at.checked_add(4)?)?.try_into().ok()?))
-}
-
 /// `(type, header size, total size)` of the chunk at `at`, checked to fit in `b`.
 fn chunk(b: &[u8], at: usize) -> Option<(u16, usize, usize)> {
-    let (ty, head, size) = (u16le(b, at)?, u16le(b, at + 2)? as usize, u32le(b, at + 4)? as usize);
+    let (ty, head, size) = (le16(b, at)?, le16_usize(b, at + 2)?, le32_usize(b, at + 4)?);
     (head >= 8 && size >= head && at.checked_add(size)? <= b.len()).then_some((ty, head, size))
 }
 
@@ -35,8 +28,8 @@ impl StringPool {
         if ty != RES_STRING_POOL {
             return None;
         }
-        let count = u32le(b, at + 8)? as usize;
-        let (flags, start) = (u32le(b, at + 16)?, u32le(b, at + 20)? as usize);
+        let count = le32_usize(b, at + 8)?;
+        let (flags, start) = (le32(b, at + 16)?, le32_usize(b, at + 20)?);
         if count > MAX_STRINGS || count.checked_mul(4)? > size {
             return None;
         }
@@ -44,7 +37,7 @@ impl StringPool {
         let utf8 = flags & 0x100 != 0;
         let mut out = Vec::with_capacity(count);
         for i in 0..count {
-            let off = u32le(b, at + head + i * 4)? as usize;
+            let off = le32_usize(b, at + head + i * 4)?;
             let s = at.checked_add(start)?.checked_add(off)?;
             out.push(Self::string(b.get(..end)?, s, utf8).unwrap_or_default());
         }
@@ -55,20 +48,26 @@ impl StringPool {
         if utf8 {
             let skip_len = |p: usize| -> Option<(usize, usize)> {
                 let first = *b.get(p)? as usize;
-                if first & 0x80 != 0 { Some((((first & 0x7f) << 8) | *b.get(p + 1)? as usize, 2)) } else { Some((first, 1)) }
+                if first & 0x80 != 0 {
+                    Some((((first & 0x7f) << 8) | *b.get(p + 1)? as usize, 2))
+                } else {
+                    Some((first, 1))
+                }
             };
             let (_, n) = skip_len(at)?;
             let (blen, m) = skip_len(at + n)?;
             let s = at + n + m;
             Some(String::from_utf8_lossy(b.get(s..s.checked_add(blen)?)?).into_owned())
         } else {
-            let mut len = u16le(b, at)? as usize;
+            let mut len = le16_usize(b, at)?;
             let mut s = at + 2;
             if len & 0x8000 != 0 {
-                len = ((len & 0x7fff) << 16) | u16le(b, s)? as usize;
+                len = ((len & 0x7fff) << 16) | le16_usize(b, s)?;
                 s += 2;
             }
-            let units: Vec<u16> = (0..len).map(|i| u16le(b, s + i * 2)).collect::<Option<_>>()?;
+            let units: Vec<u16> = (0..len)
+                .map(|i| le16(b, s + i * 2))
+                .collect::<Option<_>>()?;
             Some(String::from_utf16_lossy(&units))
         }
     }
@@ -104,16 +103,19 @@ pub fn parse_manifest(b: &[u8]) -> Option<Manifest> {
     while at < size.min(b.len()) {
         let (ty, _, csize) = chunk(b, at)?;
         if ty == RES_XML_START {
-            let name = pool.get(u32le(b, at + 20)?)?;
-            let (astart, asize, acount) =
-                (u16le(b, at + 24)? as usize, u16le(b, at + 26)? as usize, u16le(b, at + 28)? as usize);
+            let name = pool.get(le32(b, at + 20)?)?;
+            let (astart, asize, acount) = (
+                le16_usize(b, at + 24)?,
+                le16_usize(b, at + 26)?,
+                le16_usize(b, at + 28)?,
+            );
             if asize < 20 || acount > 4096 {
                 return None;
             }
             for i in 0..acount {
                 let a = at + 16 + astart + i * asize;
-                let attr = pool.get(u32le(b, a + 4)?).unwrap_or_default();
-                let (dtype, data) = (*b.get(a + 15)?, u32le(b, a + 16)?);
+                let attr = pool.get(le32(b, a + 4)?).unwrap_or_default();
+                let (dtype, data) = (*b.get(a + 15)?, le32(b, a + 16)?);
                 let val = match dtype {
                     TYPE_STRING => Some(Attr::Text(pool.get(data)?.to_string())),
                     TYPE_REFERENCE => Some(Attr::Res(data)),
@@ -167,11 +169,15 @@ impl<'a> Resources<'a> {
         while at < size {
             let (ty, _, csize) = chunk(b, at)?;
             if ty == RES_PACKAGE {
-                packages.push((u32le(b, at + 8)? as u8, at));
+                packages.push((u8::try_from(le32(b, at + 8)?).ok()?, at));
             }
             at += csize;
         }
-        Some(Self { b, global, packages })
+        Some(Self {
+            b,
+            global,
+            packages,
+        })
     }
 
     /// Every string value of `id` (following one level of references), densest first.
@@ -180,12 +186,16 @@ impl<'a> Resources<'a> {
         for v in self.lookup(id).unwrap_or_default() {
             match v {
                 (Ok(text), density) => out.push(Value { text, density }),
-                (Err(r), density) => out.extend(
-                    self.lookup(r)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|(t, d)| Some(Value { text: t.ok()?, density: d.max(density) })),
-                ),
+                (Err(r), density) => {
+                    out.extend(self.lookup(r).unwrap_or_default().into_iter().filter_map(
+                        |(t, d)| {
+                            Some(Value {
+                                text: t.ok()?,
+                                density: d.max(density),
+                            })
+                        },
+                    ));
+                }
             }
         }
         out.sort_by_key(|v| std::cmp::Reverse(v.density));
@@ -194,7 +204,8 @@ impl<'a> Resources<'a> {
 
     /// `Ok(string)` or `Err(referenced id)` per configuration.
     fn lookup(&self, id: u32) -> Option<Vec<(Result<String, u32>, u16)>> {
-        let (pkg, ty, entry) = ((id >> 24) as u8, (id >> 16) as u8, (id & 0xffff) as usize);
+        let [pkg, ty, e1, e0] = id.to_be_bytes();
+        let entry = usize::from(u16::from_be_bytes([e1, e0]));
         let &(_, pat) = self.packages.iter().find(|(p, _)| *p == pkg)?;
         let (_, phead, psize) = chunk(self.b, pat)?;
         let (mut at, end) = (pat + phead, pat + psize);
@@ -213,21 +224,21 @@ impl<'a> Resources<'a> {
     }
 
     fn entry(&self, at: usize, head: usize, idx: usize) -> Option<(Result<String, u32>, u16)> {
-        let (count, estart) = (u32le(self.b, at + 12)? as usize, u32le(self.b, at + 16)? as usize);
+        let (count, estart) = (le32_usize(self.b, at + 12)?, le32_usize(self.b, at + 16)?);
         if idx >= count {
             return None;
         }
-        let density = u16le(self.b, at + 20 + 14).unwrap_or(0);
-        let off = u32le(self.b, at.checked_add(head)?.checked_add(idx * 4)?)?;
+        let density = le16(self.b, at + 20 + 14).unwrap_or(0);
+        let off = le32(self.b, at.checked_add(head)?.checked_add(idx * 4)?)?;
         if off == u32::MAX {
             return None;
         }
         let e = at.checked_add(estart)?.checked_add(off as usize)?;
         // complex (map) entries have no single value
-        if u16le(self.b, e + 2)? & 1 != 0 {
+        if le16(self.b, e + 2)? & 1 != 0 {
             return None;
         }
-        let (dtype, data) = (*self.b.get(e + 11)?, u32le(self.b, e + 12)?);
+        let (dtype, data) = (*self.b.get(e + 11)?, le32(self.b, e + 12)?);
         match dtype {
             TYPE_STRING => Some((Ok(self.global.get(data)?.to_string()), density)),
             TYPE_REFERENCE => Some((Err(data), density)),
@@ -258,7 +269,9 @@ pub mod fixtures {
             } else {
                 let u: Vec<u16> = s.encode_utf16().collect();
                 w16(&mut data, u.len() as u16);
-                u.iter().for_each(|c| w16(&mut data, *c));
+                for c in &u {
+                    w16(&mut data, *c);
+                }
                 w16(&mut data, 0);
             }
         }
@@ -275,7 +288,9 @@ pub mod fixtures {
         w32(&mut v, if utf8 { 0x100 } else { 0 });
         w32(&mut v, start as u32);
         w32(&mut v, 0);
-        offs.iter().for_each(|o| w32(&mut v, *o));
+        for o in &offs {
+            w32(&mut v, *o);
+        }
         v.extend(data);
         v
     }
@@ -375,7 +390,16 @@ mod tests {
     use super::*;
 
     fn sample_manifest() -> Vec<u8> {
-        let strings = ["manifest", "package", "versionCode", "application", "icon", "label", "com.foo.bar", "Foo"];
+        let strings = [
+            "manifest",
+            "package",
+            "versionCode",
+            "application",
+            "icon",
+            "label",
+            "com.foo.bar",
+            "Foo",
+        ];
         manifest(
             &strings,
             &[
@@ -396,11 +420,27 @@ mod tests {
 
     #[test]
     fn resources_pick_densest_and_follow_references() {
-        let g = ["res/mipmap-mdpi/ic.png", "res/mipmap-xxhdpi/ic.png", "My App"];
-        let t = table(&g, &[(160, vec![(3, 0), (3, 2)]), (480, vec![(3, 1), (1, 0x7f01_0001)])]);
+        let g = [
+            "res/mipmap-mdpi/ic.png",
+            "res/mipmap-xxhdpi/ic.png",
+            "My App",
+        ];
+        let t = table(
+            &g,
+            &[
+                (160, vec![(3, 0), (3, 2)]),
+                (480, vec![(3, 1), (1, 0x7f01_0001)]),
+            ],
+        );
         let r = Resources::parse(&t).unwrap();
         let v = r.values(0x7f01_0000);
-        assert_eq!(v[0], Value { text: "res/mipmap-xxhdpi/ic.png".into(), density: 480 });
+        assert_eq!(
+            v[0],
+            Value {
+                text: "res/mipmap-xxhdpi/ic.png".into(),
+                density: 480
+            }
+        );
         assert_eq!(v[1].density, 160);
         // entry 1 is a string in mdpi and a reference to itself in xxhdpi; the reference resolves
         let l = r.values(0x7f01_0001);

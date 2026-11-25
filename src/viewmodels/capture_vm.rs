@@ -1,12 +1,12 @@
 use super::intent::{Effect, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
-use crate::domain::keymap::{Binding, RowAction};
 use super::status::{Flash, Status};
+use crate::domain::app::AppIdentity;
 use crate::domain::config::{Config, Shared};
 use crate::domain::filter::Query;
 use crate::domain::flow::Flow;
+use crate::domain::keymap::{Binding, RowAction};
 use crate::services::app_icons::IconStore;
 use crate::services::flow_store::FlowStore;
-use crate::domain::app::AppIdentity;
 use std::collections::{BTreeMap, HashMap};
 
 pub const ALL_COLS: [&str; 8] = [
@@ -122,11 +122,11 @@ impl CaptureVm {
     }
 
     pub fn refresh_tree(&mut self) {
+        type Counts = BTreeMap<String, BTreeMap<String, usize>>;
         let st = self.store.lock();
         if self.tree_rev == st.rev() {
             return;
         }
-        type Counts = BTreeMap<String, BTreeMap<String, usize>>;
         let mut host: Counts = BTreeMap::new();
         let mut by_platform: BTreeMap<String, Counts> = BTreeMap::new();
         let mut ids = HashMap::new();
@@ -138,24 +138,39 @@ impl CaptureVm {
                 pending += 1;
                 continue;
             }
-            let platform = f.app_id.as_ref().map(|i| i.platform.as_str()).unwrap_or_default();
+            let platform = f.app_id.as_ref().map_or_default(|i| i.platform.as_str());
             if let Some(id) = f.display_identity() {
                 // identities without an icon (lookup misses) must not shadow a real one
-                let slot = ids.entry(f.app_label()).or_insert_with(|| id.clone().into_owned());
+                let slot = ids
+                    .entry(f.app_label())
+                    .or_insert_with(|| id.clone().into_owned());
                 if slot.icon_key.is_empty() && !id.icon_key.is_empty() {
                     *slot = id.into_owned();
                 }
             }
-            let m = if platform.is_empty() { &mut host } else { by_platform.entry(platform.to_string()).or_default() };
-            *m.entry(f.app_label()).or_default().entry(f.hostname().to_string()).or_default() += 1;
+            let m = if platform.is_empty() {
+                &mut host
+            } else {
+                by_platform.entry(platform.to_string()).or_default()
+            };
+            *m.entry(f.app_label())
+                .or_default()
+                .entry(f.hostname().to_string())
+                .or_default() += 1;
         }
         let by_volume = |m: Counts| -> Tree {
-            let mut t: Tree = m.into_iter().map(|(a, h)| (a, h.into_iter().collect())).collect();
+            let mut t: Tree = m
+                .into_iter()
+                .map(|(a, h)| (a, h.into_iter().collect()))
+                .collect();
             t.sort_by_key(|(_, h)| std::cmp::Reverse(h.iter().map(|(_, n)| n).sum::<usize>()));
             t
         };
         self.tree = by_volume(host);
-        self.platforms = by_platform.into_iter().map(|(p, m)| (p, by_volume(m))).collect();
+        self.platforms = by_platform
+            .into_iter()
+            .map(|(p, m)| (p, by_volume(m)))
+            .collect();
         self.app_ids = ids;
         self.tree_pending = pending;
         // left stale while flows are pending so the next frame recomputes
@@ -274,7 +289,11 @@ impl CaptureVm {
                 } else {
                     format!("app:{app}")
                 };
-                self.filter = if self.filter.trim() == term { String::new() } else { term };
+                self.filter = if self.filter.trim() == term {
+                    String::new()
+                } else {
+                    term
+                };
             }
             RowIntent::Sort(c) => self.cycle_sort(c),
             RowIntent::ClearFilter => self.filter.clear(),
@@ -384,7 +403,11 @@ impl CaptureVm {
         }
     }
 
-    pub fn handle_shortcut(&mut self, intent: ShortcutIntent, status: &mut Status) -> Option<Effect> {
+    pub fn handle_shortcut(
+        &mut self,
+        intent: ShortcutIntent,
+        status: &mut Status,
+    ) -> Option<Effect> {
         match intent {
             ShortcutIntent::ToggleSidebar => self.handle_toolbar(ToolbarIntent::ToggleSidebar),
             ShortcutIntent::FocusSearch => self.focus_search = true,
@@ -398,7 +421,9 @@ impl CaptureVm {
                     RowAction::Color(c) => RowIntent::Color(id, c),
                     RowAction::Comment => RowIntent::Comment(id),
                     RowAction::DiffBase => RowIntent::DiffBase(id),
-                    RowAction::Mute => RowIntent::Mute(self.store.lock().find(id)?.hostname().to_string()),
+                    RowAction::Mute => {
+                        RowIntent::Mute(self.store.lock().find(id)?.hostname().to_string())
+                    }
                     RowAction::Delete => RowIntent::Delete(id),
                 };
                 return self.handle_row(row, status);
@@ -573,7 +598,10 @@ mod tests {
         vm.handle_row(RowIntent::ProxyOnlyHost("c.com".into()), &mut status);
         assert_eq!(vm.config_snapshot().proxy_only_hosts, ["c.com"]);
         assert!(status.text.contains("c.com"));
-        assert!(vm.config_snapshot().captured("https://b.com/"), "recording is untouched");
+        assert!(
+            vm.config_snapshot().captured("https://b.com/"),
+            "recording is untouched"
+        );
     }
 
     #[test]
@@ -661,7 +689,10 @@ mod tests {
     fn row_shortcuts_do_nothing_without_a_selection() {
         let (mut vm, mut status) = setup(2);
         for a in ROW_ACTIONS {
-            assert!(vm.handle_shortcut(selected(a), &mut status).is_none(), "{a:?}");
+            assert!(
+                vm.handle_shortcut(selected(a), &mut status).is_none(),
+                "{a:?}"
+            );
         }
         assert_eq!(vm.flow_count(), 2);
         assert_eq!(vm.selected, None);
@@ -675,8 +706,14 @@ mod tests {
     fn row_shortcuts_apply_to_the_selected_flow() {
         let (mut vm, mut status) = setup(3);
         vm.selected = Some(2);
-        assert!(matches!(vm.handle_shortcut(selected(RowAction::Replay), &mut status), Some(Effect::OpenReplay(2))));
-        assert!(matches!(vm.handle_shortcut(selected(RowAction::DiffBase), &mut status), Some(Effect::DiffBase(2))));
+        assert!(matches!(
+            vm.handle_shortcut(selected(RowAction::Replay), &mut status),
+            Some(Effect::OpenReplay(2))
+        ));
+        assert!(matches!(
+            vm.handle_shortcut(selected(RowAction::DiffBase), &mut status),
+            Some(Effect::DiffBase(2))
+        ));
         assert!(status.text.starts_with("#2 is the diff base"));
         vm.handle_shortcut(selected(RowAction::Pin), &mut status);
         vm.handle_shortcut(selected(RowAction::Color(Some(3))), &mut status);
@@ -804,7 +841,10 @@ mod tests {
         for (id, platform) in [(1, "iOS Simulator"), (2, "")] {
             let mut f = Flow::sample(id);
             f.app = "Safari".into();
-            f.app_id = Some(AppIdentity { platform: platform.into(), ..Default::default() });
+            f.app_id = Some(AppIdentity {
+                platform: platform.into(),
+                ..Default::default()
+            });
             vm.store.lock().push(f);
         }
         vm.set_filter("platform:=\"iOS Simulator\" app:=\"Safari\"".into());
@@ -817,7 +857,11 @@ mod tests {
         let mk = |ua: &str| {
             let mut f = Flow::sample(1);
             f.app = "iOS Simulator".into();
-            f.app_id = Some(AppIdentity { name: "iOS Simulator".into(), platform: "iOS Simulator".into(), ..Default::default() });
+            f.app_id = Some(AppIdentity {
+                name: "iOS Simulator".into(),
+                platform: "iOS Simulator".into(),
+                ..Default::default()
+            });
             f.request.headers.push(("user-agent".into(), ua.into()));
             f
         };
@@ -846,10 +890,18 @@ mod tests {
     #[test]
     fn simulator_apps_get_their_own_platform_folder() {
         let (mut vm, _) = setup(0);
-        for (id, app, platform) in [(1, "curl", ""), (2, "Maps", "iOS Simulator"), (3, "Maps", "iOS Simulator")] {
+        for (id, app, platform) in [
+            (1, "curl", ""),
+            (2, "Maps", "iOS Simulator"),
+            (3, "Maps", "iOS Simulator"),
+        ] {
             let mut f = Flow::sample(id);
             f.app = app.into();
-            f.app_id = Some(AppIdentity { name: app.into(), platform: platform.into(), ..Default::default() });
+            f.app_id = Some(AppIdentity {
+                name: app.into(),
+                platform: platform.into(),
+                ..Default::default()
+            });
             vm.store.lock().push(f);
         }
         vm.refresh_tree();
@@ -916,7 +968,10 @@ mod tests {
             safari_icon_key: "safari-1".into(),
             ..Default::default()
         });
-        f.request.headers.push(("user-agent".into(), "Mozilla/5.0 (iPhone) Mobile/15E148 Safari/604.1".into()));
+        f.request.headers.push((
+            "user-agent".into(),
+            "Mozilla/5.0 (iPhone) Mobile/15E148 Safari/604.1".into(),
+        ));
         f.started -= std::time::Duration::from_secs(10);
         vm.store.lock().push(f);
         vm.refresh_tree();

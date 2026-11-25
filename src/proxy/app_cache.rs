@@ -82,8 +82,13 @@ mod tests {
         assert!(matches!(c.join(addr(2), (3, None), now), Join::Start));
         assert_eq!(c.waiting(addr(1)).len(), 2);
         let found: Found = Some(("curl".into(), None));
-        assert_eq!(c.finish(addr(1), found, now), vec![(1, None), (2, Some("iOS"))]);
-        assert!(matches!(c.join(addr(1), (4, None), now), Join::Known(Some((n, _))) if n == "curl"));
+        assert_eq!(
+            c.finish(addr(1), found, now),
+            vec![(1, None), (2, Some("iOS"))]
+        );
+        assert!(
+            matches!(c.join(addr(1), (4, None), now), Join::Known(Some((n, _))) if n == "curl")
+        );
     }
 
     #[test]
@@ -91,6 +96,9 @@ mod tests {
         let (c, now) = (AppCache::default(), Instant::now());
         c.join(addr(1), (1, None), now);
         c.finish(addr(1), None, now);
-        assert!(matches!(c.join(addr(1), (2, None), now + TTL * 2), Join::Start));
+        assert!(matches!(
+            c.join(addr(1), (2, None), now + TTL * 2),
+            Join::Start
+        ));
     }
 }

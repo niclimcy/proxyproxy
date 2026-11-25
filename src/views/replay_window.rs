@@ -1,7 +1,10 @@
 use crate::services::decode;
 use crate::viewmodels::replay_vm::{DraftTab, ReplayDraft, ReplayVm};
 use crate::views::body;
-use crate::views::theme::*;
+use crate::views::theme::{
+    PAD, accent, action_button_sized, canvas, checkbox, cmd, danger, fmt_size, muted, overline,
+    panel_frame, pill, segmented, status_color,
+};
 use eframe::egui::{self, Frame, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
@@ -10,7 +13,7 @@ const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OP
 // returns the ids whose Send button was pressed
 pub fn show(ctx: &egui::Context, vm: &mut ReplayVm) -> Vec<u64> {
     let mut send = vec![];
-    for d in vm.drafts.iter_mut() {
+    for d in &mut vm.drafts {
         let title = match d.source {
             Some(src) => format!("Replay #{src}"),
             None => "Compose".into(),

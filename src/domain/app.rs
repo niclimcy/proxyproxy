@@ -47,7 +47,10 @@ pub fn app_bundle(exe: &Path) -> Option<PathBuf> {
     let mut out = PathBuf::new();
     for c in exe.components() {
         out.push(c);
-        if c.as_os_str().to_str().is_some_and(|s| s.ends_with(".app")) {
+        if Path::new(c.as_os_str())
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("app"))
+        {
             return Some(out);
         }
     }
@@ -63,7 +66,8 @@ pub fn simulator_safari(exe: &Path) -> Option<PathBuf> {
 
 pub fn is_simulator_path(p: &Path) -> bool {
     let s = p.to_string_lossy();
-    s.contains("/CoreSimulator/Devices/") || s.contains("/CoreSimulator/Volumes/")
+    s.contains("/CoreSimulator/Devices/")
+        || s.contains("/CoreSimulator/Volumes/")
         || s.contains("/RuntimeRoot/")
 }
 
@@ -77,8 +81,7 @@ pub fn parse_info(v: &serde_json::Value, bundle: &Path) -> BundleInfo {
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty());
     let stem = bundle
         .file_stem()
-        .map(|x| x.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|x| x.to_string_lossy().into_owned());
     let mut icon_files: Vec<String> = ["CFBundleIconFile", "CFBundleIconName"]
         .iter()
         .filter_map(|k| s(k).map(String::from))
@@ -86,7 +89,11 @@ pub fn parse_info(v: &serde_json::Value, bundle: &Path) -> BundleInfo {
     // iOS keeps its icon names under CFBundleIcons -> CFBundlePrimaryIcon -> CFBundleIconFiles
     let ios = ["CFBundleIcons", "CFBundleIcons~ipad"]
         .iter()
-        .filter_map(|k| v.get(k)?.get("CFBundlePrimaryIcon")?.get("CFBundleIconFiles"))
+        .filter_map(|k| {
+            v.get(k)?
+                .get("CFBundlePrimaryIcon")?
+                .get("CFBundleIconFiles")
+        })
         .filter_map(|a| a.as_array())
         .flatten()
         .filter_map(|x| x.as_str().map(String::from));
@@ -95,14 +102,18 @@ pub fn parse_info(v: &serde_json::Value, bundle: &Path) -> BundleInfo {
     icon_files.extend(
         ["CFBundleIcons", "CFBundleIcons~ipad"]
             .iter()
-            .filter_map(|k| v.get(k)?.get("CFBundlePrimaryIcon")?.get("CFBundleIconName")?.as_str())
+            .filter_map(|k| {
+                v.get(k)?
+                    .get("CFBundlePrimaryIcon")?
+                    .get("CFBundleIconName")?
+                    .as_str()
+            })
             .map(String::from),
     );
     BundleInfo {
         name: s("CFBundleDisplayName")
             .or(s("CFBundleName"))
-            .map(String::from)
-            .unwrap_or(stem),
+            .map_or(stem, String::from),
         bundle_id: s("CFBundleIdentifier").unwrap_or_default().into(),
         icon_files,
     }
@@ -112,7 +123,13 @@ pub fn parse_info(v: &serde_json::Value, bundle: &Path) -> BundleInfo {
 pub fn icon_key(id_or_path: &str, mtime_secs: u64) -> String {
     let safe: String = id_or_path
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let tail = &safe[safe.len().saturating_sub(80)..];
     format!("{tail}-{mtime_secs}")
@@ -122,7 +139,12 @@ pub fn icon_key(id_or_path: &str, mtime_secs: u64) -> String {
 pub fn largest_icon(files: &[(String, u64)]) -> Option<&str> {
     files
         .iter()
-        .filter(|(n, _)| n.starts_with("AppIcon") && n.ends_with(".png"))
+        .filter(|(n, _)| {
+            n.starts_with("AppIcon")
+                && Path::new(n)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+        })
         .max_by_key(|(_, size)| *size)
         .map(|(n, _)| n.as_str())
 }
@@ -138,19 +160,27 @@ pub fn is_package_id(t: &str) -> bool {
 
 /// Android apps usually put their package in the User-Agent (`com.example.app/1.2`).
 pub fn package_from_user_agent(ua: &str) -> Option<String> {
-    ua.split(['/', ' ', '(', ')', ';']).find(|t| is_package_id(t)).map(String::from)
+    ua.split(['/', ' ', '(', ')', ';'])
+        .find(|t| is_package_id(t))
+        .map(String::from)
 }
 
-/// `X-Requested-With` is the package id on WebView requests, so it wins over the
+/// `X-Requested-With` is the package id on `WebView` requests, so it wins over the
 /// User-Agent. Plain okhttp/HttpURLConnection traffic carries neither.
 pub fn package_hint(requested_with: &str, ua: &str) -> Option<String> {
     let rw = requested_with.trim();
-    is_package_id(rw).then(|| rw.to_string()).or_else(|| package_from_user_agent(ua))
+    is_package_id(rw)
+        .then(|| rw.to_string())
+        .or_else(|| package_from_user_agent(ua))
 }
 
 /// `adb` forwards USB devices' traffic, so the local peer is the adb server itself.
 pub fn is_adb_bridge(process: &str) -> bool {
-    let p = process.rsplit(['/', '\\']).next().unwrap_or(process).to_ascii_lowercase();
+    let p = process
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(process)
+        .to_ascii_lowercase();
     p == "adb" || p == "adb.exe"
 }
 
@@ -165,8 +195,7 @@ pub fn avatar_slot(name: &str, slots: usize) -> usize {
 pub fn avatar_letter(name: &str) -> char {
     name.chars()
         .find(|c| c.is_alphanumeric())
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('?')
+        .map_or('?', |c| c.to_ascii_uppercase())
 }
 
 #[cfg(test)]
@@ -176,8 +205,13 @@ mod tests {
 
     #[test]
     fn bundle_is_outermost_app() {
-        let p = Path::new("/Applications/Google Chrome.app/Contents/Frameworks/X.framework/Helper.app/Contents/MacOS/Helper");
-        assert_eq!(app_bundle(p), Some(PathBuf::from("/Applications/Google Chrome.app")));
+        let p = Path::new(
+            "/Applications/Google Chrome.app/Contents/Frameworks/X.framework/Helper.app/Contents/MacOS/Helper",
+        );
+        assert_eq!(
+            app_bundle(p),
+            Some(PathBuf::from("/Applications/Google Chrome.app"))
+        );
         assert_eq!(app_bundle(Path::new("/usr/bin/curl")), None);
     }
 
@@ -189,15 +223,22 @@ mod tests {
             app_bundle(Path::new(app)).unwrap().file_name().unwrap(),
             "Maps.app"
         );
-        assert!(is_simulator_path(Path::new("/Library/Developer/CoreSimulator/Volumes/iOS/x/RuntimeRoot/Applications/MobileSafari.app/MobileSafari")));
-        assert!(!is_simulator_path(Path::new("/Applications/Safari.app/Contents/MacOS/Safari")));
+        assert!(is_simulator_path(Path::new(
+            "/Library/Developer/CoreSimulator/Volumes/iOS/x/RuntimeRoot/Applications/MobileSafari.app/MobileSafari"
+        )));
+        assert!(!is_simulator_path(Path::new(
+            "/Applications/Safari.app/Contents/MacOS/Safari"
+        )));
     }
 
     #[test]
     fn plist_fields_prefer_display_name() {
         let v = json!({"CFBundleDisplayName": "Maps", "CFBundleName": "M", "CFBundleIdentifier": "com.x.maps", "CFBundleIconFile": "AppIcon"});
         let i = parse_info(&v, Path::new("/a/M.app"));
-        assert_eq!((i.name.as_str(), i.bundle_id.as_str()), ("Maps", "com.x.maps"));
+        assert_eq!(
+            (i.name.as_str(), i.bundle_id.as_str()),
+            ("Maps", "com.x.maps")
+        );
         assert_eq!(i.icon_files, ["AppIcon"]);
         let bare = parse_info(&json!({}), Path::new("/a/Foo.app"));
         assert_eq!(bare.name, "Foo");
@@ -206,7 +247,10 @@ mod tests {
     #[test]
     fn plist_collects_ios_icon_files() {
         let v = json!({"CFBundleIcons": {"CFBundlePrimaryIcon": {"CFBundleIconFiles": ["AppIcon60x60"]}}});
-        assert_eq!(parse_info(&v, Path::new("/a/B.app")).icon_files, ["AppIcon60x60"]);
+        assert_eq!(
+            parse_info(&v, Path::new("/a/B.app")).icon_files,
+            ["AppIcon60x60"]
+        );
     }
 
     #[test]
@@ -234,23 +278,38 @@ mod tests {
             Some("com.example.shop")
         );
         assert_eq!(package_from_user_agent("curl/8.0 Mozilla"), None);
-        assert!(is_android_emulator("/Users/u/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64"));
+        assert!(is_android_emulator(
+            "/Users/u/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64"
+        ));
         assert!(!is_android_emulator("curl"));
     }
 
     #[test]
     fn package_hint_prefers_requested_with_and_validates() {
-        assert_eq!(package_hint("com.a.b", "com.x.y/1").as_deref(), Some("com.a.b"));
-        assert_eq!(package_hint("", "com.x.y/1 okhttp/4.9").as_deref(), Some("com.x.y"));
+        assert_eq!(
+            package_hint("com.a.b", "com.x.y/1").as_deref(),
+            Some("com.a.b")
+        );
+        assert_eq!(
+            package_hint("", "com.x.y/1 okhttp/4.9").as_deref(),
+            Some("com.x.y")
+        );
         assert_eq!(package_hint("not a package", "okhttp/4.9"), None);
         assert!(!is_package_id("com..x") && !is_package_id("com.x") && !is_package_id("Com.x.y"));
-        assert!(is_adb_bridge("/usr/bin/adb") && is_adb_bridge("C:\\sdk\\adb.exe") && !is_adb_bridge("adbd2"));
+        assert!(
+            is_adb_bridge("/usr/bin/adb")
+                && is_adb_bridge("C:\\sdk\\adb.exe")
+                && !is_adb_bridge("adbd2")
+        );
     }
 
     #[test]
     fn plist_collects_icon_set_name() {
         let v = json!({"CFBundleIcons": {"CFBundlePrimaryIcon": {"CFBundleIconName": "AppIcon", "CFBundleIconFiles": ["AppIcon60x60"]}}});
-        assert_eq!(parse_info(&v, Path::new("/a/B.app")).icon_files, ["AppIcon60x60", "AppIcon"]);
+        assert_eq!(
+            parse_info(&v, Path::new("/a/B.app")).icon_files,
+            ["AppIcon60x60", "AppIcon"]
+        );
     }
 
     #[test]
@@ -270,7 +329,10 @@ mod tests {
     fn phone_user_agents_imply_a_simulator() {
         let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15";
         assert_eq!(platform_from_ua(ua), Some(PLATFORM_IOS_SIM));
-        assert_eq!(platform_from_ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), None);
+        assert_eq!(
+            platform_from_ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"),
+            None
+        );
     }
 
     #[test]
@@ -278,7 +340,9 @@ mod tests {
         let exe = Path::new("/V/iOS.simruntime/Contents/Resources/RuntimeRoot/usr/libexec/x");
         assert_eq!(
             simulator_safari(exe).unwrap(),
-            Path::new("/V/iOS.simruntime/Contents/Resources/RuntimeRoot/Applications/MobileSafari.app")
+            Path::new(
+                "/V/iOS.simruntime/Contents/Resources/RuntimeRoot/Applications/MobileSafari.app"
+            )
         );
         assert!(simulator_safari(Path::new("/usr/bin/curl")).is_none());
     }

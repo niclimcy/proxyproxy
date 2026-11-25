@@ -1,5 +1,6 @@
 use crate::domain::flow::Message;
 use serde_json::Value;
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Op {
@@ -326,7 +327,7 @@ pub fn request_report(ops: &[Op]) -> String {
             s.push_str("\n\n");
         }
         if ops.len() > 1 {
-            s.push_str(&format!("# [{}/{}] ", i + 1, ops.len()));
+            let _ = write!(s, "# [{}/{}] ", i + 1, ops.len());
         } else {
             s.push_str("# ");
         }
@@ -338,10 +339,11 @@ pub fn request_report(ops: &[Op]) -> String {
         }
         for (label, v) in [("variables", &op.variables), ("extensions", &op.extensions)] {
             if let Some(v) = v {
-                s.push_str(&format!(
-                    "\n# {label}\n{}\n",
+                let _ = writeln!(
+                    s,
+                    "\n# {label}\n{}",
                     serde_json::to_string_pretty(v).unwrap_or_default()
-                ));
+                );
             }
         }
     }
@@ -356,21 +358,22 @@ fn one_response(v: &Value, s: &mut String) -> bool {
     match o.get("data") {
         Some(Value::Object(d)) => {
             let keys: Vec<&str> = d.keys().map(String::as_str).collect();
-            s.push_str(&format!(
-                "# data: {}\n",
+            let _ = writeln!(
+                s,
+                "# data: {}",
                 if keys.is_empty() {
                     "{}".to_string()
                 } else {
                     keys.join(", ")
                 }
-            ));
+            );
         }
         Some(Value::Null) => s.push_str("# data: null\n"),
         Some(_) => s.push_str("# data\n"),
         None => {}
     }
     if let Some(Value::Array(errs)) = o.get("errors") {
-        s.push_str(&format!("# errors ({})\n", errs.len()));
+        let _ = writeln!(s, "# errors ({})", errs.len());
         for e in errs {
             let msg = e
                 .get("message")
@@ -380,26 +383,23 @@ fn one_response(v: &Value, s: &mut String) -> bool {
             if let Some(p) = e.get("path").and_then(|p| p.as_array()) {
                 let p: Vec<String> = p
                     .iter()
-                    .map(|x| {
-                        x.as_str()
-                            .map(String::from)
-                            .unwrap_or_else(|| x.to_string())
-                    })
+                    .map(|x| x.as_str().map_or_else(|| x.to_string(), String::from))
                     .collect();
-                line.push_str(&format!("  (path: {})", p.join(".")));
+                let _ = write!(line, "  (path: {})", p.join("."));
             }
             if let Some(c) = e.pointer("/extensions/code").and_then(|c| c.as_str()) {
-                line.push_str(&format!("  [{c}]"));
+                let _ = write!(line, "  [{c}]");
             }
             s.push_str(&line);
             s.push('\n');
         }
     }
     if let Some(d) = o.get("data").filter(|d| !d.is_null()) {
-        s.push_str(&format!(
-            "\n{}\n",
+        let _ = writeln!(
+            s,
+            "\n{}",
             serde_json::to_string_pretty(d).unwrap_or_default()
-        ));
+        );
     }
     true
 }
@@ -410,7 +410,7 @@ pub fn response_report(m: &Message) -> Option<String> {
     match &v {
         Value::Array(a) if !a.is_empty() => {
             for (i, r) in a.iter().enumerate() {
-                s.push_str(&format!("# [{}/{}]\n", i + 1, a.len()));
+                let _ = writeln!(s, "# [{}/{}]", i + 1, a.len());
                 if !one_response(r, &mut s) {
                     return None;
                 }

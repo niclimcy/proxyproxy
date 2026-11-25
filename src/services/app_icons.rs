@@ -16,9 +16,12 @@ pub fn icons_dir() -> PathBuf {
 #[cfg(target_os = "macos")]
 pub fn read_info(bundle: &Path) -> Option<BundleInfo> {
     // macOS keeps it under Contents/, iOS bundles at the root
-    let plist = [bundle.join("Contents/Info.plist"), bundle.join("Info.plist")]
-        .into_iter()
-        .find(|p| p.exists())?;
+    let plist = [
+        bundle.join("Contents/Info.plist"),
+        bundle.join("Info.plist"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())?;
     let out = Command::new("plutil")
         .args(["-convert", "json", "-o", "-", "--"])
         .arg(&plist)
@@ -48,9 +51,12 @@ pub(crate) fn to_icon_png(png: &[u8]) -> Option<Vec<u8>> {
 /// Largest icon in `Assets.car`, trying the plist's icon set names, then `AppIcon`.
 fn catalog_icon(bundle: &Path, info: &BundleInfo) -> Option<Vec<u8>> {
     const MAX_CAR: u64 = 128 << 20;
-    let path = [bundle.join("Assets.car"), bundle.join("Contents/Resources/Assets.car")]
-        .into_iter()
-        .find(|p| std::fs::metadata(p).is_ok_and(|m| m.len() <= MAX_CAR))?;
+    let path = [
+        bundle.join("Assets.car"),
+        bundle.join("Contents/Resources/Assets.car"),
+    ]
+    .into_iter()
+    .find(|p| std::fs::metadata(p).is_ok_and(|m| m.len() <= MAX_CAR))?;
     let mut names: Vec<&str> = info.icon_files.iter().map(String::as_str).collect();
     names.push("AppIcon");
     to_icon_png(&car::icon_png(&std::fs::read(path).ok()?, &names)?)
@@ -59,7 +65,11 @@ fn catalog_icon(bundle: &Path, info: &BundleInfo) -> Option<Vec<u8>> {
 fn extract_icon(bundle: &Path, info: &BundleInfo, dest: &Path) -> bool {
     let res = bundle.join("Contents/Resources");
     let src = info.icon_files.iter().find_map(|n| {
-        let name = if n.contains('.') { n.clone() } else { format!("{n}.icns") };
+        let name = if n.contains('.') {
+            n.clone()
+        } else {
+            format!("{n}.icns")
+        };
         Some(res.join(name)).filter(|p| p.exists())
     });
     let tmp = dest.with_extension("tmp");
@@ -77,7 +87,12 @@ fn extract_icon(bundle: &Path, info: &BundleInfo, dest: &Path) -> bool {
             .into_iter()
             .flatten()
             .flatten()
-            .filter_map(|e| Some((e.file_name().to_str()?.to_string(), e.metadata().ok()?.len())))
+            .filter_map(|e| {
+                Some((
+                    e.file_name().to_str()?.to_string(),
+                    e.metadata().ok()?.len(),
+                ))
+            })
             .collect();
         app::largest_icon(&files).is_some_and(|n| std::fs::copy(bundle.join(n), &tmp).is_ok())
     };
@@ -109,11 +124,16 @@ fn bundle_identity(bundle: &Path) -> Option<AppIdentity> {
     cached(format!("{}|{mtime}", bundle.display()), || {
         read_info(bundle).map(|info| {
             let path = bundle.to_string_lossy();
-            let id = if info.bundle_id.is_empty() { &*path } else { &info.bundle_id };
+            let id = if info.bundle_id.is_empty() {
+                &*path
+            } else {
+                &info.bundle_id
+            };
             let key = app::icon_key(id, mtime);
             let dir = icons_dir();
             let dest = dir.join(format!("{key}.png"));
-            let have = dest.exists() || (std::fs::create_dir_all(&dir).is_ok() && extract_icon(bundle, &info, &dest));
+            let have = dest.exists()
+                || (std::fs::create_dir_all(&dir).is_ok() && extract_icon(bundle, &info, &dest));
             AppIdentity {
                 name: info.name,
                 bundle_id: info.bundle_id,
@@ -130,16 +150,24 @@ fn desktop_identity(exe: &Path) -> Option<AppIdentity> {
     let bin = exe.file_name()?.to_str()?;
     let mut dirs: Vec<PathBuf> = vec![dirs::data_dir()?];
     let sys = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
-    let sys = if sys.is_empty() { "/usr/local/share:/usr/share".into() } else { sys };
+    let sys = if sys.is_empty() {
+        "/usr/local/share:/usr/share".into()
+    } else {
+        sys
+    };
     dirs.extend(std::env::split_paths(&sys));
     for data in &dirs {
-        let Ok(entries) = std::fs::read_dir(data.join("applications")) else { continue };
+        let Ok(entries) = std::fs::read_dir(data.join("applications")) else {
+            continue;
+        };
         for e in entries.flatten() {
             let path = e.path();
             if path.extension().is_none_or(|x| x != "desktop") {
                 continue;
             }
-            let Some(d) = std::fs::read_to_string(&path).ok().and_then(|t| os_parse::parse_desktop(&t))
+            let Some(d) = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|t| os_parse::parse_desktop(&t))
             else {
                 continue;
             };
@@ -177,7 +205,10 @@ fn plain_identity(exe: &Path) -> Option<AppIdentity> {
             return Some(id);
         }
         let name = exe.file_stem()?.to_string_lossy().into_owned();
-        Some(AppIdentity { name, ..Default::default() })
+        Some(AppIdentity {
+            name,
+            ..Default::default()
+        })
     })
 }
 
@@ -190,11 +221,18 @@ fn plain_identity(_: &Path) -> Option<AppIdentity> {
 /// Blocking: reads files and may shell out. Call from a background thread, never on the proxy path.
 pub fn resolve(pid: u32, process: &str, package_hint: Option<String>) -> Option<AppIdentity> {
     let exe = client_proc::exe_path(pid);
-    let exe_str = exe.as_deref().map_or(process.to_string(), |p| p.to_string_lossy().into_owned());
+    let exe_str = exe
+        .as_deref()
+        .map_or(process.to_string(), |p| p.to_string_lossy().into_owned());
     if app::is_android_emulator(&exe_str) || app::is_adb_bridge(&exe_str) {
         let usb = app::is_adb_bridge(&exe_str);
         let mut id = android_identity(package_hint, usb);
-        id.platform = (if usb { app::PLATFORM_ANDROID_DEVICE } else { app::PLATFORM_ANDROID_EMU }).into();
+        id.platform = (if usb {
+            app::PLATFORM_ANDROID_DEVICE
+        } else {
+            app::PLATFORM_ANDROID_EMU
+        })
+        .into();
         return Some(id);
     }
     let exe = exe?;
@@ -206,8 +244,7 @@ pub fn resolve(pid: u32, process: &str, package_hint: Option<String>) -> Option<
             name: app::PLATFORM_IOS_SIM.into(),
             safari_icon_key: app::simulator_safari(&exe)
                 .and_then(|b| bundle_identity(&b))
-                .map(|i| i.icon_key)
-                .unwrap_or_default(),
+                .map_or_default(|i| i.icon_key),
             ..Default::default()
         }),
         None => plain_identity(&exe),
@@ -224,14 +261,30 @@ pub fn resolve(pid: u32, process: &str, package_hint: Option<String>) -> Option<
 /// Package id to label and icon via adb; without adb or the package, the id itself is the name.
 fn android_identity(package: Option<String>, usb: bool) -> AppIdentity {
     let Some(pkg) = package else {
-        let name = if usb { "Android Device" } else { "Android Emulator" };
-        return AppIdentity { name: name.into(), ..Default::default() };
+        let name = if usb {
+            "Android Device"
+        } else {
+            "Android Emulator"
+        };
+        return AppIdentity {
+            name: name.into(),
+            ..Default::default()
+        };
     };
     let found = cached(format!("android|{pkg}"), || {
         let app = android_icons::resolve(&android_icons::SystemAdb::locate(), &pkg, &icons_dir())?;
-        Some(AppIdentity { name: app.label, bundle_id: pkg.clone(), icon_key: app.icon_key, ..Default::default() })
+        Some(AppIdentity {
+            name: app.label,
+            bundle_id: pkg.clone(),
+            icon_key: app.icon_key,
+            ..Default::default()
+        })
     });
-    found.unwrap_or(AppIdentity { name: pkg.clone(), bundle_id: pkg, ..Default::default() })
+    found.unwrap_or(AppIdentity {
+        name: pkg.clone(),
+        bundle_id: pkg,
+        ..Default::default()
+    })
 }
 
 enum Slot {
@@ -249,7 +302,11 @@ pub struct IconStore {
 
 impl IconStore {
     pub fn new(dir: PathBuf, repaint: Arc<dyn Repaint>) -> Self {
-        Self { slots: Default::default(), dir, repaint }
+        Self {
+            slots: Arc::default(),
+            dir,
+            repaint,
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<Arc<Vec<u8>>> {
@@ -266,7 +323,9 @@ impl IconStore {
         drop(slots);
         let (this, key) = (self.clone(), key.to_string());
         std::thread::spawn(move || {
-            let bytes = std::fs::read(this.dir.join(format!("{key}.png"))).ok().map(Arc::new);
+            let bytes = std::fs::read(this.dir.join(format!("{key}.png")))
+                .ok()
+                .map(Arc::new);
             if let Ok(mut s) = this.slots.lock() {
                 s.insert(key, Slot::Ready(bytes));
             }
@@ -323,7 +382,11 @@ mod tests {
         assert_eq!(std::fs::read(&dest).unwrap(), b"the largest");
         let empty = dir.join("Empty.app");
         std::fs::create_dir_all(&empty).unwrap();
-        assert!(!extract_icon(&empty, &BundleInfo::default(), &dir.join("none.png")));
+        assert!(!extract_icon(
+            &empty,
+            &BundleInfo::default(),
+            &dir.join("none.png")
+        ));
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -334,11 +397,16 @@ mod tests {
         let bundle = dir.join("Demo.app");
         std::fs::create_dir_all(&bundle).unwrap();
         let mut png = std::io::Cursor::new(vec![]);
-        image::DynamicImage::new_rgba8(120, 120).write_to(&mut png, image::ImageFormat::Png).unwrap();
+        image::DynamicImage::new_rgba8(120, 120)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
         let catalog = car("AppIcon-Custom", &[(csi(120, 120, png.get_ref()), false)]);
         std::fs::write(bundle.join("Assets.car"), catalog).unwrap();
         std::fs::write(bundle.join("AppIcon60x60@2x.png"), b"loose").unwrap();
-        let info = BundleInfo { icon_files: vec!["AppIcon-Custom".into()], ..Default::default() };
+        let info = BundleInfo {
+            icon_files: vec!["AppIcon-Custom".into()],
+            ..Default::default()
+        };
         let dest = dir.join("out.png");
         assert!(extract_icon(&bundle, &info, &dest));
         assert_eq!(image::open(&dest).unwrap().width(), 64);
@@ -361,11 +429,23 @@ mod tests {
         let bundle = dir.join("Demo.app");
         std::fs::create_dir_all(bundle.join("Contents/Resources")).unwrap();
         let mut png = std::io::Cursor::new(vec![]);
-        image::DynamicImage::new_rgba8(256, 256).write_to(&mut png, image::ImageFormat::Png).unwrap();
+        image::DynamicImage::new_rgba8(256, 256)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
         let png = png.into_inner();
-        let icns = [b"icns".as_slice(), &(png.len() as u32 + 16).to_be_bytes(), b"ic08", &(png.len() as u32 + 8).to_be_bytes(), &png].concat();
+        let icns = [
+            b"icns".as_slice(),
+            &(png.len() as u32 + 16).to_be_bytes(),
+            b"ic08",
+            &(png.len() as u32 + 8).to_be_bytes(),
+            &png,
+        ]
+        .concat();
         std::fs::write(bundle.join("Contents/Resources/Icon.icns"), icns).unwrap();
-        let info = BundleInfo { icon_files: vec!["Icon".into()], ..Default::default() };
+        let info = BundleInfo {
+            icon_files: vec!["Icon".into()],
+            ..Default::default()
+        };
         let dest = dir.join("out.png");
         assert!(extract_icon(&bundle, &info, &dest));
         let out = image::open(&dest).unwrap();
@@ -388,7 +468,10 @@ mod tests {
         )
         .unwrap();
         let i = read_info(&bundle).unwrap();
-        assert_eq!((i.name.as_str(), i.bundle_id.as_str()), ("Thing", "com.test.thing"));
+        assert_eq!(
+            (i.name.as_str(), i.bundle_id.as_str()),
+            ("Thing", "com.test.thing")
+        );
         assert_eq!(i.icon_files, ["Icon"]);
         std::fs::remove_dir_all(dir).ok();
     }

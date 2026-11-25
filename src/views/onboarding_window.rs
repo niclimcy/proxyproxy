@@ -5,10 +5,14 @@ use crate::viewmodels::{
     intent::{OnboardingIntent, OnboardingTarget},
     onboarding_vm::{OnboardingStage, OnboardingVm},
 };
-use crate::views::theme::*;
+use crate::views::theme::{
+    FS_BODY, FS_SMALL, FS_TITLE, HIT, RADIUS, Tint, accent, action_button_sized, border, canvas,
+    card, fg, fg_muted, focus_ring, info, muted, pill, success, surface, tint, warning,
+};
 use eframe::egui::{self, RichText};
 use egui_phosphor::regular as ph;
 
+#[derive(Clone, Copy)]
 pub struct Props<'a> {
     pub devices: &'a DevicesVm,
     pub port: u16,

@@ -1,8 +1,8 @@
 use super::intent::{Effect, ListKind, RuleIntent};
 use super::status::Status;
 use crate::domain::config::{Config, Shared};
-use crate::domain::pac;
 use crate::domain::flow::{BpEdit, Decision, Flow, Paused, Stage};
+use crate::domain::pac;
 use crate::domain::policy::url_matches;
 use crate::domain::rule::{Action, Rule};
 use crate::services::flow_store::FlowStore;
@@ -139,12 +139,12 @@ impl RuleForm {
             }
             Action::MapLocal { path, status } => {
                 s.kind = RuleKind::MapLocal;
-                s.file = path.clone();
+                s.file.clone_from(path);
                 s.status = status.to_string();
             }
             Action::MapRemote { target } => {
                 s.kind = RuleKind::Redirect;
-                s.target = target.clone();
+                s.target.clone_from(target);
             }
             Action::Block { status } => {
                 s.kind = RuleKind::Block;
@@ -163,8 +163,8 @@ impl RuleForm {
             } => {
                 s.kind = RuleKind::Header;
                 s.resp = *response;
-                s.hname = name.clone();
-                s.hvalue = value.clone();
+                s.hname.clone_from(name);
+                s.hvalue.clone_from(value);
                 s.hremove = *remove;
             }
             Action::ReplaceBody {
@@ -175,8 +175,8 @@ impl RuleForm {
             } => {
                 s.kind = RuleKind::Body;
                 s.resp = *response;
-                s.find = find.clone();
-                s.replace = replace.clone();
+                s.find.clone_from(find);
+                s.replace.clone_from(replace);
                 s.regex = *regex;
             }
             Action::Mock {
@@ -186,12 +186,12 @@ impl RuleForm {
             } => {
                 s.kind = RuleKind::Mock;
                 s.status = status.to_string();
-                s.ctype = content_type.clone();
-                s.body = body.clone();
+                s.ctype.clone_from(content_type);
+                s.body.clone_from(body);
             }
             Action::Script { code } => {
                 s.kind = RuleKind::Script;
-                s.code = code.clone();
+                s.code.clone_from(code);
             }
         }
         s
@@ -206,8 +206,7 @@ impl RuleForm {
     pub fn map_file_ext(&self) -> String {
         std::path::Path::new(self.file.trim())
             .extension()
-            .map(|e| e.to_string_lossy().to_lowercase())
-            .unwrap_or_default()
+            .map_or_default(|e| e.to_string_lossy().to_lowercase())
     }
 
     pub fn valid(&self) -> bool {
@@ -354,7 +353,11 @@ pub struct RulesVm {
     scope_cache: Cell<Option<(u64, usize)>>,
 }
 
-fn cached_count(cache: &Cell<Option<(u64, usize)>>, key: impl Hash, count: impl FnOnce() -> usize) -> usize {
+fn cached_count(
+    cache: &Cell<Option<(u64, usize)>>,
+    key: impl Hash,
+    count: impl FnOnce() -> usize,
+) -> usize {
     let mut h = DefaultHasher::new();
     key.hash(&mut h);
     let key = h.finish();
@@ -474,7 +477,10 @@ impl RulesVm {
         let st = self.store.lock();
         let key = (st.rev(), c.scope_only, &c.scope, &c.exclude, &c.muted);
         let matching = cached_count(&self.scope_cache, key, || {
-            st.flows.iter().filter(|f| c.in_record_scope(&f.url())).count()
+            st.flows
+                .iter()
+                .filter(|f| c.in_record_scope(&f.url()))
+                .count()
         });
         ScopeView {
             scope_only: c.scope_only,
@@ -517,9 +523,14 @@ impl RulesVm {
             RuleIntent::Delete(id) => self.cfg.lock().unwrap().rules.retain(|r| r.id != id),
             RuleIntent::Move(i, d) => {
                 let mut cfg = self.cfg.lock().unwrap();
-                let j = i as i32 + d;
-                if j >= 0 && (j as usize) < cfg.rules.len() && i < cfg.rules.len() {
-                    cfg.rules.swap(i, j as usize);
+                let target = isize::try_from(d)
+                    .ok()
+                    .and_then(|d| i.checked_add_signed(d));
+                if let Some(j) = target
+                    && j < cfg.rules.len()
+                    && i < cfg.rules.len()
+                {
+                    cfg.rules.swap(i, j);
                 }
             }
             RuleIntent::Edit(id) => {
@@ -618,19 +629,18 @@ impl RulesVm {
             return;
         }
         match std::fs::read(&path) {
-            Ok(data) => match String::from_utf8(data) {
-                Ok(text) => {
+            Ok(data) => {
+                if let Ok(text) = String::from_utf8(data) {
                     self.form.map_file_content = text;
                     self.form.map_file_loaded_path = path;
                     self.form.map_file_dirty = false;
                     self.form.map_file_status = Some("File loaded from disk".into());
                     self.form.map_file_error = None;
-                }
-                Err(_) => {
+                } else {
                     self.form.map_file_status = None;
                     self.form.map_file_error = Some("This file is not valid UTF-8 text".into());
                 }
-            },
+            }
             Err(e) => {
                 self.form.map_file_status = None;
                 self.form.map_file_error = Some(format!("Cannot read file: {e}"));
@@ -646,7 +656,7 @@ impl RulesVm {
         }
         let path = self.form.map_file_loaded_path.clone();
         match std::fs::write(&path, &self.form.map_file_content) {
-            Ok(_) => {
+            Ok(()) => {
                 self.form.map_file_loaded_path = path;
                 self.form.map_file_dirty = false;
                 self.form.map_file_status = Some("Saved directly to disk".into());
@@ -671,29 +681,26 @@ impl RulesVm {
             f.method.trim().to_string(),
         );
         let mut cfg = self.cfg.lock().unwrap();
-        match self
+        if let Some(r) = self
             .editing
             .take()
             .and_then(|id| cfg.rules.iter_mut().find(|r| r.id == id))
         {
-            Some(r) => {
-                r.name = name;
-                r.pattern = pattern;
-                r.method = method;
-                r.action = action;
-            }
-            None => {
-                let id = cfg.next_rule_id();
-                cfg.rules.push(Rule {
-                    id,
-                    enabled: true,
-                    name,
-                    pattern,
-                    method,
-                    action,
-                    hits: 0,
-                });
-            }
+            r.name = name;
+            r.pattern = pattern;
+            r.method = method;
+            r.action = action;
+        } else {
+            let id = cfg.next_rule_id();
+            cfg.rules.push(Rule {
+                id,
+                enabled: true,
+                name,
+                pattern,
+                method,
+                action,
+                hits: 0,
+            });
         }
         drop(cfg);
         self.form = RuleForm::default();
@@ -913,7 +920,11 @@ mod tests {
         vm.handle(RuleIntent::AddHost(ListKind::ProxyOnly));
         {
             let mut c = vm.cfg.lock().unwrap();
-            c.scope = vec!["a.com/v2/*".into(), "https://b.com".into(), "keep.com".into()];
+            c.scope = vec![
+                "a.com/v2/*".into(),
+                "https://b.com".into(),
+                "keep.com".into(),
+            ];
         }
         assert!(vm.scope_view().scope_has_paths);
         vm.handle(RuleIntent::SeedProxyOnlyFromScope);
@@ -929,7 +940,11 @@ mod tests {
     #[test]
     fn scope_view_counts_recorded_flows_in_scope() {
         let mut vm = vm();
-        for (id, host, path) in [(1, "a.com", "/v2/x"), (2, "a.com", "/v1/x"), (3, "b.com", "/v2/x")] {
+        for (id, host, path) in [
+            (1, "a.com", "/v2/x"),
+            (2, "a.com", "/v1/x"),
+            (3, "b.com", "/v2/x"),
+        ] {
             let mut f = Flow::sample(id);
             f.host = host.into();
             f.path = path.into();

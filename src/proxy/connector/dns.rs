@@ -90,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolver_uses_override() {
-        let cfg: Shared = Default::default();
+        let cfg = Shared::default();
         cfg.lock().unwrap().dns_overrides = ov(&[("x.invalid", "127.0.0.9")]);
         let mut r = Resolver::new(cfg);
         let addrs: Vec<_> = r

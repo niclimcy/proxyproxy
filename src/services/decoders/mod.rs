@@ -73,8 +73,7 @@ pub fn default_for(avail: &[&'static dyn BodyDecoder]) -> ModeId {
         .iter()
         .filter_map(|d| d.default_rank().map(|r| (r, d.id())))
         .min_by_key(|(r, _)| *r)
-        .map(|(_, id)| id)
-        .unwrap_or(PRETTY)
+        .map_or(PRETTY, |(_, id)| id)
 }
 
 #[cfg(test)]

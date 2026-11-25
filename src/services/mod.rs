@@ -3,6 +3,7 @@ pub mod android_pkg;
 pub mod api;
 pub mod app_icons;
 pub mod app_menu;
+pub mod bytes;
 pub mod car;
 pub mod client_proc;
 pub mod config_store;

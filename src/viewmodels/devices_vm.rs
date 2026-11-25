@@ -4,8 +4,8 @@ use crate::domain::config::Shared;
 use crate::domain::pac::Route;
 use crate::domain::repaint::Repaint;
 use crate::services::devices::{self, DeviceSnapshot};
-use crate::services::sysproxy;
 pub use crate::services::devices::{AndroidDevice, IosCaStatus, IosSimulator, IosSimulatorState};
+use crate::services::sysproxy;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -85,8 +85,8 @@ impl DevicesVm {
         std::thread::spawn(move || {
             let before = generation.load(Ordering::SeqCst);
             let mut snapshot = devices::snapshot(&cert, port);
-            let settled = busy.load(Ordering::SeqCst) == 0
-                && generation.load(Ordering::SeqCst) == before;
+            let settled =
+                busy.load(Ordering::SeqCst) == 0 && generation.load(Ordering::SeqCst) == before;
             if !settled {
                 snapshot.system_proxy_ours = None;
                 snapshot.pac_ours = None;
@@ -224,7 +224,7 @@ impl DevicesVm {
             }
             DeviceAction::LaunchChrome => jobs.spawn(move || devices::launch_chrome(port)),
             DeviceAction::IosSimInstallCa(udid) => {
-                jobs.spawn(move || devices::ios_sim_install_ca(&udid, &cert))
+                jobs.spawn(move || devices::ios_sim_install_ca(&udid, &cert));
             }
             DeviceAction::InstallMissingIosCas => {
                 let udids: Vec<String> = self.missing_ca().iter().map(|s| s.udid.clone()).collect();
@@ -233,7 +233,7 @@ impl DevicesVm {
                         devices::ios_sim_install_ca(udid, &cert)?;
                     }
                     Ok(format!("CA installed on {} simulator(s)", udids.len()))
-                })
+                });
             }
             DeviceAction::IosSimReboot(udid) => jobs.spawn(move || devices::ios_sim_reboot(&udid)),
             DeviceAction::AndroidSetProxy => jobs.spawn(move || devices::android_set_proxy(port)),
@@ -243,10 +243,10 @@ impl DevicesVm {
                     // optimistic, so the checkbox flips now; the next poll confirms it
                     d.proxied = enable;
                 }
-                jobs.spawn(move || devices::android_toggle_proxy(&serial, port, enable))
+                jobs.spawn(move || devices::android_toggle_proxy(&serial, port, enable));
             }
             DeviceAction::AndroidInstallCa => {
-                jobs.spawn(move || devices::android_install_ca(&cert))
+                jobs.spawn(move || devices::android_install_ca(&cert));
             }
         }
         self.next_poll = self.next_poll.min(Instant::now() + POLL_AFTER_ACTION);
@@ -267,8 +267,8 @@ impl DevicesVm {
 mod tests {
     use super::*;
     use crate::domain::config::Config;
-    use std::sync::Mutex;
     use crate::viewmodels::status::NoRepaint;
+    use std::sync::Mutex;
 
     fn sim(udid: &str, state: IosSimulatorState, ca: IosCaStatus) -> IosSimulator {
         IosSimulator {
@@ -328,7 +328,7 @@ mod tests {
     fn set_hosts(vm: &DevicesVm, on: bool, hosts: &[&str]) {
         let mut c = vm.cfg.lock().unwrap();
         c.proxy_only = on;
-        c.proxy_only_hosts = hosts.iter().map(|h| h.to_string()).collect();
+        c.proxy_only_hosts = hosts.iter().map(ToString::to_string).collect();
     }
 
     #[test]

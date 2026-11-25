@@ -2,10 +2,16 @@ use crate::domain::filter;
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::viewmodels::devices_vm::{DevicesVm, IosCaStatus};
 use crate::viewmodels::intent::{DeviceAction, SessionIntent, ToolbarIntent};
-use crate::views::theme::*;
+use crate::views::theme::{
+    FS_BODY, FS_CAPTION, FS_SMALL, HIT, RADIUS_PILL, Tint, accent, bar_frame, canvas, capsule,
+    checkbox, chip, cmd, danger, fg_muted, flat, ico, icon_button, icon_only, info, menu_item,
+    menu_width, muted, right_panel_toggle, sidebar_toggle, submenu_item, success, tint,
+    toolbar_menu, violet, warning,
+};
 use eframe::egui::{self, Margin, RichText, TextEdit};
 use egui_phosphor::regular as ph;
 
+#[derive(Clone, Copy)]
 pub struct Props<'a> {
     pub port: u16,
     pub cert: &'a str,
@@ -278,7 +284,9 @@ fn compact_primary_rows(
         if scope_active && scope_pill(ui).clicked() {
             out.push(ToolbarIntent::ShowScope);
         }
-        if let Some(n) = devices.hosts_only() && hosts_pill(ui, n).clicked() {
+        if let Some(n) = devices.hosts_only()
+            && hosts_pill(ui, n).clicked()
+        {
             out.push(ToolbarIntent::ShowScope);
         }
         if !status.is_empty() {
@@ -310,11 +318,35 @@ fn compact_primary_rows(
 /// Only controls recording: the proxy keeps forwarding while paused. Routing lives in the Sources menu.
 fn record_pill(ui: &mut egui::Ui, paused: bool, port: u16, out: &mut Vec<ToolbarIntent>) {
     let (icon, label, state, tip) = if paused {
-        (ph::PAUSE_CIRCLE, "Paused", warning(), format!("Recording paused. Traffic still flows through :{port} but is not saved. Click to resume ({}⇧P)", cmd()))
+        (
+            ph::PAUSE_CIRCLE,
+            "Paused",
+            warning(),
+            format!(
+                "Recording paused. Traffic still flows through :{port} but is not saved. Click to resume ({}⇧P)",
+                cmd()
+            ),
+        )
     } else {
-        (ph::RECORD, "Recording", success(), format!("Recording traffic arriving on 127.0.0.1:{port}. Click to pause ({}⇧P)", cmd()))
+        (
+            ph::RECORD,
+            "Recording",
+            success(),
+            format!(
+                "Recording traffic arriving on 127.0.0.1:{port}. Click to pause ({}⇧P)",
+                cmd()
+            ),
+        )
     };
-    let resp = flat(ui, |ui| ui.add(egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL).color(state)).fill(tint(state, Tint::Normal)).stroke(egui::Stroke::NONE).min_size(egui::vec2(0.0, HIT)).corner_radius(RADIUS_PILL)));
+    let resp = flat(ui, |ui| {
+        ui.add(
+            egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL).color(state))
+                .fill(tint(state, Tint::Normal))
+                .stroke(egui::Stroke::NONE)
+                .min_size(egui::vec2(0.0, HIT))
+                .corner_radius(RADIUS_PILL),
+        )
+    });
     if resp.on_hover_text(tip).clicked() {
         out.push(ToolbarIntent::ToggleCapture);
     }
@@ -339,10 +371,14 @@ fn paused_pill(ui: &mut egui::Ui, n: usize) -> egui::Response {
 fn scope_pill(ui: &mut egui::Ui) -> egui::Response {
     flat(ui, |ui| {
         ui.add(
-            egui::Button::new(RichText::new(ico(ph::TARGET, "Scoped")).size(FS_SMALL).color(accent()))
-                .fill(tint(accent(), Tint::Normal))
-                .min_size(egui::vec2(0.0, HIT))
-                .corner_radius(RADIUS_PILL),
+            egui::Button::new(
+                RichText::new(ico(ph::TARGET, "Scoped"))
+                    .size(FS_SMALL)
+                    .color(accent()),
+            )
+            .fill(tint(accent(), Tint::Normal))
+            .min_size(egui::vec2(0.0, HIT))
+            .corner_radius(RADIUS_PILL),
         )
     })
     .on_hover_text("Only part of the traffic is recorded. Open scope settings")
@@ -351,13 +387,19 @@ fn scope_pill(ui: &mut egui::Ui) -> egui::Response {
 fn hosts_pill(ui: &mut egui::Ui, n: usize) -> egui::Response {
     flat(ui, |ui| {
         ui.add(
-            egui::Button::new(RichText::new(ico(ph::ARROWS_SPLIT, &format!("{n} hosts only"))).size(FS_SMALL).color(accent()))
-                .fill(tint(accent(), Tint::Normal))
-                .min_size(egui::vec2(0.0, HIT))
-                .corner_radius(RADIUS_PILL),
+            egui::Button::new(
+                RichText::new(ico(ph::ARROWS_SPLIT, &format!("{n} hosts only")))
+                    .size(FS_SMALL)
+                    .color(accent()),
+            )
+            .fill(tint(accent(), Tint::Normal))
+            .min_size(egui::vec2(0.0, HIT))
+            .corner_radius(RADIUS_PILL),
         )
     })
-    .on_hover_text("Only these hosts go through the proxy; the rest connect directly. Open the list")
+    .on_hover_text(
+        "Only these hosts go through the proxy; the rest connect directly. Open the list",
+    )
 }
 
 fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
@@ -378,9 +420,7 @@ fn saved_menu(ui: &mut egui::Ui, vm: &CaptureVm, out: &mut Vec<ToolbarIntent>) {
             }
             for (i, (name, q)) in saved.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    if icon_only(ui, ph::X, "Delete saved query")
-                        .clicked()
-                    {
+                    if icon_only(ui, ph::X, "Delete saved query").clicked() {
                         out.push(ToolbarIntent::DeleteQuery(i));
                     }
                     if menu_item(ui, name, None).on_hover_text(q).clicked() {
@@ -421,7 +461,7 @@ fn session_menu(ui: &mut egui::Ui, out: &mut Vec<ToolbarIntent>, compact: bool) 
                 if *l == "-" {
                     ui.separator();
                 } else if menu_item(ui, l, None).clicked() {
-                    act = Some(i as u8);
+                    act = u8::try_from(i).ok();
                     ui.close();
                 }
             }
@@ -482,7 +522,14 @@ struct Setup<'a> {
 fn help_menu(ui: &mut egui::Ui, label: &str, out: &mut Vec<ToolbarIntent>) {
     toolbar_menu(ui, ph::QUESTION, label, false, |ui| {
         let settings = format!("{},", cmd());
-        menu_width(ui, &[&format!("Settings…    {settings}"), "Setup guide", "About proxyproxy"]);
+        menu_width(
+            ui,
+            &[
+                &format!("Settings…    {settings}"),
+                "Setup guide",
+                "About proxyproxy",
+            ],
+        );
         if menu_item(ui, "Settings…", Some(&settings)).clicked() {
             out.push(ToolbarIntent::Settings);
             ui.close();
@@ -558,7 +605,11 @@ fn device_rows(s: Setup) -> Vec<Row> {
             IosCaStatus::Missing => "CA missing",
             IosCaStatus::Unknown => "CA status unknown",
         };
-        let route = if s.devices.system_proxy_enabled { "routed" } else { "not routed" };
+        let route = if s.devices.system_proxy_enabled {
+            "routed"
+        } else {
+            "not routed"
+        };
         rows.push(note(&format!("{} · {route} · {ca}", sim.name)));
         rows.push(if sim.ca_status == IosCaStatus::Installed {
             Row::Device(
@@ -573,7 +624,9 @@ fn device_rows(s: Setup) -> Vec<Row> {
         });
     }
     rows.push(Row::Separator);
-    rows.push(note("Android (set per device, independent of System proxy)"));
+    rows.push(note(
+        "Android (set per device, independent of System proxy)",
+    ));
     if s.devices.android.is_empty() {
         rows.push(note("No Android device or emulator found by adb"));
     }
@@ -612,7 +665,10 @@ fn devices_menu(
     out: &mut Vec<ToolbarIntent>,
     compact: bool,
 ) {
-    let label = setup.devices.sources_label().unwrap_or_else(|| "Sources".into());
+    let label = setup
+        .devices
+        .sources_label()
+        .unwrap_or_else(|| "Sources".into());
     toolbar_menu(
         ui,
         ph::DEVICE_MOBILE,
@@ -623,7 +679,9 @@ fn devices_menu(
             let labels: Vec<&str> = rows
                 .iter()
                 .filter_map(|row| match row {
-                    Row::Note(l) | Row::Device(l, _) | Row::Toggle(l, ..) | Row::Copy(l, _) => Some(l.as_str()),
+                    Row::Note(l) | Row::Device(l, _) | Row::Toggle(l, ..) | Row::Copy(l, _) => {
+                        Some(l.as_str())
+                    }
                     Row::Separator => None,
                 })
                 .collect();
@@ -657,7 +715,13 @@ fn devices_menu(
             submenu_item(ui, &ico(ph::COPY, "Copy"), |ui| {
                 let labels: Vec<&str> = copies
                     .iter()
-                    .filter_map(|r| if let Row::Copy(l, _) = r { Some(l.as_str()) } else { None })
+                    .filter_map(|r| {
+                        if let Row::Copy(l, _) = r {
+                            Some(l.as_str())
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 menu_width(ui, &labels);
                 for row in copies {

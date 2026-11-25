@@ -121,7 +121,7 @@ impl Flow {
     }
 
     pub fn query_string(&self) -> &str {
-        self.path.split_once('?').map(|(_, q)| q).unwrap_or("")
+        self.path.split_once('?').map_or("", |(_, q)| q)
     }
 
     pub fn hostname(&self) -> &str {
@@ -132,19 +132,26 @@ impl Flow {
     }
 
     pub fn res_size(&self) -> usize {
-        self.response.as_ref().map(|r| r.body.len()).unwrap_or(0)
+        self.response.as_ref().map_or(0, |r| r.body.len())
     }
 
     // Simulator page loads come from the shared WebKit networking process, not the Safari app.
     // Only Safari's UA has the `Safari/` token; a WKWebView inside another app omits it.
     fn is_sim_safari(&self) -> bool {
         let ua = self.request.header("user-agent").unwrap_or("");
-        let shared_sim_process = self.app_id.as_ref().is_some_and(|i| !i.platform.is_empty() && i.bundle_id.is_empty());
-        shared_sim_process && (ua.contains("iPhone") || ua.contains("iPad")) && ua.contains("Safari/")
+        let shared_sim_process = self
+            .app_id
+            .as_ref()
+            .is_some_and(|i| !i.platform.is_empty() && i.bundle_id.is_empty());
+        shared_sim_process
+            && (ua.contains("iPhone") || ua.contains("iPad"))
+            && ua.contains("Safari/")
     }
 
     /// The identity to draw: the shared simulator process borrows Safari's icon for Safari page loads.
-    pub fn display_identity(&self) -> Option<std::borrow::Cow<'_, crate::domain::app::AppIdentity>> {
+    pub fn display_identity(
+        &self,
+    ) -> Option<std::borrow::Cow<'_, crate::domain::app::AppIdentity>> {
         use std::borrow::Cow;
         let id = self.app_id.as_ref()?;
         if self.is_sim_safari() && !id.safari_icon_key.is_empty() {

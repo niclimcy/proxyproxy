@@ -1,6 +1,7 @@
 use super::Res;
 
-const HINT: &str = "system proxy isn't supported on this OS; use the env snippet or set it manually";
+const HINT: &str =
+    "system proxy isn't supported on this OS; use the env snippet or set it manually";
 
 pub fn system_proxy(_: bool, _: u16) -> Res {
     Err(HINT.into())

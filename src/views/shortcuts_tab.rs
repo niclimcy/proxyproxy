@@ -2,7 +2,7 @@ use crate::domain::keymap::{BindError, Binding, RowAction, default_binding};
 use crate::viewmodels::intent::KeymapIntent;
 use crate::viewmodels::keymap_vm::KeymapVm;
 use crate::views::shortcuts::combo;
-use crate::views::theme::*;
+use crate::views::theme::{accent, cmd, danger, icon_button, icon_only, muted, pill, tag_colors};
 use eframe::egui::{self, RichText};
 use egui_phosphor::regular as ph;
 
@@ -32,7 +32,12 @@ fn take_key(ui: &egui::Ui) -> Option<(egui::Key, egui::Modifiers)> {
     ui.input_mut(|i| {
         let mut hit = None;
         i.events.retain(|e| match e {
-            egui::Event::Key { key, pressed: true, modifiers, .. } if hit.is_none() => {
+            egui::Event::Key {
+                key,
+                pressed: true,
+                modifiers,
+                ..
+            } if hit.is_none() => {
                 hit = Some((*key, *modifiers));
                 false
             }
@@ -50,7 +55,13 @@ pub fn show(ui: &mut egui::Ui, vm: &KeymapVm) -> Vec<KeymapIntent> {
         if key == egui::Key::Escape {
             out.push(KeymapIntent::Cancel);
         } else if m.command && !m.alt {
-            out.push(KeymapIntent::Set(a, Binding { key: key.name().into(), shift: m.shift }));
+            out.push(KeymapIntent::Set(
+                a,
+                Binding {
+                    key: key.name().into(),
+                    shift: m.shift,
+                },
+            ));
         }
     }
     ui.label(muted(format!(
@@ -59,54 +70,84 @@ pub fn show(ui: &mut egui::Ui, vm: &KeymapVm) -> Vec<KeymapIntent> {
     )));
     ui.add_space(10.0);
     let rows = vm.rows();
-    egui::Grid::new("shortcut-grid").num_columns(3).spacing([16.0, 6.0]).show(ui, |ui| {
-        for row in &rows {
-            let a = row.action;
-            let name = label(a);
-            ui.label(&name);
-            if vm.recording == Some(a) {
-                pill(ui, &format!("Press {}+key…  Esc cancels", cmd().trim_end_matches('+')), accent());
-            } else {
-                match &row.binding {
-                    Some(b) => ui.label(RichText::new(combo(b)).monospace()),
-                    None => ui.label(muted("None")),
-                };
-            }
-            ui.horizontal(|ui| {
+    egui::Grid::new("shortcut-grid")
+        .num_columns(3)
+        .spacing([16.0, 6.0])
+        .show(ui, |ui| {
+            for row in &rows {
+                let a = row.action;
+                let name = label(a);
+                ui.label(&name);
                 if vm.recording == Some(a) {
-                    if icon_button(ui, ph::X, "Cancel", true).clicked() {
-                        out.push(KeymapIntent::Cancel);
-                    }
+                    pill(
+                        ui,
+                        &format!("Press {}+key…  Esc cancels", cmd().trim_end_matches('+')),
+                        accent(),
+                    );
                 } else {
-                    let change = icon_button(ui, ph::KEYBOARD, "Change", true);
-                    // every row has a Change button, so the spoken name says which
-                    change.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Change the {name} shortcut")));
-                    if change.clicked() {
-                        out.push(KeymapIntent::Record(a));
+                    match &row.binding {
+                        Some(b) => ui.label(RichText::new(combo(b)).monospace()),
+                        None => ui.label(muted("None")),
+                    };
+                }
+                ui.horizontal(|ui| {
+                    if vm.recording == Some(a) {
+                        if icon_button(ui, ph::X, "Cancel", true).clicked() {
+                            out.push(KeymapIntent::Cancel);
+                        }
+                    } else {
+                        let change = icon_button(ui, ph::KEYBOARD, "Change", true);
+                        // every row has a Change button, so the spoken name says which
+                        change.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::Role::Button,
+                                true,
+                                format!("Change the {name} shortcut"),
+                            )
+                        });
+                        if change.clicked() {
+                            out.push(KeymapIntent::Record(a));
+                        }
                     }
-                }
-                if row.binding.is_some() && icon_only(ui, ph::PROHIBIT, &format!("Turn off the {name} shortcut")).clicked() {
-                    out.push(KeymapIntent::Clear(a));
-                }
-                if row.custom {
-                    let default = default_binding(a).map_or_else(|| "none".into(), |b| combo(&b));
-                    if icon_only(ui, ph::ARROW_COUNTER_CLOCKWISE, &format!("Reset {name} to {default}")).clicked() {
-                        out.push(KeymapIntent::Reset(a));
+                    if row.binding.is_some()
+                        && icon_only(ui, ph::PROHIBIT, &format!("Turn off the {name} shortcut"))
+                            .clicked()
+                    {
+                        out.push(KeymapIntent::Clear(a));
                     }
-                }
-            });
-            ui.end_row();
-            if let Some((ea, e)) = vm.error
-                && ea == a
-            {
-                ui.label("");
-                ui.label(RichText::new(message(e)).color(danger()));
+                    if row.custom {
+                        let default =
+                            default_binding(a).map_or_else(|| "none".into(), |b| combo(&b));
+                        if icon_only(
+                            ui,
+                            ph::ARROW_COUNTER_CLOCKWISE,
+                            &format!("Reset {name} to {default}"),
+                        )
+                        .clicked()
+                        {
+                            out.push(KeymapIntent::Reset(a));
+                        }
+                    }
+                });
                 ui.end_row();
+                if let Some((ea, e)) = vm.error
+                    && ea == a
+                {
+                    ui.label("");
+                    ui.label(RichText::new(message(e)).color(danger()));
+                    ui.end_row();
+                }
             }
-        }
-    });
+        });
     ui.add_space(10.0);
-    if icon_button(ui, ph::ARROW_COUNTER_CLOCKWISE, "Reset all to defaults", rows.iter().any(|r| r.custom)).clicked() {
+    if icon_button(
+        ui,
+        ph::ARROW_COUNTER_CLOCKWISE,
+        "Reset all to defaults",
+        rows.iter().any(|r| r.custom),
+    )
+    .clicked()
+    {
         out.push(KeymapIntent::ResetAll);
     }
     out

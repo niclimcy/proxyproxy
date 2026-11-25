@@ -1,7 +1,11 @@
 use crate::domain::rule::Action;
 use crate::viewmodels::intent::{ListKind, RuleIntent};
 use crate::viewmodels::rules_vm::{KINDS, RuleForm, RuleKind, RulesTab, RulesVm};
-use crate::views::theme::*;
+use crate::views::theme::{
+    FS_CAPTION, accent, action_button, card, card_panel, checkbox, code_layouter, danger, fg,
+    fg_muted, ico, icon_button, icon_only, info, method_color, muted, overline, pill, resize_grip,
+    resize_line, segmented, success, violet, warning,
+};
 use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
@@ -27,9 +31,7 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
             ui.horizontal(|ui| {
                 ui.label(overline("RULES & SCOPE"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if icon_only(ui, ph::X, "Close rules panel")
-                        .clicked()
-                    {
+                    if icon_only(ui, ph::X, "Close rules panel").clicked() {
                         close = true;
                     }
                 });
@@ -56,7 +58,11 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
     resize_line(ui, false);
     if let Some(r) = shown {
         let r = r.response.rect;
-        resize_grip(ui, "rules", egui::Rect::from_two_pos(r.left_top(), r.left_bottom()));
+        resize_grip(
+            ui,
+            "rules",
+            egui::Rect::from_two_pos(r.left_top(), r.left_bottom()),
+        );
     }
     vm.show = open && !close;
     out
@@ -163,10 +169,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
 fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
     let w = (ui.available_width() - 100.0).clamp(120.0, 700.0);
     let kind_picker = |ui: &mut egui::Ui, kind: &mut RuleKind| {
-        let current = KINDS
-            .iter()
-            .find(|(k, _)| k == kind)
-            .map_or("", |(_, l)| l);
+        let current = KINDS.iter().find(|(k, _)| k == kind).map_or("", |(_, l)| l);
         egui::ComboBox::from_id_salt("rule-kind")
             .selected_text(current)
             .width(160.0)
@@ -499,7 +502,13 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         4,
     );
     let mut proxy_only = sv.proxy_only;
-    if checkbox(ui, &mut proxy_only, "Route only the hosts above (needs macOS)").changed() {
+    if checkbox(
+        ui,
+        &mut proxy_only,
+        "Route only the hosts above (needs macOS)",
+    )
+    .changed()
+    {
         out.push(RuleIntent::SetProxyOnly(proxy_only));
     }
     if icon_button(ui, ph::TARGET, "Add hosts from Scope", true).clicked() {

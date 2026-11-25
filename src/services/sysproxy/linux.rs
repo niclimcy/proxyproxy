@@ -6,7 +6,9 @@ const SCHEMA: &str = "org.gnome.system.proxy";
 
 fn gs(args: &[&str]) -> Res {
     run("gsettings", args).map_err(|e| {
-        format!("{e} (system proxy needs GNOME's gsettings; set it manually or use the env snippet)")
+        format!(
+            "{e} (system proxy needs GNOME's gsettings; set it manually or use the env snippet)"
+        )
     })
 }
 
@@ -22,8 +24,16 @@ pub fn system_proxy(enable: bool, port: u16) -> Res {
             gs(&["set", &schema, "port", &port.to_string()])?;
         }
     }
-    gs(&["set", SCHEMA, "mode", if enable { "manual" } else { "none" }])?;
-    Ok(format!("System proxy {}", if enable { "on" } else { "off" }))
+    gs(&[
+        "set",
+        SCHEMA,
+        "mode",
+        if enable { "manual" } else { "none" },
+    ])?;
+    Ok(format!(
+        "System proxy {}",
+        if enable { "on" } else { "off" }
+    ))
 }
 
 pub fn system_proxy_status(port: u16) -> Result<bool, String> {

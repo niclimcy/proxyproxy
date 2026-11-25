@@ -1,3 +1,6 @@
+// Colour channels are clamped to 0..=1 before quantising, and SIZE is a small constant.
+#![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
 type Rgb = [f32; 3];
 
 const SIZE: usize = 256;
@@ -7,7 +10,7 @@ struct Canvas {
 }
 
 fn rr_sdf(x: f32, y: f32, x0: f32, y0: f32, x1: f32, y1: f32, r: f32) -> f32 {
-    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    let (cx, cy) = (f32::midpoint(x0, x1), f32::midpoint(y0, y1));
     let (hx, hy) = ((x1 - x0) / 2.0 - r, (y1 - y0) / 2.0 - r);
     let qx = (x - cx).abs() - hx;
     let qy = (y - cy).abs() - hy;

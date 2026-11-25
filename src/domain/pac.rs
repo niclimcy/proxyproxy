@@ -83,13 +83,15 @@ pub fn file_url(path: &str) -> String {
 pub fn pac_script(hosts: &[String], port: u16) -> String {
     let mut conds = vec![];
     for h in hosts {
-        conds.push(if let Some(rest) = h.strip_prefix("*.").filter(|r| !r.contains('*')) {
-            format!("dnsDomainIs(host, \".{rest}\")")
-        } else if h.contains('*') {
-            format!("shExpMatch(host, \"{h}\")")
-        } else {
-            format!("host == \"{h}\" || dnsDomainIs(host, \".{h}\")")
-        });
+        conds.push(
+            if let Some(rest) = h.strip_prefix("*.").filter(|r| !r.contains('*')) {
+                format!("dnsDomainIs(host, \".{rest}\")")
+            } else if h.contains('*') {
+                format!("shExpMatch(host, \"{h}\")")
+            } else {
+                format!("host == \"{h}\" || dnsDomainIs(host, \".{h}\")")
+            },
+        );
     }
     let cond = if conds.is_empty() {
         "false".to_string()
@@ -106,12 +108,15 @@ mod tests {
     use super::*;
 
     fn s(v: &[&str]) -> Vec<String> {
-        v.iter().map(|x| x.to_string()).collect()
+        v.iter().map(ToString::to_string).collect()
     }
 
     #[test]
     fn reduces_urls_and_patterns_to_hosts() {
-        assert_eq!(host_of("https://API.a.com:8443/v2/*").as_deref(), Some("api.a.com"));
+        assert_eq!(
+            host_of("https://API.a.com:8443/v2/*").as_deref(),
+            Some("api.a.com")
+        );
         assert_eq!(host_of("a.com/v2/users/*").as_deref(), Some("a.com"));
         assert_eq!(host_of("*.a.com").as_deref(), Some("*.a.com"));
         assert_eq!(host_of("  "), None);
@@ -172,8 +177,14 @@ mod tests {
 
     #[test]
     fn file_urls_per_platform() {
-        assert_eq!(file_url("/Users/a b/Library/x.pac"), "file:///Users/a%20b/Library/x.pac");
-        assert_eq!(file_url(r"C:\Users\a b\AppData\Roaming\proxyproxy\x.pac"), "file:///C:/Users/a%20b/AppData/Roaming/proxyproxy/x.pac");
+        assert_eq!(
+            file_url("/Users/a b/Library/x.pac"),
+            "file:///Users/a%20b/Library/x.pac"
+        );
+        assert_eq!(
+            file_url(r"C:\Users\a b\AppData\Roaming\proxyproxy\x.pac"),
+            "file:///C:/Users/a%20b/AppData/Roaming/proxyproxy/x.pac"
+        );
         assert_eq!(file_url(r"\\?\C:\x.pac"), "file:///C:/x.pac");
         assert_eq!(file_url(r"\\srv\share\x.pac"), "file://srv/share/x.pac");
         assert_eq!(file_url("/h/é.pac"), "file:///h/%C3%A9.pac");

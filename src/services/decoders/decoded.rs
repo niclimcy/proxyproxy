@@ -1,6 +1,7 @@
 use super::{BodyDecoder, ModeId, Rendered};
 use crate::domain::flow::Message;
 use crate::services::decode::{Ctx, decode_jwt, is_protobuf, jwts, protobuf};
+use std::fmt::Write as _;
 
 pub struct Decoded;
 
@@ -10,16 +11,15 @@ fn jwt_text(h: &serde_json::Value, p: &serde_json::Value) -> String {
         serde_json::to_string_pretty(h).unwrap_or_default(),
         serde_json::to_string_pretty(p).unwrap_or_default()
     );
-    if let Some(exp) = p.get("exp").and_then(|e| e.as_i64()) {
+    if let Some(exp) = p.get("exp").and_then(serde_json::Value::as_i64) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        s.push_str(&if exp < now {
-            format!("\nexpired {} min ago", (now - exp) / 60)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
+        let _ = if exp < now {
+            write!(s, "\nexpired {} min ago", (now - exp) / 60)
         } else {
-            format!("\nexpires in {} min", (exp - now) / 60)
-        });
+            write!(s, "\nexpires in {} min", (exp - now) / 60)
+        };
     }
     s
 }

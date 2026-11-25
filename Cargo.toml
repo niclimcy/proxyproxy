@@ -47,3 +47,14 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 
 [dev-dependencies]
 wiremock = "0.6"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Counts and sizes in UI math and thresholds never approach f32/f64 precision limits.
+cast_precision_loss = "allow"
+# Length alone doesn't make these functions worse; egui view builders are long by nature.
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+assert_is_empty = "allow"

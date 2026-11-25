@@ -3,18 +3,16 @@ use serde_json::Value;
 use std::time::SystemTime;
 
 fn parse_hdrs(v: &Value) -> Vec<(String, String)> {
-    v.as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|h| {
-                    Some((
-                        h.get("name")?.as_str()?.to_string(),
-                        h.get("value")?.as_str()?.to_string(),
-                    ))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    v.as_array().map_or_default(|a| {
+        a.iter()
+            .filter_map(|h| {
+                Some((
+                    h.get("name")?.as_str()?.to_string(),
+                    h.get("value")?.as_str()?.to_string(),
+                ))
+            })
+            .collect()
+    })
 }
 
 pub fn import_har(text: &str) -> Result<Vec<Flow>, String> {
@@ -33,7 +31,10 @@ pub fn import_har(text: &str) -> Result<Vec<Flow>, String> {
             None => (rest, "/"),
         };
         let res = &e["response"];
-        let status = res["status"].as_u64().filter(|s| *s > 0).map(|s| s as u16);
+        let status = res["status"]
+            .as_u64()
+            .filter(|s| *s > 0)
+            .and_then(|s| u16::try_from(s).ok());
         out.push(Flow {
             id: crate::domain::flow::next_id(),
             method: req["method"].as_str().unwrap_or("GET").into(),
@@ -69,7 +70,10 @@ pub fn import_har(text: &str) -> Result<Vec<Flow>, String> {
                     _ => vec![],
                 },
             }),
-            duration_ms: e["time"].as_f64().map(|t| t as u128),
+            duration_ms: e["time"]
+                .as_f64()
+                .and_then(|ms| std::time::Duration::try_from_secs_f64(ms / 1000.0).ok())
+                .map(|d| d.as_millis()),
             tag: "Imported".into(),
             app: String::new(),
             app_id: None,
@@ -107,7 +111,7 @@ pub fn import_chlsj(text: &str) -> Result<Vec<Flow>, String> {
     let hdr = |m: &Value| -> Vec<(String, String)> {
         m.pointer("/header/headers")
             .and_then(|h| h.as_array())
-            .map(|a| {
+            .map_or_default(|a| {
                 a.iter()
                     .filter_map(|h| {
                         Some((
@@ -117,7 +121,6 @@ pub fn import_chlsj(text: &str) -> Result<Vec<Flow>, String> {
                     })
                     .collect()
             })
-            .unwrap_or_default()
     };
     let body = |m: &Value| {
         m.pointer("/body/text")
@@ -129,7 +132,9 @@ pub fn import_chlsj(text: &str) -> Result<Vec<Flow>, String> {
     Ok(arr
         .iter()
         .map(|e| {
-            let status = e["response"]["status"].as_u64().map(|s| s as u16);
+            let status = e["response"]["status"]
+                .as_u64()
+                .and_then(|s| u16::try_from(s).ok());
             Flow {
                 id: crate::domain::flow::next_id(),
                 method: e["method"].as_str().unwrap_or("GET").into(),
@@ -138,10 +143,7 @@ pub fn import_chlsj(text: &str) -> Result<Vec<Flow>, String> {
                 path: format!(
                     "{}{}",
                     e["path"].as_str().unwrap_or("/"),
-                    e["query"]
-                        .as_str()
-                        .map(|q| format!("?{q}"))
-                        .unwrap_or_default()
+                    e["query"].as_str().map_or_default(|q| format!("?{q}"))
                 ),
                 version: "HTTP/1.1".into(),
                 started: SystemTime::now(),
@@ -155,7 +157,7 @@ pub fn import_chlsj(text: &str) -> Result<Vec<Flow>, String> {
                     headers: hdr(&e["response"]),
                     body: body(&e["response"]),
                 }),
-                duration_ms: e["durations"]["total"].as_u64().map(|d| d as u128),
+                duration_ms: e["durations"]["total"].as_u64().map(u128::from),
                 tag: "Imported".into(),
                 app: String::new(),
                 app_id: None,

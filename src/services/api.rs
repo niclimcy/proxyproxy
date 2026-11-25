@@ -13,7 +13,7 @@ pub fn detail(f: &Flow) -> Value {
     let m = |m: &crate::domain::flow::Message| json!({"headers": m.headers, "body": m.text()});
     let mut v = summary(f);
     v["request"] = m(&f.request);
-    v["response"] = f.response.as_ref().map(m).unwrap_or(Value::Null);
+    v["response"] = f.response.as_ref().map_or(Value::Null, m);
     v
 }
 
@@ -37,8 +37,7 @@ fn handle(store: &FlowStore, target: &str) -> (u16, Value) {
         "/flows" => {
             // `+` before decoding, so an encoded `%2B` stays a plus
             let query = get("q")
-                .map(|s| crate::proxy::http_util::percent_decode(&s.replace('+', " ")))
-                .unwrap_or_default();
+                .map_or_default(|s| crate::proxy::http_util::percent_decode(&s.replace('+', " ")));
             let query = crate::domain::filter::Query::parse(&query);
             let limit = get("limit")
                 .and_then(|l| l.parse().ok())
@@ -177,7 +176,7 @@ fn route(store: &FlowStore, cfg: &Shared, req: &Request) -> (u16, String) {
             (code, serde_json::to_string_pretty(&body).unwrap_or_default())
         }
         "POST" if path == "/mcp" => match serde_json::from_slice::<Value>(&req.body) {
-            Ok(request) => match crate::services::mcp::handle(store, cfg, request) {
+            Ok(request) => match crate::services::mcp::handle(store, cfg, &request) {
                 Some(response) => (200, response.to_string()),
                 None => (202, String::new()),
             },
@@ -260,7 +259,12 @@ mod tests {
         }
         let (code, v) = handle(&store, "/flows?q=host%3Ab%2Ecom");
         assert_eq!(code, 200);
-        let ids: Vec<u64> = v.as_array().unwrap().iter().map(|f| f["id"].as_u64().unwrap()).collect();
+        let ids: Vec<u64> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["id"].as_u64().unwrap())
+            .collect();
         assert_eq!(ids, vec![2]);
     }
 

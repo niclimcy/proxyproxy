@@ -3,6 +3,7 @@ use crate::domain::flow::{Flow, Message};
 use crate::services::decode;
 use crate::services::decoders::{ModeId, PRETTY};
 use crate::services::flow_store::FlowStore;
+use std::fmt::Write as _;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum DTab {
@@ -197,7 +198,7 @@ pub fn side_tabs(cur: &mut Side, has_params: bool) -> Vec<(Side, &'static str)> 
 pub fn raw_text(first: &str, m: &Message) -> String {
     let mut raw = format!("{first}\n");
     for (k, v) in &m.headers {
-        raw.push_str(&format!("{k}: {v}\n"));
+        let _ = writeln!(raw, "{k}: {v}");
     }
     raw.push('\n');
     raw.push_str(&String::from_utf8_lossy(&m.body));
@@ -212,7 +213,7 @@ mod tests {
         let mut f = Flow::sample(id);
         f.path = path.into();
         f.status = Some(200);
-        f.duration_ms = Some(id as u128 * 10);
+        f.duration_ms = Some(u128::from(id) * 10);
         f.response = Some(Message {
             headers: vec![],
             body: body.as_bytes().to_vec(),

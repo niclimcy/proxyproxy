@@ -1,6 +1,6 @@
 use crate::viewmodels::intent::SchemasIntent;
 use crate::viewmodels::schemas_vm::SchemasVm;
-use crate::views::theme::*;
+use crate::views::theme::{danger, fg_muted, icon_button, icon_only, muted};
 use eframe::egui::{self, RichText};
 use egui_phosphor::regular as ph;
 
@@ -24,9 +24,7 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
     }
     for (i, p) in v.paths.iter().enumerate() {
         ui.horizontal(|ui| {
-            if icon_only(ui, ph::X, "Remove descriptor")
-                .clicked()
-            {
+            if icon_only(ui, ph::X, "Remove descriptor").clicked() {
                 out.push(SchemasIntent::Remove(i));
             }
             ui.label(RichText::new(p).monospace());

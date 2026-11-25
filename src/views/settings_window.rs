@@ -3,7 +3,7 @@ use crate::viewmodels::keymap_vm::KeymapVm;
 use crate::viewmodels::network_vm::NetworkVm;
 use crate::viewmodels::schemas_vm::SchemasVm;
 use crate::viewmodels::settings_vm::{SettingsTab, SettingsVm};
-use crate::views::theme::*;
+use crate::views::theme::{PAD, canvas, panel_frame, segmented};
 use crate::views::{network_tab, schemas_tab, shortcuts_tab};
 use eframe::egui::{self, Frame, Margin, ScrollArea};
 

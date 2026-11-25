@@ -1,7 +1,7 @@
 use crate::domain::config::UpstreamMode;
 use crate::viewmodels::intent::NetworkIntent;
 use crate::viewmodels::network_vm::{NetworkVm, valid_ip};
-use crate::views::theme::*;
+use crate::views::theme::{danger, icon_button, icon_only, muted, segmented};
 use eframe::egui::{self, RichText, TextEdit};
 use egui_phosphor::regular as ph;
 
@@ -27,9 +27,7 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
                 if !valid_ip(ip) {
                     ui.label(RichText::new("invalid IP").color(danger()));
                 }
-                if icon_only(ui, ph::X, "Remove override")
-                    .clicked()
-                {
+                if icon_only(ui, ph::X, "Remove override").clicked() {
                     out.push(NetworkIntent::RemoveDns(i));
                 }
             });

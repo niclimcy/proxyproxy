@@ -7,7 +7,11 @@ use crate::viewmodels::detail_vm::{DTab, DetailVm, Side, raw_text, side_tabs};
 use crate::viewmodels::intent::DetailIntent;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::body;
-use crate::views::theme::*;
+use crate::views::theme::{
+    RADIUS, badge, canvas, card_panel, checkbox, cmd, danger, fg_muted, fmt_size, icon_button,
+    icon_only, menu_item, menu_width, method_color, muted, overline, pill, resize_grip,
+    resize_line, segmented, status_color, success, toolbar_menu, violet, warning,
+};
 use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
@@ -20,10 +24,10 @@ const TABLE_PEEK: f32 = 112.0;
 fn msg_view(
     ui: &mut egui::Ui,
     id: &str,
-    first: String,
+    first: &str,
     m: &Message,
     (side, mode): (&mut Side, &mut ModeId),
-    params: Vec<(String, String)>,
+    params: &[(String, String)],
     vc: &decode::Ctx,
 ) {
     let items = side_tabs(side, !params.is_empty());
@@ -45,7 +49,7 @@ fn msg_view(
                 .id_salt(format!("{id}-raw"))
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let mut t = raw_text(&first, m);
+                    let mut t = raw_text(first, m);
                     ui.add(
                         TextEdit::multiline(&mut t)
                             .code_editor()
@@ -126,7 +130,11 @@ pub fn show(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let name = f.app_label();
-                        app_label_hover(app_icon(ui, icons, &name, f.app_id.as_ref()), &name, f.app_id.as_ref());
+                        app_label_hover(
+                            app_icon(ui, icons, &name, f.app_id.as_ref()),
+                            &name,
+                            f.app_id.as_ref(),
+                        );
                         badge(
                             ui,
                             if f.is_ws { "WS" } else { &f.method },
@@ -147,16 +155,20 @@ pub fn show(
                             if icon_only(ui, ph::X, "Close details (Esc)").clicked() {
                                 close_clicked = true;
                             }
-                            if icon_only(ui, ph::COPY, "Copy URL")
-                                .clicked()
-                            {
+                            if icon_only(ui, ph::COPY, "Copy URL").clicked() {
                                 ctx.copy_text(url.clone());
                             }
                             // URL reads on from the badges; the copy button stays at the edge
-                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                ui.add(egui::Label::new(RichText::new(&url).monospace()).truncate())
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(RichText::new(&url).monospace())
+                                            .truncate(),
+                                    )
                                     .on_hover_text(&url);
-                            });
+                                },
+                            );
                         });
                     });
                 });
@@ -245,7 +257,11 @@ pub fn show(
         d.insert_temp(drag_id, dragging);
         d.insert_temp(prev_h_id, r.height());
     });
-    resize_grip(ui, "detail", egui::Rect::from_two_pos(r.left_top(), r.right_top()));
+    resize_grip(
+        ui,
+        "detail",
+        egui::Rect::from_two_pos(r.left_top(), r.right_top()),
+    );
     out
 }
 
@@ -276,10 +292,10 @@ fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
         msg_view(
             &mut cols[0],
             "req",
-            format!("{} {} {}", f.method, f.path, f.version),
+            &format!("{} {} {}", f.method, f.path, f.version),
             &f.request,
             (rs, rm),
-            decode::query_params(&f.path),
+            &decode::query_params(&f.path),
             &rc,
         );
         match &f.response {
@@ -293,10 +309,10 @@ fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
                 msg_view(
                     &mut cols[1],
                     "res",
-                    format!("{} {s}", f.version),
+                    &format!("{} {s}", f.version),
                     r,
                     (ss, sm),
-                    vec![],
+                    &[],
                     &sc,
                 );
             }
@@ -359,8 +375,7 @@ fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailI
                         ui.label(
                             RichText::new(
                                 f.duration_ms
-                                    .map(|d| format!("{d} ms"))
-                                    .unwrap_or("pending".into()),
+                                    .map_or("pending".into(), |d| format!("{d} ms")),
                             )
                             .monospace(),
                         );
@@ -423,9 +438,7 @@ fn overview_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailI
                         if let Some(s) = o.status {
                             pill(ui, &s.to_string(), status_color(s));
                         }
-                        ui.label(muted(
-                            o.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default(),
-                        ));
+                        ui.label(muted(o.duration_ms.map_or_default(|d| format!("{d} ms"))));
                         if icon_button(ui, ph::GIT_DIFF, "Diff vs this", true).clicked() {
                             out.push(DetailIntent::DiffAgainst(o.id));
                         }

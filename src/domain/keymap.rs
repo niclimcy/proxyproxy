@@ -22,7 +22,10 @@ pub struct Binding {
 
 impl Binding {
     fn new(key: &str, shift: bool) -> Self {
-        Self { key: key.into(), shift }
+        Self {
+            key: key.into(),
+            shift,
+        }
     }
 }
 
@@ -77,7 +80,16 @@ const RESERVED: [(&str, bool); 17] = [
 ];
 
 /// Named keys that can follow Cmd; letters and digits are allowed too.
-const PUNCTUATION: [&str; 8] = ["Slash", "Backslash", "Period", "Semicolon", "Quote", "Backtick", "OpenBracket", "CloseBracket"];
+const PUNCTUATION: [&str; 8] = [
+    "Slash",
+    "Backslash",
+    "Period",
+    "Semicolon",
+    "Quote",
+    "Backtick",
+    "OpenBracket",
+    "CloseBracket",
+];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BindError {
@@ -98,7 +110,10 @@ impl Config {
     }
 
     pub fn keymap(&self) -> Vec<(RowAction, Binding)> {
-        CUSTOMIZABLE.iter().filter_map(|&a| Some((a, self.binding(a)?))).collect()
+        CUSTOMIZABLE
+            .iter()
+            .filter_map(|&a| Some((a, self.binding(a)?)))
+            .collect()
     }
 
     pub fn is_custom(&self, action: RowAction) -> bool {
@@ -106,16 +121,25 @@ impl Config {
     }
 
     /// `None` turns the shortcut off.
-    pub fn set_binding(&mut self, action: RowAction, binding: Option<Binding>) -> Result<(), BindError> {
+    pub fn set_binding(
+        &mut self,
+        action: RowAction,
+        binding: Option<Binding>,
+    ) -> Result<(), BindError> {
         if let Some(b) = &binding {
-            let named = b.key.chars().count() == 1 && b.key.chars().all(|c| c.is_ascii_alphanumeric());
+            let named =
+                b.key.chars().count() == 1 && b.key.chars().all(|c| c.is_ascii_alphanumeric());
             if !named && !PUNCTUATION.contains(&b.key.as_str()) {
                 return Err(BindError::Unsupported);
             }
             if RESERVED.contains(&(b.key.as_str(), b.shift)) {
                 return Err(BindError::Reserved);
             }
-            if let Some((other, _)) = self.keymap().into_iter().find(|(a, o)| *a != action && o == b) {
+            if let Some((other, _)) = self
+                .keymap()
+                .into_iter()
+                .find(|(a, o)| *a != action && o == b)
+            {
                 return Err(BindError::InUse(other));
             }
         }
@@ -137,13 +161,18 @@ mod tests {
 
     #[test]
     fn every_customizable_action_has_a_distinct_default() {
-        let defaults: Vec<Binding> = CUSTOMIZABLE.iter().map(|&a| default_binding(a).unwrap()).collect();
+        let defaults: Vec<Binding> = CUSTOMIZABLE
+            .iter()
+            .map(|&a| default_binding(a).unwrap())
+            .collect();
         for (i, b) in defaults.iter().enumerate() {
             assert!(!defaults[i + 1..].contains(b), "{b:?} is used twice");
         }
         assert!(default_binding(RowAction::Delete).is_none());
     }
 
+    // set_binding and binding() both speak Option<Binding>
+    #[allow(clippy::unnecessary_wraps)]
     fn b(key: &str, shift: bool) -> Option<Binding> {
         Some(Binding::new(key, shift))
     }
@@ -172,11 +201,26 @@ mod tests {
     #[test]
     fn set_rejects_conflicts_reserved_and_unsupported_keys() {
         let mut cfg = Config::default();
-        assert_eq!(cfg.set_binding(RowAction::Pin, b("D", false)), Err(BindError::InUse(RowAction::DiffBase)));
-        assert_eq!(cfg.set_binding(RowAction::Pin, b("F", false)), Err(BindError::Reserved));
-        assert_eq!(cfg.set_binding(RowAction::Pin, b("P", true)), Err(BindError::Reserved));
-        assert_eq!(cfg.set_binding(RowAction::Pin, b("Enter", false)), Err(BindError::Unsupported));
-        assert_eq!(cfg.set_binding(RowAction::Pin, b("Escape", false)), Err(BindError::Unsupported));
+        assert_eq!(
+            cfg.set_binding(RowAction::Pin, b("D", false)),
+            Err(BindError::InUse(RowAction::DiffBase))
+        );
+        assert_eq!(
+            cfg.set_binding(RowAction::Pin, b("F", false)),
+            Err(BindError::Reserved)
+        );
+        assert_eq!(
+            cfg.set_binding(RowAction::Pin, b("P", true)),
+            Err(BindError::Reserved)
+        );
+        assert_eq!(
+            cfg.set_binding(RowAction::Pin, b("Enter", false)),
+            Err(BindError::Unsupported)
+        );
+        assert_eq!(
+            cfg.set_binding(RowAction::Pin, b("Escape", false)),
+            Err(BindError::Unsupported)
+        );
         // Shift makes a different combo, and rebinding to its own combo is fine
         cfg.set_binding(RowAction::Pin, b("D", true)).unwrap();
         cfg.set_binding(RowAction::Pin, b("D", true)).unwrap();
@@ -200,13 +244,17 @@ mod tests {
         assert!(cfg.shortcuts.is_empty());
         cfg.set_binding(RowAction::Pin, b("K", false)).unwrap();
         cfg.set_binding(RowAction::Comment, b("P", false)).unwrap();
-        assert_eq!(cfg.reset_binding(RowAction::Pin), Err(BindError::InUse(RowAction::Comment)));
+        assert_eq!(
+            cfg.reset_binding(RowAction::Pin),
+            Err(BindError::InUse(RowAction::Comment))
+        );
     }
 
     #[test]
     fn overrides_survive_a_config_roundtrip() {
         let mut cfg = Config::default();
-        cfg.set_binding(RowAction::Color(Some(2)), b("K", true)).unwrap();
+        cfg.set_binding(RowAction::Color(Some(2)), b("K", true))
+            .unwrap();
         cfg.set_binding(RowAction::Mute, None).unwrap();
         let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
         assert_eq!(back.binding(RowAction::Color(Some(2))), b("K", true));

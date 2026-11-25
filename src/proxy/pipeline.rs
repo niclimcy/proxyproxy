@@ -83,13 +83,13 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    fn rules(a: Vec<Action>) -> Vec<Rule> {
-        resolve_all(&a)
+    fn rules(a: &[Action]) -> Vec<Rule> {
+        resolve_all(a)
     }
 
     #[test]
     fn plan_tags_and_collects_response_actions() {
-        let p = plan(&rules(vec![
+        let p = plan(&rules(&[
             Action::Breakpoint {
                 request: true,
                 response: false,
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn breakpoint_flags_accumulate_across_actions() {
-        let p = plan(&rules(vec![
+        let p = plan(&rules(&[
             Action::Breakpoint {
                 request: true,
                 response: false,
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn block_and_mock_short_circuit_first_wins() {
-        let r = short_circuit(&rules(vec![
+        let r = short_circuit(&rules(&[
             Action::Block { status: 403 },
             Action::Mock {
                 status: 200,
@@ -140,21 +140,21 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(r.status().as_u16(), 403);
-        let r = short_circuit(&rules(vec![Action::Mock {
+        let r = short_circuit(&rules(&[Action::Mock {
             status: 201,
             content_type: "text/plain".into(),
             body: "b".into(),
         }]))
         .unwrap();
         assert_eq!(r.status().as_u16(), 201);
-        assert!(short_circuit(&rules(vec![Action::Delay { ms: 1, kbps: 0 }])).is_none());
+        assert!(short_circuit(&rules(&[Action::Delay { ms: 1, kbps: 0 }])).is_none());
     }
 
     #[test]
     fn redirect_then_header_and_body_rewrites_apply_in_order() {
         let mut parts = req_parts("https://a.com/x?y=1");
         let mut bytes = Bytes::from_static(b"hello world");
-        let actions = rules(vec![
+        let actions = rules(&[
             Action::MapRemote {
                 target: "http://b.com:8080".into(),
             },
@@ -201,7 +201,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn response_actions_run_in_order_then_throttle() {
-        let actions = plan(&rules(vec![
+        let actions = plan(&rules(&[
             Action::SetHeader {
                 response: true,
                 name: "x-r".into(),

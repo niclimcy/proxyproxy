@@ -29,7 +29,10 @@ pub fn system_proxy(enable: bool, port: u16) -> Res {
     if enable {
         set("ProxyServer", "REG_SZ", &format!("127.0.0.1:{port}"))?;
     }
-    Ok(format!("System proxy {}", if enable { "on" } else { "off" }))
+    Ok(format!(
+        "System proxy {}",
+        if enable { "on" } else { "off" }
+    ))
 }
 
 pub fn system_proxy_status(port: u16) -> Result<bool, String> {

@@ -1,3 +1,6 @@
+// Test fixtures write binary formats from small known lengths.
+#![cfg_attr(test, allow(clippy::cast_possible_truncation, clippy::cast_sign_loss))]
+
 mod app;
 mod domain;
 #[cfg(test)]
@@ -100,10 +103,10 @@ fn run_cli(args: &[String]) -> ! {
 fn main() -> eframe::Result {
     tracing_subscriber::fmt::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(|s| s.as_str()) == Some("mcp") {
+    if args.first().map(std::string::String::as_str) == Some("mcp") {
         run_mcp(&args[1..]);
     }
-    if args.first().map(|s| s.as_str()) == Some("run") {
+    if args.first().map(std::string::String::as_str) == Some("run") {
         run_cli(&args[1..]);
     }
     let port = args.first().and_then(|p| valid_port(p)).unwrap_or(9090);

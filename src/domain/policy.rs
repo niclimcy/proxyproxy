@@ -302,7 +302,7 @@ mod tests {
             &["*.example.com".into()],
             "api.example.com"
         ));
-        assert!(!Config::host_in(&["".into(), "  ".into()], "a.com"));
+        assert!(!Config::host_in(&[String::new(), "  ".into()], "a.com"));
         assert!(Config::host_in(&["A.COM".into()], "b.a.com"));
     }
 
@@ -342,15 +342,18 @@ mod tests {
     fn cfg(scope: &[&str], exclude: &[&str]) -> Config {
         Config {
             scope_only: true,
-            scope: scope.iter().map(|s| s.to_string()).collect(),
-            exclude: exclude.iter().map(|s| s.to_string()).collect(),
+            scope: scope.iter().map(ToString::to_string).collect(),
+            exclude: exclude.iter().map(ToString::to_string).collect(),
             ..Default::default()
         }
     }
 
     #[test]
     fn path_scope_matches_full_url() {
-        let c = cfg(&["api.example.com/v2/*", "https://*.example.com/graphql"], &[]);
+        let c = cfg(
+            &["api.example.com/v2/*", "https://*.example.com/graphql"],
+            &[],
+        );
         assert!(c.captured("https://api.example.com/v2/users?x=1"));
         assert!(c.captured("https://api.example.com:8443/v2/users"));
         assert!(!c.captured("https://api.example.com/v1/users"));
@@ -371,7 +374,10 @@ mod tests {
 
     #[test]
     fn exclude_beats_scope_and_takes_patterns() {
-        let c = cfg(&["example.com"], &["example.com/health*", "ads.example.com"]);
+        let c = cfg(
+            &["example.com"],
+            &["example.com/health*", "ads.example.com"],
+        );
         assert!(c.captured("https://example.com/users"));
         assert!(!c.captured("https://example.com/healthz"));
         assert!(!c.captured("https://ads.example.com/x"));
@@ -388,5 +394,4 @@ mod tests {
         c.scope_only = false;
         assert!(!c.captured("https://b.com/") && c.captured("https://c.com/"));
     }
-
 }

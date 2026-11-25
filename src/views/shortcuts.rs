@@ -5,7 +5,8 @@ use eframe::egui::{self, Key};
 
 /// How a binding reads on screen, e.g. ⌘⇧M or Ctrl+⇧M.
 pub fn combo(b: &Binding) -> String {
-    let key = Key::from_name(&b.key).map_or_else(|| b.key.clone(), |k| k.symbol_or_name().to_string());
+    let key =
+        Key::from_name(&b.key).map_or_else(|| b.key.clone(), |k| k.symbol_or_name().to_string());
     format!("{}{}{key}", cmd(), if b.shift { "⇧" } else { "" })
 }
 
@@ -14,10 +15,17 @@ pub fn hint(action: RowAction, keymap: &[(RowAction, Binding)]) -> Option<String
     if action == RowAction::Delete {
         return Some(Key::Delete.name().to_string());
     }
-    keymap.iter().find(|(a, _)| *a == action).map(|(_, b)| combo(b))
+    keymap
+        .iter()
+        .find(|(a, _)| *a == action)
+        .map(|(_, b)| combo(b))
 }
 
-pub fn read(ctx: &egui::Context, keymap: &[(RowAction, Binding)], has_selection: bool) -> Vec<ShortcutIntent> {
+pub fn read(
+    ctx: &egui::Context,
+    keymap: &[(RowAction, Binding)],
+    has_selection: bool,
+) -> Vec<ShortcutIntent> {
     let mut out = vec![];
     let typing = ctx.text_edit_focused();
     // an open menu owns the arrows, Enter and Escape
@@ -74,7 +82,9 @@ pub fn read(ctx: &egui::Context, keymap: &[(RowAction, Binding)], has_selection:
         ctx.input_mut(|i| {
             let m = i.modifiers;
             for (action, b) in keymap {
-                let Some(key) = Key::from_name(&b.key) else { continue };
+                let Some(key) = Key::from_name(&b.key) else {
+                    continue;
+                };
                 if m.command && m.shift == b.shift && !m.alt && i.consume_key(m, key) {
                     out.push(ShortcutIntent::Selected(*action));
                 }

@@ -256,6 +256,10 @@ pub fn apply_theme(ctx: &egui::Context) {
     ctx.set_visuals_of(egui::Theme::Light, visuals(&LIGHT));
     ctx.set_theme(egui::ThemePreference::System);
     ctx.all_styles_mut(|s| {
+        use egui::{
+            FontFamily::{Monospace, Proportional},
+            FontId, TextStyle,
+        };
         s.interaction.resize_grab_radius_side = 6.0;
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(10.0, 5.0);
@@ -263,10 +267,6 @@ pub fn apply_theme(ctx: &egui::Context) {
         s.spacing.icon_width = 18.0;
         s.spacing.icon_width_inner = 12.0;
         s.spacing.icon_spacing = 8.0;
-        use egui::{
-            FontFamily::{Monospace, Proportional},
-            FontId, TextStyle,
-        };
         s.text_styles
             .insert(TextStyle::Body, FontId::new(FS_BODY, Proportional));
         s.text_styles
@@ -285,7 +285,11 @@ pub fn ico(icon: &str, text: &str) -> String {
 
 /// Label for screen readers: icon glyphs live in the private use area and read as noise.
 pub fn spoken(s: &str) -> String {
-    s.chars().filter(|c| !('\u{E000}'..='\u{F8FF}').contains(c)).collect::<String>().trim().to_string()
+    s.chars()
+        .filter(|c| !('\u{E000}'..='\u{F8FF}').contains(c))
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// Keyboard focus outline for hand-drawn widgets; egui only draws one for its own.
@@ -413,7 +417,12 @@ pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Resp
     let (rect, mut response) =
         ui.allocate_exact_size(egui::vec2(row_width, row_height), egui::Sense::click());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, spoken(text))
+        egui::WidgetInfo::selected(
+            egui::Role::CheckBox,
+            ui.is_enabled(),
+            *checked,
+            spoken(text),
+        )
     });
 
     if response.clicked() {
@@ -548,7 +557,8 @@ pub fn icon_button(ui: &mut egui::Ui, icon: &str, label: &str, enabled: bool) ->
     let resp = secondary(ui, |ui| {
         ui.add_enabled(
             enabled,
-            egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL)).min_size(egui::vec2(0.0, HIT)),
+            egui::Button::new(RichText::new(ico(icon, label)).size(FS_SMALL))
+                .min_size(egui::vec2(0.0, HIT)),
         )
     });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, spoken(label)));
@@ -680,7 +690,13 @@ fn panel_toggle(
 
 /// Toolbar menu trigger, styled like `icon_button`.
 /// `keep_open`: clicks inside don't close the menu, so rows must call `ui.close()` themselves.
-pub fn toolbar_menu(ui: &mut egui::Ui, icon: &str, label: &str, keep_open: bool, add: impl FnOnce(&mut egui::Ui)) {
+pub fn toolbar_menu(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    keep_open: bool,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     let close = if keep_open {
         egui::PopupCloseBehavior::CloseOnClickOutside
     } else {
@@ -745,7 +761,10 @@ pub fn submenu_item(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::
         egui::FontId::proportional(FS_SMALL),
         fg_muted(),
     );
-    if egui::containers::menu::SubMenu::new().show(ui, &resp, add).is_some() {
+    if egui::containers::menu::SubMenu::new()
+        .show(ui, &resp, add)
+        .is_some()
+    {
         ui.painter().set(
             open_bg,
             egui::Shape::rect_filled(
@@ -833,16 +852,24 @@ pub fn resize_grip(ui: &egui::Ui, name: &str, edge: egui::Rect) {
     } else {
         egui::vec2(1.0, 0.0)
     };
-    let near = ui
-        .input(|i| i.pointer.hover_pos())
-        .is_some_and(|p| edge.expand(ui.style().interaction.resize_grab_radius_side).contains(p));
+    let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
+        edge.expand(ui.style().interaction.resize_grab_radius_side)
+            .contains(p)
+    });
     let id = ui.make_persistent_id(("resize-grip", name));
     let (pressed, down) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down()));
-    let dragging = (pressed && near) || (down && ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false));
+    let dragging =
+        (pressed && near) || (down && ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false));
     ui.data_mut(|d| d.insert_temp(id, dragging));
-    let color = if near || dragging { accent() } else { pal().border_strong };
+    let color = if near || dragging {
+        accent()
+    } else {
+        pal().border_strong
+    };
     // Own layer so a neighbouring card that overflows its slot (the table at narrow widths) can't cover the dots.
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Middle, id));
+    let painter = ui
+        .ctx()
+        .layer_painter(egui::LayerId::new(egui::Order::Middle, id));
     for step in [-1.0, 0.0, 1.0] {
         painter.circle_filled(edge.center() + axis * (step * 5.0), 1.5, color);
     }
@@ -865,13 +892,14 @@ pub fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
         });
 }
 
-/// Full-width list row: label left, count right, filled when selected.
 /// Leading slot of a `list_row`: a glyph, or caller-painted content (e.g. an app icon).
+#[derive(Clone, Copy)]
 pub enum RowIcon<'a> {
     Glyph(&'a str),
     Paint(&'a dyn Fn(&egui::Painter, egui::Rect)),
 }
 
+/// Full-width list row: label left, count right, filled when selected.
 pub fn list_row(
     ui: &mut egui::Ui,
     icon: Option<RowIcon>,
@@ -1046,8 +1074,8 @@ pub fn status_color(s: u16) -> Color32 {
 pub fn fmt_size(n: usize) -> String {
     match n {
         0..=1023 => format!("{n} B"),
-        1024..=1048575 => format!("{:.1} KB", n as f64 / 1024.0),
-        _ => format!("{:.1} MB", n as f64 / 1048576.0),
+        1024..=1_048_575 => format!("{:.1} KB", n as f64 / 1024.0),
+        _ => format!("{:.1} MB", n as f64 / 1_048_576.0),
     }
 }
 
@@ -1068,7 +1096,7 @@ mod tests {
     use super::*;
 
     fn lin(c: u8) -> f64 {
-        let c = c as f64 / 255.0;
+        let c = f64::from(c) / 255.0;
         if c <= 0.04045 {
             c / 12.92
         } else {
@@ -1086,7 +1114,7 @@ mod tests {
     }
 
     fn over(fg: Color32, a: f32, bg: Color32) -> Color32 {
-        let m = |f: u8, b: u8| (f as f32 * a + b as f32 * (1.0 - a)).round() as u8;
+        let m = |f: u8, b: u8| (f32::from(f) * a + f32::from(b) * (1.0 - a)).round() as u8;
         Color32::from_rgb(m(fg.r(), bg.r()), m(fg.g(), bg.g()), m(fg.b(), bg.b()))
     }
 
@@ -1156,7 +1184,11 @@ mod tests {
     fn hint_and_weak_text_meet_aa() {
         for p in [&DARK, &LIGHT] {
             let weak = visuals(p).weak_text_color();
-            for (n, bg) in [("canvas", p.canvas), ("panel", p.panel), ("surface", p.surface)] {
+            for (n, bg) in [
+                ("canvas", p.canvas),
+                ("panel", p.panel),
+                ("surface", p.surface),
+            ] {
                 let r = ratio(weak, bg);
                 assert!(r >= 4.5, "weak text on {n} (dark={}) = {r:.2}", p.dark);
             }
@@ -1170,7 +1202,7 @@ mod tests {
         for p in [&DARK, &LIGHT] {
             let v = visuals(p);
             for base in [p.panel, p.faint] {
-                let sel = over(p.accent, v.selection.bg_fill.a() as f32 / 255.0, base);
+                let sel = over(p.accent, f32::from(v.selection.bg_fill.a()) / 255.0, base);
                 for (n, c) in [("fg", p.fg), ("fg_muted", p.fg_muted)] {
                     let r = ratio(c, sel);
                     if r < 4.5 {

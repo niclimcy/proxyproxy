@@ -1,17 +1,17 @@
 use super::actions::{self, Rule};
 use super::app_cache::{AppCache, Found, Join};
-use crate::services::client_proc::lookup_app;
 use super::http_util::{header_map, headers, strip_default_port, text_response};
 use super::pipeline::{
     self, apply_request_actions, apply_response_actions, request_delay, short_circuit,
 };
 use super::sink::FlowSink;
-use crate::services::app_icons::resolve;
 use crate::domain::app::AppIdentity;
 use crate::domain::config::Shared;
 use crate::domain::flow::{
     self, BpEdit, Decision, Dir, Event, Flow, Message, Paused, Stage, WsMsg,
 };
+use crate::services::app_icons::resolve;
+use crate::services::client_proc::lookup_app;
 use bytes::Bytes;
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use http_body_util::{BodyExt, Full};
@@ -37,13 +37,22 @@ fn emit_found(sink: &dyn FlowSink, id: u64, found: &Found, ua_platform: Option<&
     match found {
         Some((app, identity)) => sink.emit(Event::App {
             id,
-            app: identity.as_ref().map_or_else(|| app.clone(), |i| i.name.clone()),
+            app: identity
+                .as_ref()
+                .map_or_else(|| app.clone(), |i| i.name.clone()),
             identity: identity.clone(),
         }),
         None => {
             if let Some(p) = ua_platform {
-                let identity = AppIdentity { platform: p.into(), ..Default::default() };
-                sink.emit(Event::App { id, app: String::new(), identity: Some(identity) });
+                let identity = AppIdentity {
+                    platform: p.into(),
+                    ..Default::default()
+                };
+                sink.emit(Event::App {
+                    id,
+                    app: String::new(),
+                    identity: Some(identity),
+                });
             }
         }
     }
@@ -52,7 +61,10 @@ fn emit_found(sink: &dyn FlowSink, id: u64, found: &Found, ua_platform: Option<&
 // Decodes a copy so an unsupported or corrupt encoding forwards the original bytes and
 // headers instead of an empty body (hudsucker consumes the body before it errors).
 async fn decode_body(headers: &mut HeaderMap, body: Body) -> Bytes {
-    let raw = body.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+    let raw = body
+        .collect()
+        .await
+        .map_or_default(http_body_util::Collected::to_bytes);
     if !headers.contains_key(CONTENT_ENCODING) {
         return raw;
     }
@@ -84,7 +96,10 @@ async fn decode_body(headers: &mut HeaderMap, body: Body) -> Bytes {
 // The upgrade request and the socket handler see the same URL in different forms
 // (`https`/`a.com` vs `wss`/`a.com:443`), so both go through here.
 fn ws_key(scheme: &str, authority: &str, path: &str) -> String {
-    format!("{}{path}", strip_default_port(scheme, authority.to_string()))
+    format!(
+        "{}{path}",
+        strip_default_port(scheme, authority.to_string())
+    )
 }
 
 #[derive(Clone)]
@@ -123,14 +138,18 @@ impl Capture {
     }
 
     fn elapsed(&self) -> u128 {
-        self.started.map(|s| s.elapsed().as_millis()).unwrap_or(0)
+        self.started.map_or(0, |s| s.elapsed().as_millis())
     }
 }
 
 impl HttpHandler for Capture {
-    async fn should_intercept_connect(&mut self, _: &HttpContext, req: &Request<Body>) -> bool {
+    fn should_intercept_connect(
+        &mut self,
+        _: &HttpContext,
+        req: &Request<Body>,
+    ) -> impl Future<Output = bool> + Send {
         let host = req.uri().host().unwrap_or("");
-        self.cfg.lock().unwrap().should_decrypt(host)
+        std::future::ready(self.cfg.lock().unwrap().should_decrypt(host))
     }
 
     async fn handle_request(
@@ -159,7 +178,7 @@ impl HttpHandler for Capture {
         let host = parts
             .uri
             .authority()
-            .map(|a| a.to_string())
+            .map(std::string::ToString::to_string)
             .or_else(|| {
                 parts
                     .headers
@@ -172,8 +191,7 @@ impl HttpHandler for Capture {
         let path = parts
             .uri
             .path_and_query()
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "/".into());
+            .map_or_else(|| "/".into(), std::string::ToString::to_string);
         let url = format!("{scheme}://{host}{path}");
         let method = parts.method.to_string();
 
@@ -198,7 +216,13 @@ impl HttpHandler for Capture {
         self.current = Some(id);
         self.started = Some(Instant::now());
 
-        let header = |n: &str| parts.headers.get(n).and_then(|v| v.to_str().ok()).unwrap_or_default();
+        let header = |n: &str| {
+            parts
+                .headers
+                .get(n)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+        };
         let ua_platform = hctx
             .client_addr
             .ip()
@@ -211,12 +235,19 @@ impl HttpHandler for Capture {
             Join::Wait => {}
             Join::Start => {
                 let (sink, apps, own) = (self.sink.clone(), self.apps.clone(), std::process::id());
-                let package = crate::domain::app::package_hint(header("x-requested-with"), header("user-agent"));
+                let package = crate::domain::app::package_hint(
+                    header("x-requested-with"),
+                    header("user-agent"),
+                );
                 std::thread::spawn(move || {
                     let found = lookup_app(addr.port(), own).map(|(app, pid)| {
                         // bundle and icon work is slower, so the name shows first
                         for (w, _) in apps.waiting(addr) {
-                            sink.emit(Event::App { id: w, app: app.clone(), identity: None });
+                            sink.emit(Event::App {
+                                id: w,
+                                app: app.clone(),
+                                identity: None,
+                            });
                         }
                         let identity = resolve(pid, &app, package);
                         (app, identity)
@@ -276,7 +307,10 @@ impl HttpHandler for Capture {
         request_delay(&actions).await;
         if let Some(res) = short {
             let (p, b) = res.into_parts();
-            let data = b.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+            let data = b
+                .collect()
+                .await
+                .map_or_default(http_body_util::Collected::to_bytes);
             self.sink.emit(Event::Response {
                 id,
                 status: p.status.as_u16(),
@@ -331,7 +365,11 @@ impl HttpHandler for Capture {
         parts.headers.remove(CONTENT_LENGTH);
 
         if edited {
-            let auth = parts.uri.authority().map(|a| a.to_string()).unwrap_or(host);
+            let auth = parts
+                .uri
+                .authority()
+                .map(std::string::ToString::to_string)
+                .unwrap_or(host);
             let auth = strip_default_port(parts.uri.scheme_str().unwrap_or("https"), auth);
             self.sink.emit(Event::Edited {
                 id,
@@ -340,8 +378,7 @@ impl HttpHandler for Capture {
                 path: parts
                     .uri
                     .path_and_query()
-                    .map(|p| p.to_string())
-                    .unwrap_or_else(|| "/".into()),
+                    .map_or_else(|| "/".into(), std::string::ToString::to_string),
                 request: Message {
                     headers: headers(&parts.headers),
                     body: bytes.to_vec(),
@@ -408,16 +445,14 @@ impl HttpHandler for Capture {
         Response::from_parts(parts, Body::from(Full::new(bytes)))
     }
 
-    async fn handle_error(
+    fn handle_error(
         &mut self,
         _: &HttpContext,
         err: hudsucker::hyper_util::client::legacy::Error,
-    ) -> Response<Body> {
+    ) -> impl Future<Output = Response<Body>> + Send {
         let msg = format!(
             "{err}: {}",
-            std::error::Error::source(&err)
-                .map(|s| s.to_string())
-                .unwrap_or_default()
+            std::error::Error::source(&err).map_or_default(std::string::ToString::to_string)
         );
         if let Some(id) = self.current.take() {
             self.sink.emit(Event::Failed {
@@ -425,7 +460,10 @@ impl HttpHandler for Capture {
                 error: msg.clone(),
             });
         }
-        text_response(502, format!("proxyproxy: upstream failed: {msg}"))
+        std::future::ready(text_response(
+            502,
+            format!("proxyproxy: upstream failed: {msg}"),
+        ))
     }
 }
 
@@ -439,9 +477,8 @@ impl WebSocketHandler for WsCap {
     async fn handle_websocket(
         self,
         ctx: WebSocketContext,
-        stream: impl Stream<
-            Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>,
-        > + Unpin
+        stream: impl Stream<Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>>
+        + Unpin
         + Send
         + 'static,
         sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error>
@@ -463,13 +500,21 @@ impl WsCap {
         &self,
         dir: Dir,
         uri: Uri,
-        mut stream: impl Stream<Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>> + Unpin,
+        mut stream: impl Stream<
+            Item = Result<WsMessage, hudsucker::tokio_tungstenite::tungstenite::Error>,
+        > + Unpin,
         mut sink: impl Sink<WsMessage, Error = hudsucker::tokio_tungstenite::tungstenite::Error> + Unpin,
     ) {
         let key = ws_key(
             uri.scheme_str().unwrap_or("ws"),
-            uri.authority().map(|a| a.as_str()).unwrap_or(""),
-            uri.path_and_query().map(|p| p.as_str()).unwrap_or("/"),
+            uri.authority().map_or(
+                "",
+                hudsucker::tokio_tungstenite::tungstenite::http::uri::Authority::as_str,
+            ),
+            uri.path_and_query().map_or(
+                "/",
+                hudsucker::tokio_tungstenite::tungstenite::http::uri::PathAndQuery::as_str,
+            ),
         );
         // read once: a later socket to the same URL takes over the key, not this socket's frames
         let id = self.map.lock().unwrap().get(&key).copied();
@@ -543,7 +588,10 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_or_corrupt_encoding_passes_original_through() {
-        for (enc, data) in [("compress", b"abc".to_vec()), ("gzip", b"not gzip".to_vec())] {
+        for (enc, data) in [
+            ("compress", b"abc".to_vec()),
+            ("gzip", b"not gzip".to_vec()),
+        ] {
             let mut h = encoded(enc);
             let out = decode_body(&mut h, body(data.clone())).await;
             assert_eq!(out.to_vec(), data);
@@ -567,11 +615,18 @@ mod tests {
     async fn wss_frames_are_recorded_and_the_key_is_released() {
         let frames = Arc::new(Frames::default());
         let map: WsMap = Arc::default();
-        map.lock().unwrap().insert(ws_key("https", "a.com", "/s"), 7);
-        let cap = WsCap { sink: frames.clone(), map: map.clone() };
+        map.lock()
+            .unwrap()
+            .insert(ws_key("https", "a.com", "/s"), 7);
+        let cap = WsCap {
+            sink: frames.clone(),
+            map: map.clone(),
+        };
         let stream = futures_util::stream::iter([Ok(WsMessage::Text("hi".into()))]);
-        let sink = futures_util::sink::drain().sink_map_err(|e: std::convert::Infallible| match e {});
-        cap.relay(Dir::Out, "wss://a.com:443/s".parse().unwrap(), stream, sink).await;
+        let sink =
+            futures_util::sink::drain().sink_map_err(|e: std::convert::Infallible| match e {});
+        cap.relay(Dir::Out, "wss://a.com:443/s".parse().unwrap(), stream, sink)
+            .await;
         assert_eq!(*frames.0.lock().unwrap(), vec![(7, b"hi".to_vec())]);
         assert!(map.lock().unwrap().is_empty());
     }
@@ -587,6 +642,9 @@ mod tests {
             uri.path_and_query().unwrap().as_str(),
         );
         assert_eq!(upgrade, socket);
-        assert_eq!(ws_key("http", "a.com:8080", "/"), ws_key("ws", "a.com:8080", "/"));
+        assert_eq!(
+            ws_key("http", "a.com:8080", "/"),
+            ws_key("ws", "a.com:8080", "/")
+        );
     }
 }

@@ -61,11 +61,26 @@ fn set_proxy_on(serial: &str, port: u16) -> Res {
     let p = port.to_string();
     run(
         "adb",
-        &["-s", serial, "reverse", &format!("tcp:{p}"), &format!("tcp:{p}")],
+        &[
+            "-s",
+            serial,
+            "reverse",
+            &format!("tcp:{p}"),
+            &format!("tcp:{p}"),
+        ],
     )?;
     run(
         "adb",
-        &["-s", serial, "shell", "settings", "put", "global", "http_proxy", &proxy_addr(port)],
+        &[
+            "-s",
+            serial,
+            "shell",
+            "settings",
+            "put",
+            "global",
+            "http_proxy",
+            &proxy_addr(port),
+        ],
     )
 }
 
@@ -76,7 +91,16 @@ fn clear_proxy_on(serial: &str, port: u16) -> Res {
     );
     run(
         "adb",
-        &["-s", serial, "shell", "settings", "put", "global", "http_proxy", ":0"],
+        &[
+            "-s",
+            serial,
+            "shell",
+            "settings",
+            "put",
+            "global",
+            "http_proxy",
+            ":0",
+        ],
     )
 }
 
@@ -123,7 +147,12 @@ fn android_devices(port: u16) -> Vec<AndroidDevice> {
         .map(|serial| {
             let out = run(
                 "adb",
-                &["-s", serial, "shell", "settings get global http_proxy; getprop ro.product.model"],
+                &[
+                    "-s",
+                    serial,
+                    "shell",
+                    "settings get global http_proxy; getprop ro.product.model",
+                ],
             )
             .unwrap_or_default();
             parse_android_state(serial, &out, port)
@@ -204,7 +233,7 @@ fn parse_ios_simulators(json: &str) -> Result<Vec<IosSimulator>, String> {
         for entry in entries {
             let is_available = entry
                 .get("isAvailable")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             let state = entry.get("state").and_then(|v| v.as_str()).unwrap_or("");
             let simulator_state = match state {

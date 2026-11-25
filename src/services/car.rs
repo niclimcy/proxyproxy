@@ -6,6 +6,7 @@
 //! PNG, or as raw, zlib or LZFSE/LZVN-compressed BGRA bitmaps (Xcode's `KCBC` blocks), are decoded.
 //! RLE and palette bitmaps are skipped, so those apps fall back to loose icons.
 //! The format is undocumented, so every read is bounds-checked and returns `None` on doubt.
+use crate::services::bytes::{be16, be16_usize, be32, be32_usize, le16, le32, le32_usize};
 use flate2::read::ZlibDecoder;
 use std::collections::HashSet;
 use std::io::Read;
@@ -14,18 +15,6 @@ const MAX_SIDE: u32 = 4096;
 const MAX_NODES: usize = 100_000;
 const ATTR_IDENTIFIER: u16 = 17;
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
-
-fn be32(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(b.get(at..at.checked_add(4)?)?.try_into().ok()?))
-}
-
-fn le32(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(b.get(at..at.checked_add(4)?)?.try_into().ok()?))
-}
-
-fn be16(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_be_bytes(b.get(at..at.checked_add(2)?)?.try_into().ok()?))
-}
 
 struct Bom<'a> {
     d: &'a [u8],
@@ -38,9 +27,13 @@ impl<'a> Bom<'a> {
         if d.get(..8)? != b"BOMStore" {
             return None;
         }
-        let (index, ilen) = (be32(d, 16)? as usize, be32(d, 20)? as usize);
+        let (index, ilen) = (be32_usize(d, 16)?, be32_usize(d, 20)?);
         d.get(index..index.checked_add(ilen)?)?;
-        Some(Self { d, index, count: be32(d, index)? as usize })
+        Some(Self {
+            d,
+            index,
+            count: be32_usize(d, index)?,
+        })
     }
 
     fn block(&self, i: u32) -> Option<&'a [u8]> {
@@ -49,15 +42,15 @@ impl<'a> Bom<'a> {
             return None;
         }
         let e = self.index.checked_add(4)?.checked_add(i.checked_mul(8)?)?;
-        let (off, len) = (be32(self.d, e)? as usize, be32(self.d, e + 4)? as usize);
+        let (off, len) = (be32_usize(self.d, e)?, be32_usize(self.d, e + 4)?);
         self.d.get(off..off.checked_add(len)?)
     }
 
     /// Block index of the named variable (`FACETKEYS`, ...).
     fn var(&self, name: &str) -> Option<u32> {
-        let (off, len) = (be32(self.d, 24)? as usize, be32(self.d, 28)? as usize);
+        let (off, len) = (be32_usize(self.d, 24)?, be32_usize(self.d, 28)?);
         let v = self.d.get(off..off.checked_add(len)?)?;
-        let n = be32(v, 0)? as usize;
+        let n = be32_usize(v, 0)?;
         let mut at = 4;
         for _ in 0..n.min(1024) {
             let idx = be32(v, at)?;
@@ -89,7 +82,7 @@ impl<'a> Bom<'a> {
             if be16(node, 0)? == 0 {
                 return None;
             }
-            for i in 0..be16(node, 2)? as usize {
+            for i in 0..be16_usize(node, 2)? {
                 let (v, k) = (be32(node, 12 + i * 8)?, be32(node, 16 + i * 8)?);
                 out.push((self.block(k)?, self.block(v)?));
                 if out.len() > MAX_NODES {
@@ -112,15 +105,19 @@ fn key_format(b: &[u8]) -> Option<Vec<u16>> {
     if b.get(..4)? != b"tmfk" {
         return None;
     }
-    let n = le32(b, 8)? as usize;
-    (0..n.min(64)).map(|i| le32(b, 12 + i * 4).map(|v| v as u16)).collect()
+    let n = le32_usize(b, 8)?;
+    (0..n.min(64))
+        .map(|i| le32(b, 12 + i * 4).and_then(|v| u16::try_from(v).ok()))
+        .collect()
 }
 
 /// Identifier value of each facet whose name is in `names`.
 fn facet_ids(facets: &[(&[u8], &[u8])], names: &[&str]) -> HashSet<u16> {
     let mut ids = HashSet::new();
     for (k, v) in facets {
-        let Ok(name) = std::str::from_utf8(k) else { continue };
+        let Ok(name) = std::str::from_utf8(k) else {
+            continue;
+        };
         if !names.contains(&name) {
             continue;
         }
@@ -134,10 +131,6 @@ fn facet_ids(facets: &[(&[u8], &[u8])], names: &[&str]) -> HashSet<u16> {
         }
     }
     ids
-}
-
-fn le16(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at.checked_add(2)?)?.try_into().ok()?))
 }
 
 /// PNG bytes of the largest rendition of the first of `names` that has any (try the icon
@@ -172,7 +165,7 @@ fn rendition_png(v: &[u8]) -> Option<Vec<u8>> {
     if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE {
         return None;
     }
-    let tlv = le32(v, 168)? as usize;
+    let tlv = le32_usize(v, 168)?;
     let data = v.get(180usize.checked_add(tlv)?..)?;
     if let Some(png) = embedded_png(data) {
         return Some(png.to_vec());
@@ -185,7 +178,11 @@ fn rendition_png(v: &[u8]) -> Option<Vec<u8>> {
         .iter()
         .flat_map(|p| {
             let a = u32::from(p[3]);
-            let un = |c: u8| (u32::from(c) * 255).checked_div(a).map_or(0, |v| v.min(255) as u8);
+            let un = |c: u8| {
+                (u32::from(c) * 255)
+                    .checked_div(a)
+                    .map_or(0, |v| v.min(255) as u8)
+            };
             [un(p[2]), un(p[1]), un(p[0]), p[3]]
         })
         .collect();
@@ -210,7 +207,7 @@ fn bitmap(d: &[u8], want: usize) -> Option<Vec<u8>> {
     let out = if payload.starts_with(b"KCBC") {
         kcbc(payload, want)?
     } else {
-        let body = payload.get(..le32(d, p + 12)? as usize)?;
+        let body = payload.get(..le32_usize(d, p + 12)?)?;
         match kind {
             0 => body.to_vec(),
             2 => read_capped(ZlibDecoder::new(body), want)?,
@@ -233,10 +230,12 @@ fn kcbc(b: &[u8], want: usize) -> Option<Vec<u8>> {
     let mut at = 0;
     let mut dec = lzfse_rust::LzfseRingDecoder::default();
     while out.len() < want && b.get(at..at + 4)? == b"KCBC" {
-        let len = le32(b, at + 16)? as usize;
+        let len = le32_usize(b, at + 16)?;
         let block = b.get(at + 20..(at + 20).checked_add(len)?)?;
         let room = (want - out.len()) as u64 + 1;
-        std::io::Read::take(dec.reader_bytes(block), room).read_to_end(&mut out).ok()?;
+        std::io::Read::take(dec.reader_bytes(block), room)
+            .read_to_end(&mut out)
+            .ok()?;
         at += 20 + len;
     }
     Some(out)
@@ -362,7 +361,14 @@ pub mod fixtures {
         let vars_off = data_off;
         data.extend(&vbytes);
         for b in &blocks {
-            w32(&mut index, if b.is_empty() { 0 } else { (data_off + data.len()) as u32 });
+            w32(
+                &mut index,
+                if b.is_empty() {
+                    0
+                } else {
+                    (data_off + data.len()) as u32
+                },
+            );
             w32(&mut index, b.len() as u32);
             data.extend(b);
         }
@@ -384,7 +390,9 @@ mod tests {
 
     fn png(w: u32, h: u32) -> Vec<u8> {
         let mut o = std::io::Cursor::new(vec![]);
-        image::DynamicImage::new_rgba8(w, h).write_to(&mut o, image::ImageFormat::Png).unwrap();
+        image::DynamicImage::new_rgba8(w, h)
+            .write_to(&mut o, image::ImageFormat::Png)
+            .unwrap();
         o.into_inner()
     }
 
@@ -398,7 +406,10 @@ mod tests {
         let img = image::load_from_memory(&out).unwrap();
         assert_eq!((img.width(), img.height()), (8, 8));
         assert!(icon_png(&car, &["Missing"]).is_none());
-        assert!(icon_png(&car, &["Missing", "AppIcon"]).is_some(), "later names are tried");
+        assert!(
+            icon_png(&car, &["Missing", "AppIcon"]).is_some(),
+            "later names are tried"
+        );
     }
 
     #[test]
@@ -408,7 +419,9 @@ mod tests {
         for kind in [0, 2, 4] {
             let c = csi(2, 2, &bitmap_block(kind, 2, &px));
             let car = car("AppIcon", &[(c, false)]);
-            let img = image::load_from_memory(&icon_png(&car, &["AppIcon"]).unwrap()).unwrap().to_rgba8();
+            let img = image::load_from_memory(&icon_png(&car, &["AppIcon"]).unwrap())
+                .unwrap()
+                .to_rgba8();
             assert_eq!(img.get_pixel(0, 0).0, [0, 0, 127, 128], "kind {kind}");
         }
         // RLE has no decoder here and degrades to None
@@ -426,7 +439,13 @@ mod tests {
 
     #[test]
     fn truncated_and_corrupt_input_never_panics() {
-        let car = car("AppIcon", &[(csi(4, 4, &png(4, 4)), false), (csi(2, 2, &bitmap_block(4, 2, &[1; 16])), false)]);
+        let car = car(
+            "AppIcon",
+            &[
+                (csi(4, 4, &png(4, 4)), false),
+                (csi(2, 2, &bitmap_block(4, 2, &[1; 16])), false),
+            ],
+        );
         for n in 0..car.len() {
             let _ = icon_png(&car[..n], &["AppIcon"]);
         }

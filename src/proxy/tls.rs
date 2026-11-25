@@ -82,8 +82,7 @@ pub fn import_custom(dir: &Path, cert_pem: &str, key_pem: &str) -> Result<(), Bo
     check_pair(cert_pem, key_pem)?;
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_secs());
     for name in ["ca.pem", "ca.key"] {
         let p = dir.join(name);
         if p.exists() {
@@ -114,7 +113,13 @@ impl KeyLog for KeyLogger {
         if path.is_empty() {
             return;
         }
-        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let hex = |b: &[u8]| {
+            use std::fmt::Write as _;
+            b.iter().fold(String::new(), |mut o, x| {
+                let _ = write!(o, "{x:02x}");
+                o
+            })
+        };
         if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(path) {
             let _ = writeln!(f, "{label} {} {}", hex(client_random), hex(secret));
         }

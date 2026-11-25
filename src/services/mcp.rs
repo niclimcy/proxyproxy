@@ -5,14 +5,13 @@ use crate::services::replay;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 
-pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> {
+pub fn handle(store: &FlowStore, cfg: &Shared, request: &Value) -> Option<Value> {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     if request.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-        return Some(error_response(id, -32600, "Invalid Request"));
+        return Some(error_response(&id, -32600, "Invalid Request"));
     }
-    let method = match request.get("method").and_then(Value::as_str) {
-        Some(method) => method,
-        None => return Some(error_response(id, -32600, "Invalid Request")),
+    let Some(method) = request.get("method").and_then(Value::as_str) else {
+        return Some(error_response(&id, -32600, "Invalid Request"));
     };
     let params = request.get("params").cloned().unwrap_or(json!({}));
 
@@ -48,13 +47,13 @@ pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> 
             let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
             match read_resource(store, uri) {
                 Some(contents) => contents,
-                None => return Some(error_response(id, -32602, "Unknown resource")),
+                None => return Some(error_response(&id, -32602, "Unknown resource")),
             }
         }
         "tools/list" => json!({"tools": tools()}),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-            let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+            let arguments = params.get("arguments").unwrap_or(&Value::Null);
             match call_tool(store, cfg, name, arguments) {
                 Ok(value) => json!({
                     "content": [{"type": "text", "text": value.to_string()}],
@@ -67,13 +66,13 @@ pub fn handle(store: &FlowStore, cfg: &Shared, request: Value) -> Option<Value> 
             }
         }
         "notifications/initialized" => return None,
-        _ => return Some(error_response(id, -32601, "Method not found")),
+        _ => return Some(error_response(&id, -32601, "Method not found")),
     };
 
     Some(json!({"jsonrpc": "2.0", "id": id, "result": result}))
 }
 
-fn error_response(id: Value, code: i32, message: &str) -> Value {
+fn error_response(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
@@ -111,7 +110,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_list_flows",
             "List captured HTTP flows",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {
                     "q": {"type": "string", "description": "Proxyproxy search query"},
@@ -122,7 +121,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_get_flow",
             "Get one captured HTTP flow",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {"id": {"type": "integer"}},
                 "required": ["id"]
@@ -131,7 +130,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_replay",
             "Replay an HTTP request directly",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {
                     "id": {"type": "integer", "description": "Existing flow to replay"},
@@ -145,7 +144,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_list_rules",
             "List proxy rules",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {}
             }),
@@ -153,7 +152,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_add_rule",
             "Add or replace a proxy rule",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {
                     "id": {"type": "integer"},
@@ -169,7 +168,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_delete_rule",
             "Delete a proxy rule",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {"id": {"type": "integer"}},
                 "required": ["id"]
@@ -178,7 +177,7 @@ fn tools() -> Vec<Value> {
         tool(
             "proxyproxy_export_har",
             "Export captured traffic as HAR",
-            json!({
+            &json!({
                 "type": "object",
                 "properties": {}
             }),
@@ -186,7 +185,7 @@ fn tools() -> Vec<Value> {
     ]
 }
 
-fn tool(name: &str, description: &str, schema: Value) -> Value {
+fn tool(name: &str, description: &str, schema: &Value) -> Value {
     json!({"name": name, "description": description, "inputSchema": schema})
 }
 
@@ -194,7 +193,7 @@ fn call_tool(
     store: &FlowStore,
     cfg: &Shared,
     name: &str,
-    arguments: Value,
+    arguments: &Value,
 ) -> Result<Value, String> {
     match name {
         "proxyproxy_list_flows" => {
@@ -250,7 +249,7 @@ fn call_tool(
     }
 }
 
-fn replay_tool(store: &FlowStore, arguments: Value) -> Result<Value, String> {
+fn replay_tool(store: &FlowStore, arguments: &Value) -> Result<Value, String> {
     let id = arguments.get("id").and_then(Value::as_u64);
     let (method, url, headers, body) = if let Some(id) = id {
         let st = store.lock();
@@ -279,7 +278,7 @@ fn replay_tool(store: &FlowStore, arguments: Value) -> Result<Value, String> {
         let headers = arguments
             .get("headers")
             .and_then(Value::as_object)
-            .map(|headers| {
+            .map_or_default(|headers| {
                 headers
                     .iter()
                     .filter_map(|(name, value)| {
@@ -288,8 +287,7 @@ fn replay_tool(store: &FlowStore, arguments: Value) -> Result<Value, String> {
                             .map(|value| (name.clone(), value.to_string()))
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         let body = arguments
             .get("body")
             .and_then(Value::as_str)
@@ -304,7 +302,7 @@ fn replay_tool(store: &FlowStore, arguments: Value) -> Result<Value, String> {
     Ok(crate::services::api::detail(&flow))
 }
 
-fn add_rule(cfg: &Shared, arguments: Value) -> Result<Value, String> {
+fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
     let pattern = arguments
         .get("pattern")
         .and_then(Value::as_str)
@@ -367,9 +365,9 @@ pub fn serve_stdio(port: u16) -> Result<(), String> {
                 .header("content-type", "application/json")
                 .body(request.to_string())
                 .send()
-                .and_then(|response| response.text())
+                .and_then(reqwest::blocking::Response::text)
                 .map_err(|error| format!("cannot reach proxyproxy on port {port}: {error}"))?,
-            Err(_) => error_response(Value::Null, -32700, "Parse error").to_string(),
+            Err(_) => error_response(&Value::Null, -32700, "Parse error").to_string(),
         };
         if response.trim().is_empty() {
             continue;
@@ -399,7 +397,7 @@ mod tests {
         let response = handle(
             &store,
             &cfg,
-            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+            &json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
         )
         .unwrap();
         assert_eq!(response["id"], 1);
@@ -413,7 +411,7 @@ mod tests {
         let tools = handle(
             &store,
             &cfg,
-            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+            &json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
         )
         .unwrap();
         assert!(
@@ -427,7 +425,7 @@ mod tests {
         let resources = handle(
             &store,
             &cfg,
-            json!({"jsonrpc": "2.0", "id": 3, "method": "resources/list"}),
+            &json!({"jsonrpc": "2.0", "id": 3, "method": "resources/list"}),
         )
         .unwrap();
         assert!(
@@ -445,7 +443,7 @@ mod tests {
         let response = handle(
             &store,
             &cfg,
-            json!({"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": {"uri": "proxyproxy://nope"}}),
+            &json!({"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": {"uri": "proxyproxy://nope"}}),
         )
         .unwrap();
         assert_eq!(response["error"]["code"], -32602);
@@ -458,7 +456,7 @@ mod tests {
         let response = handle(
             &store,
             &cfg,
-            json!({"jsonrpc": "2.0", "id": 4, "method": "unknown"}),
+            &json!({"jsonrpc": "2.0", "id": 4, "method": "unknown"}),
         )
         .unwrap();
         assert_eq!(response["error"]["code"], -32601);
@@ -470,7 +468,7 @@ mod tests {
         let add = handle(
             &store,
             &cfg,
-            json!({
+            &json!({
                 "jsonrpc": "2.0",
                 "id": 5,
                 "method": "tools/call",
@@ -495,7 +493,7 @@ mod tests {
         let delete = handle(
             &store,
             &cfg,
-            json!({
+            &json!({
                 "jsonrpc": "2.0",
                 "id": 6,
                 "method": "tools/call",
@@ -513,5 +511,4 @@ mod tests {
         );
         assert!(cfg.lock().unwrap().rules.is_empty());
     }
-
 }

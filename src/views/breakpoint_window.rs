@@ -1,7 +1,10 @@
 use crate::domain::flow::Stage;
 use crate::viewmodels::intent::RuleIntent;
 use crate::viewmodels::rules_vm::RulesVm;
-use crate::views::theme::*;
+use crate::views::theme::{
+    PAD, accent, action_button_sized, canvas, cmd, danger, fg_muted, muted, overline, panel_frame,
+    pill, warning,
+};
 use eframe::egui::{self, Frame, Margin, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
@@ -83,7 +86,11 @@ pub fn show(ctx: &egui::Context, vm: &mut RulesVm) -> Option<RuleIntent> {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         if action_button_sized(ui, ph::X, "Abort", danger(), 112.0, true)
-                            .on_hover_text(format!("Drop this {} ({}.)", stage.to_lowercase(), cmd()))
+                            .on_hover_text(format!(
+                                "Drop this {} ({}.)",
+                                stage.to_lowercase(),
+                                cmd()
+                            ))
                             .clicked()
                         {
                             decision = Some(false);

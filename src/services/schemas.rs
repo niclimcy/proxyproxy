@@ -26,7 +26,9 @@ struct State {
 static STATE: LazyLock<Mutex<State>> = LazyLock::new(Default::default);
 
 fn lock() -> std::sync::MutexGuard<'static, State> {
-    STATE.lock().unwrap_or_else(|e| e.into_inner())
+    STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub fn load(paths: &[String]) -> (Option<DescriptorPool>, Vec<(String, String)>) {
@@ -79,16 +81,12 @@ pub fn is_loaded() -> bool {
 }
 
 pub fn message_types() -> Vec<String> {
-    let mut v: Vec<String> = lock()
-        .pool
-        .as_ref()
-        .map(|p| {
-            p.all_messages()
-                .filter(|m| !m.is_map_entry())
-                .map(|m| m.full_name().to_string())
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut v: Vec<String> = lock().pool.as_ref().map_or_default(|p| {
+        p.all_messages()
+            .filter(|m| !m.is_map_entry())
+            .map(|m| m.full_name().to_string())
+            .collect()
+    });
     v.sort();
     v
 }
@@ -97,8 +95,7 @@ pub fn stats() -> (usize, usize) {
     lock()
         .pool
         .as_ref()
-        .map(|p| (p.all_messages().count(), p.services().count()))
-        .unwrap_or((0, 0))
+        .map_or((0, 0), |p| (p.all_messages().count(), p.services().count()))
 }
 
 fn has_unknown(m: &DynamicMessage) -> bool {

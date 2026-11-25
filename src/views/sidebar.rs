@@ -2,7 +2,10 @@ use crate::domain::config::Config;
 use crate::viewmodels::capture_vm::CaptureVm;
 use crate::viewmodels::intent::SidebarIntent;
 use crate::views::app_icon::{paint_fallback_icon, paint_icon};
-use crate::views::theme::*;
+use crate::views::theme::{
+    FS_CAPTION, RowIcon, accent, card_panel, ico, icon_only, list_row, menu_item, menu_width,
+    muted, overline, resize_grip, resize_line,
+};
 use eframe::egui::{self, RichText, ScrollArea};
 use egui_phosphor::regular as ph;
 
@@ -10,7 +13,8 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
     let mut out = vec![];
     let mut open = vm.show_sidebar;
     if vm.tree_pending > 0 {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(250));
     }
     let cfg = vm.config_snapshot();
     let vm_ref = &*vm;
@@ -69,15 +73,39 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                     }
                     let folders = vm_ref.platforms.len() + usize::from(!vm_ref.tree.is_empty());
                     for (app, hosts) in &vm_ref.tree {
-                        app_node(ui, vm_ref, &cfg, &mut out, "", app, hosts, folders <= 1 && vm_ref.tree.len() <= 3);
+                        app_node(
+                            ui,
+                            vm_ref,
+                            &cfg,
+                            &mut out,
+                            "",
+                            app,
+                            hosts,
+                            folders <= 1 && vm_ref.tree.len() <= 3,
+                        );
                     }
                     for (platform, apps) in &vm_ref.platforms {
-                        let total: usize = apps.iter().flat_map(|(_, h)| h.iter().map(|(_, n)| n)).sum();
+                        let total: usize = apps
+                            .iter()
+                            .flat_map(|(_, h)| h.iter().map(|(_, n)| n))
+                            .sum();
                         let id = ui.make_persistent_id(("platform", platform));
-                        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true);
+                        let mut state =
+                            egui::collapsing_header::CollapsingState::load_with_default_open(
+                                ui.ctx(),
+                                id,
+                                true,
+                            );
                         let term = filter_term("platform", platform);
                         let on = vm_ref.filter.trim() == term;
-                        let head = list_row(ui, Some(RowIcon::Glyph(ph::DEVICE_MOBILE)), platform, Some(total), on, false);
+                        let head = list_row(
+                            ui,
+                            Some(RowIcon::Glyph(ph::DEVICE_MOBILE)),
+                            platform,
+                            Some(total),
+                            on,
+                            false,
+                        );
                         if head.clicked() {
                             state.toggle(ui);
                             out.push(SidebarIntent::Pick(term));
@@ -85,7 +113,9 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                         state.show_body_unindented(ui, |ui| {
                             ui.indent(("apps", platform), |ui| {
                                 for (app, hosts) in apps {
-                                    app_node(ui, vm_ref, &cfg, &mut out, platform, app, hosts, false);
+                                    app_node(
+                                        ui, vm_ref, &cfg, &mut out, platform, app, hosts, false,
+                                    );
                                 }
                             });
                         });
@@ -96,9 +126,7 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                         for m in &cfg.muted {
                             ui.horizontal(|ui| {
                                 ui.label(muted(m));
-                                if icon_only(ui, ph::X, &format!("Unmute {m}"))
-                                    .clicked()
-                                {
+                                if icon_only(ui, ph::X, &format!("Unmute {m}")).clicked() {
                                     out.push(SidebarIntent::Unmute(m.clone()));
                                 }
                             });
@@ -109,7 +137,11 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
     resize_line(ui, false);
     if let Some(r) = shown {
         let r = r.response.rect;
-        resize_grip(ui, "sidebar", egui::Rect::from_two_pos(r.right_top(), r.right_bottom()));
+        resize_grip(
+            ui,
+            "sidebar",
+            egui::Rect::from_two_pos(r.right_top(), r.right_bottom()),
+        );
     }
     vm.show_sidebar = open;
     out
@@ -127,16 +159,19 @@ fn app_node(
     open_default: bool,
 ) {
     let total: usize = hosts.iter().map(|(_, n)| n).sum();
-    let scope = if platform.is_empty() { String::new() } else { format!("{} ", filter_term("platform", platform)) };
+    let scope = if platform.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", filter_term("platform", platform))
+    };
     let app_term = format!("{scope}{}", filter_term("app", app));
     let app_on = vm.filter.trim() == app_term;
     let id = ui.make_persistent_id(("app", platform, app));
-    let mut state =
-        egui::collapsing_header::CollapsingState::load_with_default_open(
-            ui.ctx(),
-            id,
-            open_default,
-        );
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(),
+        id,
+        open_default,
+    );
     let head = list_row(
         ui,
         Some(RowIcon::Paint(&|p, r| {
@@ -170,8 +205,7 @@ fn app_node(
                         ico(ph::LOCK_OPEN, "Don't decrypt TLS"),
                         ico(ph::COPY, "Copy host"),
                     ];
-                    let labels: Vec<&str> =
-                        items.iter().map(String::as_str).collect();
+                    let labels: Vec<&str> = items.iter().map(String::as_str).collect();
                     menu_width(ui, &labels);
                     for (i, label) in labels.iter().enumerate() {
                         if !menu_item(ui, label, None).clicked() {

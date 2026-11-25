@@ -28,8 +28,12 @@ impl Ctx {
         if let Some(s) = v.get("url").and_then(|x| x.as_str()) {
             self.url = s.into();
         }
-        if let Some(s) = v.get("status").and_then(|x| x.as_u64()) {
-            self.status = s as u16;
+        if let Some(s) = v
+            .get("status")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|s| u16::try_from(s).ok())
+        {
+            self.status = s;
         }
         if let Some(h) = v.get("headers").and_then(|x| x.as_object()) {
             self.headers = h
@@ -38,7 +42,7 @@ impl Ctx {
                 .collect();
         }
         match v.get("body") {
-            Some(Value::String(s)) => self.body = s.clone(),
+            Some(Value::String(s)) => self.body.clone_from(s),
             Some(Value::Null) | None => {}
             Some(other) => self.body = other.to_string(),
         }
@@ -61,19 +65,19 @@ pub fn run(code: &str, hook: &str, ctx: &mut Ctx, log: &Sender<String>) -> Resul
         .map_err(|e| e.to_string())?;
         c.globals().set("__log", f).map_err(|e| e.to_string())?;
         let prog = format!(
-            r#"(function(){{
+            r"(function(){{
 var console={{log:function(){{__log(Array.prototype.map.call(arguments,function(a){{return typeof a==='string'?a:JSON.stringify(a)}}).join(' '))}}}};
 console.info=console.warn=console.error=console.log;
 {code}
 ;var ctx=JSON.parse({input_lit});
 if(typeof {hook}==='function'){{var r={hook}(ctx);if(r!==undefined&&r!==null)ctx=r;}}
-return JSON.stringify(ctx);}})()"#,
+return JSON.stringify(ctx);}})()",
             input_lit = serde_json::to_string(&input).unwrap(),
         );
         c.eval::<String, _>(prog).map_err(|e| match e {
             rquickjs::Error::Exception => {
                 let ex = c.catch();
-                format!("{:?}", ex.as_exception().map(|e| e.message().unwrap_or_default()).unwrap_or_default())
+                format!("{:?}", ex.as_exception().map_or_default(|e| e.message().unwrap_or_default()))
             }
             e => e.to_string(),
         })

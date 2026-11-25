@@ -1,5 +1,6 @@
 use crate::domain::flow::{Flow, Message};
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn sh_quote(s: &str) -> String {
@@ -8,7 +9,10 @@ fn sh_quote(s: &str) -> String {
 
 // imported HAR and session files can carry any string as the method
 fn sh_word(s: &str) -> String {
-    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+    if !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
         s.to_string()
     } else {
         sh_quote(s)
@@ -24,13 +28,14 @@ pub fn curl(f: &Flow) -> String {
         ) {
             continue;
         }
-        out.push_str(&format!(" \\\n  -H {}", sh_quote(&format!("{k}: {v}"))));
+        let _ = write!(out, " \\\n  -H {}", sh_quote(&format!("{k}: {v}")));
     }
     if !f.request.body.is_empty() {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             " \\\n  --data-raw {}",
             sh_quote(&String::from_utf8_lossy(&f.request.body))
-        ));
+        );
     }
     out
 }
@@ -38,17 +43,20 @@ pub fn curl(f: &Flow) -> String {
 // Civil-from-days (Howard Hinnant) to avoid a date-time dependency
 fn iso8601(t: SystemTime) -> String {
     let d = t.duration_since(UNIX_EPOCH).unwrap_or_default();
-    let (secs, ms) = (d.as_secs() as i64, d.subsec_millis());
-    let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
-    let z = days + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z.rem_euclid(146097);
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let (secs, ms) = (
+        i64::try_from(d.as_secs()).unwrap_or(i64::MAX),
+        d.subsec_millis(),
+    );
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + (month <= 2) as i64;
+    let year = yoe + era * 400 + i64::from(month <= 2);
     format!(
         "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{ms:03}Z",
         rem / 3600,
@@ -66,31 +74,26 @@ fn hdrs(h: &[(String, String)]) -> Vec<Value> {
 // binary bodies go out as base64 (HAR 1.2 `encoding`) so they survive a round trip
 fn content(m: &Message) -> Value {
     let mut c = json!({"size": m.body.len(), "mimeType": m.header("content-type").unwrap_or("")});
-    match std::str::from_utf8(&m.body) {
-        Ok(t) => c["text"] = json!(t),
-        Err(_) => {
-            use base64::Engine;
-            c["text"] = json!(base64::engine::general_purpose::STANDARD.encode(&m.body));
-            c["encoding"] = json!("base64");
-        }
+    if let Ok(t) = std::str::from_utf8(&m.body) {
+        c["text"] = json!(t);
+    } else {
+        use base64::Engine;
+        c["text"] = json!(base64::engine::general_purpose::STANDARD.encode(&m.body));
+        c["encoding"] = json!("base64");
     }
     c
 }
 
 fn entry(f: &Flow) -> Value {
-    let query: Vec<Value> = f
-        .path
-        .split_once('?')
-        .map(|(_, q)| {
-            q.split('&')
-                .filter(|p| !p.is_empty())
-                .map(|p| {
-                    let (k, v) = p.split_once('=').unwrap_or((p, ""));
-                    json!({"name": k, "value": v})
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let query: Vec<Value> = f.path.split_once('?').map_or_default(|(_, q)| {
+        q.split('&')
+            .filter(|p| !p.is_empty())
+            .map(|p| {
+                let (k, v) = p.split_once('=').unwrap_or((p, ""));
+                json!({"name": k, "value": v})
+            })
+            .collect()
+    });
     let req_mime = f.request.header("content-type").unwrap_or("");
     let mut request = json!({
         "method": f.method, "url": f.url(), "httpVersion": f.version,
@@ -155,7 +158,7 @@ pub fn fetch(f: &Flow) -> String {
         hs.join(",\n")
     );
     if !f.request.body.is_empty() {
-        o.push_str(&format!(",\n  body: {}", js_str(&f.request.text())));
+        let _ = write!(o, ",\n  body: {}", js_str(&f.request.text()));
     }
     o.push_str("\n});");
     o
@@ -176,7 +179,7 @@ pub fn python(f: &Flow) -> String {
         hs.join("\n").replace("\n    ", "\n        ")
     );
     if !f.request.body.is_empty() {
-        o.push_str(&format!(",\n    data={}", js_str(&f.request.text())));
+        let _ = write!(o, ",\n    data={}", js_str(&f.request.text()));
     }
     o.push_str(",\n)\nprint(res.status_code, res.text)");
     o
@@ -185,7 +188,7 @@ pub fn python(f: &Flow) -> String {
 pub fn httpie(f: &Flow) -> String {
     let mut o = format!("http {} {}", sh_word(&f.method), sh_quote(&f.url()));
     for (k, v) in f.request.headers.iter().filter(|(k, _)| !skip_hdr(k)) {
-        o.push_str(&format!(" {}", sh_quote(&format!("{k}:{v}"))));
+        let _ = write!(o, " {}", sh_quote(&format!("{k}:{v}")));
     }
     if !f.request.body.is_empty() {
         o = format!("printf %s {} | {o}", sh_quote(&f.request.text()));
@@ -201,7 +204,7 @@ pub fn raw_http(f: &Flow) -> String {
         .iter()
         .filter(|(k, _)| !k.eq_ignore_ascii_case("host"))
     {
-        o.push_str(&format!("{k}: {v}\n"));
+        let _ = writeln!(o, "{k}: {v}");
     }
     o.push('\n');
     o.push_str(&f.request.text());
@@ -228,11 +231,11 @@ pub fn csv(flows: &[&Flow]) -> String {
         let row = [
             f.id.to_string(),
             f.method.clone(),
-            f.status.map(|s| s.to_string()).unwrap_or_default(),
+            f.status.map_or_default(|s| s.to_string()),
             f.host.clone(),
             f.path.clone(),
             f.app_label(),
-            f.duration_ms.map(|d| d.to_string()).unwrap_or_default(),
+            f.duration_ms.map_or_default(|d| d.to_string()),
             f.res_size().to_string(),
             f.tag.clone(),
             f.comment.clone(),
@@ -257,7 +260,10 @@ mod tests {
     fn binary_response_bodies_round_trip_through_har() {
         let mut f = flow();
         let bin = vec![0x89, b'P', 0xff, 0x00];
-        f.response = Some(Message { headers: vec![], body: bin.clone() });
+        f.response = Some(Message {
+            headers: vec![],
+            body: bin.clone(),
+        });
         f.status = Some(200);
         let back = crate::services::importer::import_bytes(har(&[&f]).as_bytes()).unwrap();
         assert_eq!(back[0].response.as_ref().unwrap().body, bin);

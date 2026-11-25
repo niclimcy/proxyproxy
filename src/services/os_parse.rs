@@ -35,7 +35,10 @@ pub fn proc_net_inodes(text: &str, port: u16) -> Vec<u64> {
 
 /// `socket:[12345]`, the target of a `/proc/<pid>/fd` link.
 pub fn socket_inode(link: &str) -> Option<u64> {
-    link.strip_prefix("socket:[")?.strip_suffix(']')?.parse().ok()
+    link.strip_prefix("socket:[")?
+        .strip_suffix(']')?
+        .parse()
+        .ok()
 }
 
 /// `netstat -ano -p TCP`: pid of the first row with that local port. The state column is
@@ -56,14 +59,24 @@ pub fn netstat_pid(text: &str, port: u16, own_pid: u32) -> Option<u32> {
 pub fn tasklist_name(csv: &str) -> Option<String> {
     let first = csv.lines().next()?.trim().strip_prefix('"')?;
     let image = first.split('"').next()?;
-    let lower = image.to_ascii_lowercase();
-    let stem = if lower.ends_with(".exe") { &image[..image.len() - 4] } else { image };
+    let stem = image
+        .len()
+        .checked_sub(4)
+        .filter(|&n| {
+            image
+                .get(n..)
+                .is_some_and(|e| e.eq_ignore_ascii_case(".exe"))
+        })
+        .map_or(image, |n| &image[..n]);
     (!stem.is_empty()).then(|| stem.to_string())
 }
 
 /// `gsettings get` of a string key: `'auto'` -> `auto`.
 pub fn gsettings_str(text: &str) -> String {
-    text.trim().trim_start_matches("@s ").trim_matches('\'').to_string()
+    text.trim()
+        .trim_start_matches("@s ")
+        .trim_matches('\'')
+        .to_string()
 }
 
 /// `gsettings get` of an integer key: `9090` or `uint32 9090`.
@@ -110,7 +123,11 @@ pub fn parse_desktop(text: &str) -> Option<DesktopEntry> {
         .rsplit('/')
         .next()?
         .to_string();
-    Some(DesktopEntry { name: name?, icon, exec_bin: bin })
+    Some(DesktopEntry {
+        name: name?,
+        icon,
+        exec_bin: bin,
+    })
 }
 
 /// Where an `Icon=` value may live, best first. Absolute values are used as-is.
@@ -120,7 +137,13 @@ pub fn icon_candidates(data_dir: &Path, icon: &str) -> Vec<PathBuf> {
     }
     let mut v: Vec<PathBuf> = ["256x256", "128x128", "512x512", "64x64", "48x48", "32x32"]
         .iter()
-        .map(|s| data_dir.join("icons/hicolor").join(s).join("apps").join(format!("{icon}.png")))
+        .map(|s| {
+            data_dir
+                .join("icons/hicolor")
+                .join(s)
+                .join("apps")
+                .join(format!("{icon}.png"))
+        })
         .collect();
     v.push(data_dir.join("pixmaps").join(format!("{icon}.png")));
     v
@@ -183,15 +206,24 @@ mod tests {
 
     #[test]
     fn tasklist_csv() {
-        assert_eq!(tasklist_name("\"chrome.exe\",\"4321\",\"Console\",\"1\",\"100 K\"\r\n"), Some("chrome".into()));
-        assert_eq!(tasklist_name("INFO: No tasks are running which match the specified criteria."), None);
+        assert_eq!(
+            tasklist_name("\"chrome.exe\",\"4321\",\"Console\",\"1\",\"100 K\"\r\n"),
+            Some("chrome".into())
+        );
+        assert_eq!(
+            tasklist_name("INFO: No tasks are running which match the specified criteria."),
+            None
+        );
     }
 
     #[test]
     fn gsettings_values() {
         assert_eq!(gsettings_str("'auto'\n"), "auto");
         assert_eq!(gsettings_str("''"), "");
-        assert_eq!(gsettings_str("'file:///home/u/pac.pac'"), "file:///home/u/pac.pac");
+        assert_eq!(
+            gsettings_str("'file:///home/u/pac.pac'"),
+            "file:///home/u/pac.pac"
+        );
         assert_eq!(gsettings_port("9090\n"), Some(9090));
         assert_eq!(gsettings_port("uint32 9090"), Some(9090));
         assert_eq!(gsettings_port("x"), None);
@@ -200,7 +232,10 @@ mod tests {
     #[test]
     fn reg_query_values() {
         let t = "\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\r\n    AutoConfigURL    REG_SZ    file:///C:/Users/a%20b/proxyproxy.pac\r\n    ProxyEnable    REG_DWORD    0x1\r\n";
-        assert_eq!(reg_value(t, "AutoConfigURL").as_deref(), Some("file:///C:/Users/a%20b/proxyproxy.pac"));
+        assert_eq!(
+            reg_value(t, "AutoConfigURL").as_deref(),
+            Some("file:///C:/Users/a%20b/proxyproxy.pac")
+        );
         assert_eq!(reg_value(t, "ProxyEnable").as_deref(), Some("0x1"));
         assert_eq!(reg_value(t, "ProxyServer"), None);
     }
@@ -210,7 +245,11 @@ mod tests {
         let t = "[Desktop Entry]\nName=Firefox\nName[de]=Feuerfuchs\nExec=env MOZ=1 /usr/lib/firefox/firefox %u\nIcon=firefox\n\n[Desktop Action x]\nName=New\nExec=other\n";
         assert_eq!(
             parse_desktop(t),
-            Some(DesktopEntry { name: "Firefox".into(), icon: "firefox".into(), exec_bin: "firefox".into() })
+            Some(DesktopEntry {
+                name: "Firefox".into(),
+                icon: "firefox".into(),
+                exec_bin: "firefox".into()
+            })
         );
         assert_eq!(parse_desktop("[Desktop Entry]\nName=X\n"), None);
     }
@@ -220,8 +259,15 @@ mod tests {
         let c = icon_candidates(Path::new("/usr/share"), "firefox");
         assert!(c[0].ends_with("hicolor/256x256/apps/firefox.png"));
         assert!(c.last().unwrap().ends_with("pixmaps/firefox.png"));
-        let abs = if cfg!(windows) { "C:\\i.png" } else { "/opt/i.png" };
-        assert_eq!(icon_candidates(Path::new("/x"), abs), vec![PathBuf::from(abs)]);
+        let abs = if cfg!(windows) {
+            "C:\\i.png"
+        } else {
+            "/opt/i.png"
+        };
+        assert_eq!(
+            icon_candidates(Path::new("/x"), abs),
+            vec![PathBuf::from(abs)]
+        );
     }
 
     #[test]

@@ -74,8 +74,7 @@ fn split_url(url: &str) -> (&str, &str, &str) {
     let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
     let (host, path) = rest
         .find(['/', '?'])
-        .map(|i| (&rest[..i], &rest[i..]))
-        .unwrap_or((rest, "/"));
+        .map_or((rest, "/"), |i| (&rest[..i], &rest[i..]));
     (scheme, host, path)
 }
 

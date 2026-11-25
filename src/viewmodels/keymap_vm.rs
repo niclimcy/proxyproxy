@@ -19,14 +19,22 @@ pub struct KeymapRow {
 
 impl KeymapVm {
     pub fn new(cfg: Shared) -> Self {
-        Self { cfg, recording: None, error: None }
+        Self {
+            cfg,
+            recording: None,
+            error: None,
+        }
     }
 
     pub fn rows(&self) -> Vec<KeymapRow> {
         let c = self.cfg.lock().unwrap();
         CUSTOMIZABLE
             .iter()
-            .map(|&action| KeymapRow { action, binding: c.binding(action), custom: c.is_custom(action) })
+            .map(|&action| KeymapRow {
+                action,
+                binding: c.binding(action),
+                custom: c.is_custom(action),
+            })
             .collect()
     }
 
@@ -50,13 +58,12 @@ impl KeymapVm {
             KeymapIntent::Clear(a) => (Some(a), self.cfg.lock().unwrap().set_binding(a, None)),
             KeymapIntent::Reset(a) => (Some(a), self.cfg.lock().unwrap().reset_binding(a)),
         };
-        match (action, result) {
-            // recording continues, so another combo can be tried straight away
-            (Some(a), Err(e)) => self.error = Some((a, e)),
-            _ => {
-                self.recording = None;
-                self.error = None;
-            }
+        // recording continues, so another combo can be tried straight away
+        if let (Some(a), Err(e)) = (action, result) {
+            self.error = Some((a, e));
+        } else {
+            self.recording = None;
+            self.error = None;
         }
     }
 }
@@ -72,7 +79,10 @@ mod tests {
     }
 
     fn combo(key: &str, shift: bool) -> Binding {
-        Binding { key: key.into(), shift }
+        Binding {
+            key: key.into(),
+            shift,
+        }
     }
 
     #[test]
@@ -82,8 +92,15 @@ mod tests {
         assert_eq!(vm.recording, Some(RowAction::Pin));
         vm.handle(KeymapIntent::Set(RowAction::Pin, combo("K", false)));
         assert_eq!(vm.recording, None);
-        assert_eq!(vm.cfg.lock().unwrap().binding(RowAction::Pin), Some(combo("K", false)));
-        let pin = vm.rows().into_iter().find(|r| r.action == RowAction::Pin).unwrap();
+        assert_eq!(
+            vm.cfg.lock().unwrap().binding(RowAction::Pin),
+            Some(combo("K", false))
+        );
+        let pin = vm
+            .rows()
+            .into_iter()
+            .find(|r| r.action == RowAction::Pin)
+            .unwrap();
         assert!(pin.custom);
     }
 
@@ -92,9 +109,15 @@ mod tests {
         let mut vm = vm();
         vm.handle(KeymapIntent::Record(RowAction::Pin));
         vm.handle(KeymapIntent::Set(RowAction::Pin, combo("D", false)));
-        assert_eq!(vm.error, Some((RowAction::Pin, BindError::InUse(RowAction::DiffBase))));
+        assert_eq!(
+            vm.error,
+            Some((RowAction::Pin, BindError::InUse(RowAction::DiffBase)))
+        );
         assert_eq!(vm.recording, Some(RowAction::Pin));
-        assert_eq!(vm.cfg.lock().unwrap().binding(RowAction::Pin), Some(combo("P", false)));
+        assert_eq!(
+            vm.cfg.lock().unwrap().binding(RowAction::Pin),
+            Some(combo("P", false))
+        );
         vm.handle(KeymapIntent::Cancel);
         assert_eq!((vm.recording, vm.error), (None, None));
     }
@@ -105,7 +128,10 @@ mod tests {
         vm.handle(KeymapIntent::Clear(RowAction::Mute));
         assert_eq!(vm.cfg.lock().unwrap().binding(RowAction::Mute), None);
         vm.handle(KeymapIntent::Reset(RowAction::Mute));
-        assert_eq!(vm.cfg.lock().unwrap().binding(RowAction::Mute), Some(combo("M", true)));
+        assert_eq!(
+            vm.cfg.lock().unwrap().binding(RowAction::Mute),
+            Some(combo("M", true))
+        );
         vm.handle(KeymapIntent::Set(RowAction::Pin, combo("K", false)));
         vm.handle(KeymapIntent::Clear(RowAction::Replay));
         vm.handle(KeymapIntent::ResetAll);

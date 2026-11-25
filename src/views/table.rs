@@ -1,10 +1,14 @@
 use crate::domain::flow::Flow;
-use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::domain::keymap::{Binding, RowAction};
+use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::viewmodels::intent::RowIntent;
 use crate::viewmodels::rules_vm::RuleKind;
 use crate::views::app_icon::{app_icon, app_label_hover};
-use crate::views::theme::*;
+use crate::views::theme::{
+    FS_CAPTION, FS_TITLE, GAP, HIT, PAD, accent, action_button, action_button_sized, badge, card,
+    card_panel, fg_muted, fmt_size, ico, menu_item, menu_width, method_color, muted, overline,
+    pill, status_color, status_dot, submenu_item, success, tag_colors, violet, warning,
+};
 use eframe::egui::{self, RichText};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular as ph;
@@ -40,7 +44,11 @@ impl ColumnWidths {
         let flexible = ui.available_width() - fixed - 3.0 * gap;
         // App is the least useful column, so it goes first when space runs out
         let show_app = flexible >= 480.0;
-        let app_max = if show_app { (flexible * 0.18).max(60.0) } else { 0.0 };
+        let app_max = if show_app {
+            (flexible * 0.18).max(60.0)
+        } else {
+            0.0
+        };
         let host_max = (flexible - PATH_MIN - app_max).max(90.0);
         Self {
             show_app,
@@ -73,9 +81,9 @@ pub fn show(
     // get clipped instead of stretching the border over the neighbouring panel.
     egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
         let frame = card_panel();
-        let slot = ui.max_rect().shrink(GAP as f32 / 2.0);
+        let slot = ui.max_rect().shrink(f32::from(GAP) / 2.0);
         ui.painter().rect(slot, frame.corner_radius, frame.fill, frame.stroke, egui::StrokeKind::Inside);
-        let inner = slot.shrink(PAD as f32);
+        let inner = slot.shrink(f32::from(PAD));
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         body.set_clip_rect(inner.intersect(ui.clip_rect()));
         let ui = &mut body;
@@ -84,7 +92,7 @@ pub fn show(
                 ui.add_space((ui.available_height() - 280.0).max(24.0) / 2.0);
                 let card_width = ui.clip_rect().width().min(500.0);
                 card().show(ui, |ui| {
-                    ui.set_width((card_width - 2.0 * PAD as f32).max(0.0));
+                    ui.set_width((card_width - 2.0 * f32::from(PAD)).max(0.0));
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.label(overline("GET STARTED"));
                         ui.add_space(5.0);
@@ -121,7 +129,7 @@ pub fn show(
                 let card_width = ui.clip_rect().width().min(520.0);
                 card().show(ui, |ui| {
                     // fixed width: a long filter would stretch a min-width card off-center
-                    ui.set_width((card_width - 2.0 * PAD as f32).max(0.0));
+                    ui.set_width((card_width - 2.0 * f32::from(PAD)).max(0.0));
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.label(RichText::new("No requests match this search").size(FS_TITLE).strong());
                         ui.add_space(6.0);
@@ -187,7 +195,7 @@ pub fn show(
                             ui.add_space(4.0);
                             if status_dot_on {
                                 let label = f.status.map_or_else(|| "Pending".to_string(), |s| format!("Status {s}"));
-                                status_dot(ui, f.status.map(status_color).unwrap_or_else(fg_muted), &label);
+                                status_dot(ui, f.status.map_or_else(fg_muted, status_color), &label);
                             }
                             if let Some(i) = f.color {
                                 ui.label(RichText::new(ph::CIRCLE).color(tag_colors()[i as usize % 5].1).size(FS_CAPTION));
@@ -239,10 +247,10 @@ pub fn show(
                             }
                         }
                         "Time" => {
-                            ui.label(RichText::new(f.duration_ms.map(|d| format!("{d} ms")).unwrap_or_default()).monospace().color(fg_muted()));
+                            ui.label(RichText::new(f.duration_ms.map_or_default(|d| format!("{d} ms"))).monospace().color(fg_muted()));
                         }
                         _ => {
-                            ui.label(RichText::new(f.response.as_ref().map(|r| fmt_size(r.body.len())).unwrap_or_default()).monospace().color(fg_muted()));
+                            ui.label(RichText::new(f.response.as_ref().map_or_default(|r| fmt_size(r.body.len()))).monospace().color(fg_muted()));
                         }
                     });
                 }
@@ -302,9 +310,15 @@ pub fn show(
 }
 
 /// Row actions, shared by right-click and the keyboard.
-fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, keymap: &[(RowAction, Binding)], out: &mut Vec<RowIntent>) {
-    let hint = |a: A| crate::views::shortcuts::hint(a, keymap);
+fn row_menu(
+    ui: &mut egui::Ui,
+    f: &Flow,
+    focus_first: bool,
+    keymap: &[(RowAction, Binding)],
+    out: &mut Vec<RowIntent>,
+) {
     use RowAction as A;
+    let hint = |a: A| crate::views::shortcuts::hint(a, keymap);
     let id = f.id;
     let item = |ui: &mut egui::Ui, l: &str, action: Option<A>| {
         let r = menu_item(ui, l, action.and_then(hint).as_deref());
@@ -317,23 +331,49 @@ fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, keymap: &[(RowAction
     let host = f.hostname().to_string();
     let labels = [
         (ico(ph::PLAY, "Replay / edit…"), Some(A::Replay)),
-        (ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), None),
-        (ico(ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" }), Some(A::Pin)),
+        (
+            ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"),
+            None,
+        ),
+        (
+            ico(ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" }),
+            Some(A::Pin),
+        ),
         (ico(ph::NOTE, "Comment…"), Some(A::Comment)),
         (ico(ph::GIT_DIFF, "Use as diff base"), Some(A::DiffBase)),
         (ico(ph::EYE_SLASH, &format!("Mute {host}")), Some(A::Mute)),
         (ico(ph::TARGET, "Scope to this host"), None),
         (ico(ph::TARGET, "Scope to this URL path"), None),
-        (ico(ph::ARROWS_SPLIT, "Route only this host through proxy"), None),
+        (
+            ico(ph::ARROWS_SPLIT, "Route only this host through proxy"),
+            None,
+        ),
         (ico(ph::ARROWS_SPLIT, "Add to proxy-only list"), None),
         (ico(ph::EYE_SLASH, "Exclude this URL"), None),
         (ico(ph::LOCK_OPEN, "Don't decrypt this host"), None),
         (ico(ph::TRASH, "Delete"), Some(A::Delete)),
     ];
     // room for the hint column, so a long label never runs into its shortcut
-    let widths: Vec<String> = labels.iter().map(|(l, a)| format!("{l}      {}", a.and_then(hint).unwrap_or_default())).collect();
+    let widths: Vec<String> = labels
+        .iter()
+        .map(|(l, a)| format!("{l}      {}", a.and_then(hint).unwrap_or_default()))
+        .collect();
     menu_width(ui, &widths.iter().map(String::as_str).collect::<Vec<_>>());
-    let [replay, rule, pin, comment, diff, mute, only, only_path, route_only, route_add, exclude, no_tls, delete] = labels;
+    let [
+        replay,
+        rule,
+        pin,
+        comment,
+        diff,
+        mute,
+        only,
+        only_path,
+        route_only,
+        route_add,
+        exclude,
+        no_tls,
+        delete,
+    ] = labels;
 
     let first = item(ui, &replay.0, replay.1);
     if focus_first {
@@ -345,7 +385,15 @@ fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, keymap: &[(RowAction
     submenu_item(ui, &rule.0, |ui| {
         use RuleKind as K;
         menu_width(ui, &["Mock this response", "Throttle / delay"]);
-        for (k, l) in [(K::Breakpoint, "Breakpoint"), (K::Mock, "Mock this response"), (K::Block, "Block"), (K::Throttle, "Throttle / delay"), (K::Redirect, "Redirect to…"), (K::Header, "Rewrite header"), (K::Script, "Script")] {
+        for (k, l) in [
+            (K::Breakpoint, "Breakpoint"),
+            (K::Mock, "Mock this response"),
+            (K::Block, "Block"),
+            (K::Throttle, "Throttle / delay"),
+            (K::Redirect, "Redirect to…"),
+            (K::Header, "Rewrite header"),
+            (K::Script, "Script"),
+        ] {
             if b(ui, l, None) {
                 out.push(RowIntent::Rule(id, k));
             }
@@ -356,12 +404,18 @@ fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, keymap: &[(RowAction
         out.push(RowIntent::Pin(id));
     }
     submenu_item(ui, &ico(ph::PALETTE, "Color"), |ui| {
-        menu_width(ui, &[&format!("Purple      {}", hint(A::Color(None)).unwrap_or_default())]);
+        menu_width(
+            ui,
+            &[&format!(
+                "Purple      {}",
+                hint(A::Color(None)).unwrap_or_default()
+            )],
+        );
         if b(ui, "None", Some(A::Color(None))) {
             out.push(RowIntent::Color(id, None));
         }
         for (i, (n, _)) in tag_colors().iter().enumerate() {
-            let c = Some(i as u8);
+            let c = u8::try_from(i).ok();
             if b(ui, n, Some(A::Color(c))) {
                 out.push(RowIntent::Color(id, c));
             }
@@ -377,7 +431,14 @@ fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, keymap: &[(RowAction
     submenu_item(ui, &ico(ph::COPY, "Copy as"), |ui| {
         use crate::services::exporter as ex;
         menu_width(ui, &["Python requests"]);
-        for (l, s) in [("URL", f.url()), ("cURL", ex::curl(f)), ("fetch", ex::fetch(f)), ("Python requests", ex::python(f)), ("HTTPie", ex::httpie(f)), ("Raw HTTP", ex::raw_http(f))] {
+        for (l, s) in [
+            ("URL", f.url()),
+            ("cURL", ex::curl(f)),
+            ("fetch", ex::fetch(f)),
+            ("Python requests", ex::python(f)),
+            ("HTTPie", ex::httpie(f)),
+            ("Raw HTTP", ex::raw_http(f)),
+        ] {
             if b(ui, l, None) {
                 ui.ctx().copy_text(s);
             }
