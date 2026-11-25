@@ -1,4 +1,5 @@
 use crate::domain::flow::{Flow, Message};
+use bytes::Bytes;
 use serde_json::Value;
 use std::time::SystemTime;
 
@@ -46,12 +47,12 @@ pub fn import_har(text: &str) -> Result<Vec<Flow>, String> {
             started_at: std::time::Instant::now(),
             request: Message {
                 headers: parse_hdrs(&req["headers"]),
-                body: req
-                    .pointer("/postData/text")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("")
-                    .as_bytes()
-                    .to_vec(),
+                body: Bytes::copy_from_slice(
+                    req.pointer("/postData/text")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .as_bytes(),
+                ),
             },
             status,
             response: status.map(|_| Message {
@@ -65,9 +66,10 @@ pub fn import_har(text: &str) -> Result<Vec<Flow>, String> {
                         base64::engine::general_purpose::STANDARD
                             .decode(t)
                             .unwrap_or_default()
+                            .into()
                     }
-                    (Some(t), _) => t.as_bytes().to_vec(),
-                    _ => vec![],
+                    (Some(t), _) => Bytes::copy_from_slice(t.as_bytes()),
+                    _ => Bytes::new(),
                 },
             }),
             duration_ms: e["time"]
@@ -150,12 +152,12 @@ pub fn import_chlsj(text: &str) -> Result<Vec<Flow>, String> {
                 started_at: std::time::Instant::now(),
                 request: Message {
                     headers: hdr(&e["request"]),
-                    body: body(&e["request"]),
+                    body: body(&e["request"]).into(),
                 },
                 status,
                 response: status.map(|_| Message {
                     headers: hdr(&e["response"]),
-                    body: body(&e["response"]),
+                    body: body(&e["response"]).into(),
                 }),
                 duration_ms: e["durations"]["total"].as_u64().map(u128::from),
                 tag: "Imported".into(),
@@ -189,7 +191,7 @@ mod tests {
             ("POST", "api.x.com", "/v1?a=1")
         );
         assert_eq!(f[0].status, Some(201));
-        assert_eq!(f[0].request.body, b"hi");
+        assert_eq!(f[0].request.body, &b"hi"[..]);
         assert_eq!(f[0].duration_ms, Some(42));
     }
 
@@ -228,12 +230,12 @@ mod tests {
             started_at: std::time::Instant::now(),
             request: Message {
                 headers: vec![("X-A".into(), "b".into())],
-                body: b"hi".to_vec(),
+                body: Bytes::from_static(b"hi"),
             },
             status: Some(200),
             response: Some(Message {
                 headers: vec![("content-type".into(), "text/plain".into())],
-                body: b"ok".to_vec(),
+                body: Bytes::from_static(b"ok"),
             }),
             duration_ms: Some(12),
             tag: String::new(),
@@ -263,8 +265,8 @@ mod tests {
             ),
             ("POST", "api.x.com", "/v1?a=1", Some(200))
         );
-        assert_eq!(b.request.body, b"hi");
-        assert_eq!(b.response.as_ref().unwrap().body, b"ok");
+        assert_eq!(b.request.body, &b"hi"[..]);
+        assert_eq!(b.response.as_ref().unwrap().body, &b"ok"[..]);
     }
 
     #[test]

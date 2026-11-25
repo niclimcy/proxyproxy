@@ -25,6 +25,7 @@ pub fn load(path: &Path) -> Result<Vec<Flow>, String> {
 mod tests {
     use super::*;
     use crate::domain::flow::Message;
+    use bytes::Bytes;
 
     #[test]
     fn save_load_roundtrip_reserves_ids() {
@@ -41,7 +42,7 @@ mod tests {
             status: Some(200),
             response: Some(Message {
                 headers: vec![],
-                body: vec![0, 1, 2, 255],
+                body: Bytes::from_static(&[0, 1, 2, 255]),
             }),
             duration_ms: Some(3),
             tag: "t".into(),

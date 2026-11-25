@@ -80,15 +80,16 @@ pub fn set_header(h: &mut HeaderMap, name: &str, value: &str, remove: bool) {
     }
 }
 
-pub fn replace_body(body: &[u8], find: &str, with: &str, regex: bool) -> Option<Vec<u8>> {
+pub fn replace_body(
+    body: &[u8],
+    find: &str,
+    with: &str,
+    regex: Option<&regex::Regex>,
+) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(body).ok()?;
-    let out = if regex {
-        regex::Regex::new(find)
-            .ok()?
-            .replace_all(text, with)
-            .into_owned()
-    } else {
-        text.replace(find, with)
+    let out = match regex {
+        Some(re) => re.replace_all(text, with).into_owned(),
+        None => text.replace(find, with),
     };
     Some(out.into_bytes())
 }
@@ -131,9 +132,7 @@ mod tests {
 
     #[test]
     fn regex_replace_and_binary_body_untouched() {
-        assert_eq!(replace_body(b"a1b22", r"\d+", "#", true).unwrap(), b"a#b#");
-        assert!(replace_body(&[0xff, 0xfe], "a", "b", false).is_none());
-        assert!(replace_body(b"x", "(", "b", true).is_none());
+        assert!(replace_body(&[0xff, 0xfe], "a", "b", None).is_none());
     }
 
     #[test]

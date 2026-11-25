@@ -112,6 +112,7 @@ pub struct Capture {
     pub res_actions: Vec<Rule>,
     pub bp_response: bool,
     pub apps: Arc<AppCache>,
+    pub rules: Arc<Mutex<actions::RuleCache>>,
 }
 
 impl Capture {
@@ -198,14 +199,13 @@ impl HttpHandler for Capture {
         let (captured, actions) = {
             let mut cfg = self.cfg.lock().unwrap();
             let c = cfg.captured(&url);
-            (
-                c,
-                if c {
-                    cfg.matching(&method, &url)
-                } else {
-                    vec![]
-                },
-            )
+            let actions = if c {
+                let mut cache = self.rules.lock().unwrap();
+                cfg.matching(&method, &url, |r| cache.resolve(r.id, &r.action))
+            } else {
+                vec![]
+            };
+            (c, actions)
         };
         if !captured {
             self.add_upstream_auth(&mut parts);
@@ -259,7 +259,6 @@ impl HttpHandler for Capture {
             }
         }
 
-        let actions = actions::resolve_all(&actions);
         let plan = pipeline::plan(&actions);
         self.bp_response |= plan.break_response;
         self.res_actions = plan.response_actions;
@@ -275,7 +274,7 @@ impl HttpHandler for Capture {
             started_at: Instant::now(),
             request: Message {
                 headers: headers(&parts.headers),
-                body: bytes.to_vec(),
+                body: bytes.clone(),
             },
             status: None,
             response: None,
@@ -316,7 +315,7 @@ impl HttpHandler for Capture {
                 status: p.status.as_u16(),
                 response: Message {
                     headers: headers(&p.headers),
-                    body: data.to_vec(),
+                    body: data.clone(),
                 },
                 duration_ms: self.elapsed(),
             });
@@ -333,7 +332,7 @@ impl HttpHandler for Capture {
                 url: parts.uri.to_string(),
                 status: 0,
                 headers: headers(&parts.headers),
-                body: bytes.to_vec(),
+                body: bytes.clone(),
             };
             match self.pause(id, Stage::Request, edit).await {
                 Decision::Resume(e) => {
@@ -344,7 +343,7 @@ impl HttpHandler for Capture {
                         parts.uri = u;
                     }
                     parts.headers = header_map(&e.headers);
-                    bytes = Bytes::from(e.body);
+                    bytes = e.body;
                     edited = true;
                 }
                 Decision::Abort => {
@@ -354,7 +353,7 @@ impl HttpHandler for Capture {
                         status: 499,
                         response: Message {
                             headers: vec![],
-                            body: b"Aborted by breakpoint".to_vec(),
+                            body: Bytes::from_static(b"Aborted by breakpoint"),
                         },
                         duration_ms: self.elapsed(),
                     });
@@ -381,7 +380,7 @@ impl HttpHandler for Capture {
                     .map_or_else(|| "/".into(), std::string::ToString::to_string),
                 request: Message {
                     headers: headers(&parts.headers),
-                    body: bytes.to_vec(),
+                    body: bytes.clone(),
                 },
             });
         }
@@ -411,7 +410,7 @@ impl HttpHandler for Capture {
                 url: String::new(),
                 status: parts.status.as_u16(),
                 headers: headers(&parts.headers),
-                body: bytes.to_vec(),
+                body: bytes.clone(),
             };
             match self.pause(id, Stage::Response, edit).await {
                 Decision::Resume(e) => {
@@ -419,7 +418,7 @@ impl HttpHandler for Capture {
                         parts.status = s;
                     }
                     parts.headers = header_map(&e.headers);
-                    bytes = Bytes::from(e.body);
+                    bytes = e.body;
                 }
                 Decision::Abort => {
                     self.sink.emit(Event::Response {
@@ -438,7 +437,7 @@ impl HttpHandler for Capture {
             status: parts.status.as_u16(),
             response: Message {
                 headers: headers(&parts.headers),
-                body: bytes.to_vec(),
+                body: bytes.clone(),
             },
             duration_ms: self.elapsed(),
         });
@@ -524,8 +523,8 @@ impl WsCap {
                 break;
             };
             let (binary, data) = match &m {
-                WsMessage::Text(t) => (false, Some(t.as_bytes().to_vec())),
-                WsMessage::Binary(b) => (true, Some(b.to_vec())),
+                WsMessage::Text(t) => (false, Some(Bytes::from(t.clone()))),
+                WsMessage::Binary(b) => (true, Some(b.clone())),
                 _ => (false, None),
             };
             if let (Some(data), Some(id)) = (data, id) {
@@ -606,7 +605,7 @@ mod tests {
     impl FlowSink for Frames {
         fn emit(&self, ev: Event) {
             if let Event::Ws { id, msg } = ev {
-                self.0.lock().unwrap().push((id, msg.data));
+                self.0.lock().unwrap().push((id, msg.data.to_vec()));
             }
         }
     }

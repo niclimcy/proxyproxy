@@ -288,13 +288,13 @@ fn replay_tool(store: &FlowStore, arguments: &Value) -> Result<Value, String> {
                     })
                     .collect()
             });
-        let body = arguments
-            .get("body")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .as_bytes()
-            .to_vec();
-        (method, url, headers, body)
+        let body = arguments.get("body").and_then(Value::as_str).unwrap_or("");
+        (
+            method,
+            url,
+            headers,
+            bytes::Bytes::copy_from_slice(body.as_bytes()),
+        )
     };
     let sent = replay::send(&method, &url, &headers, &body)?;
     let flow = replay::replayed_flow(&method, &url, headers, body, &sent);

@@ -81,12 +81,9 @@ pub fn resolve(a: &Action) -> Rule {
             find,
             replace,
             regex,
-        } => Arc::new(replace_body::ReplaceBody {
-            response,
-            find,
-            replace,
-            regex,
-        }),
+        } => Arc::new(replace_body::ReplaceBody::new(
+            response, find, replace, regex,
+        )),
         Action::Mock {
             status,
             content_type,
@@ -100,8 +97,33 @@ pub fn resolve(a: &Action) -> Rule {
     }
 }
 
+#[cfg(test)]
 pub fn resolve_all(actions: &[Action]) -> Vec<Rule> {
     actions.iter().map(resolve).collect()
+}
+
+// Resolved rules outlive a request so per-rule state (a compiled regex) is built once. A cached
+// entry is reused only while its stored action still equals the config's, so edits apply next request.
+#[derive(Default)]
+pub struct RuleCache(std::collections::HashMap<u64, (Action, Rule)>);
+
+impl RuleCache {
+    // deleted rules otherwise linger; rebuilding a few is cheaper than tracking removals
+    const MAX: usize = 512;
+
+    pub fn resolve(&mut self, id: u64, action: &Action) -> Rule {
+        if let Some((cached, rule)) = self.0.get(&id)
+            && cached == action
+        {
+            return rule.clone();
+        }
+        if self.0.len() >= Self::MAX {
+            self.0.clear();
+        }
+        let rule = resolve(action);
+        self.0.insert(id, (action.clone(), rule.clone()));
+        rule
+    }
 }
 
 #[cfg(test)]
@@ -144,6 +166,28 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_rules_pick_up_edits_on_the_next_request() {
+        use crate::proxy::actions::testing::{TestSink, req_parts};
+        let rewrite = |find: &str| Action::ReplaceBody {
+            response: false,
+            find: find.into(),
+            replace: "X".into(),
+            regex: false,
+        };
+        let run = |rule: Rule| {
+            let mut body = bytes::Bytes::from_static(b"foo bar");
+            rule.apply_request(&mut req_parts("http://a/"), &mut body, &TestSink::default());
+            body
+        };
+        let mut cache = RuleCache::default();
+        assert_eq!(run(cache.resolve(1, &rewrite("foo"))), "X bar");
+        assert_eq!(run(cache.resolve(1, &rewrite("foo"))), "X bar");
+        assert_eq!(run(cache.resolve(1, &rewrite("bar"))), "foo X");
+        // another rule id is independent of rule 1's cached entry
+        assert_eq!(run(cache.resolve(2, &rewrite("foo"))), "X bar");
+    }
 
     #[test]
     fn every_action_variant_resolves_with_expected_tag() {

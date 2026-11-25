@@ -66,12 +66,13 @@ impl BodyDecoder for Decoded {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
 
     #[test]
     fn jwt_section_shows_claims_and_expiry() {
         let m = Message {
             headers: vec![],
-            body: b"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwiZXhwIjoxfQ.sig".to_vec(),
+            body: Bytes::from_static(b"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwiZXhwIjoxfQ.sig"),
         };
         let Rendered::Sections(s) = Decoded.render(&m, &Ctx::default(), None) else {
             panic!()
@@ -88,7 +89,7 @@ mod tests {
     fn grpc_frame_header_is_skipped() {
         let m = Message {
             headers: vec![("content-type".into(), "application/grpc".into())],
-            body: vec![0, 0, 0, 0, 2, 0x08, 0x01],
+            body: Bytes::from_static(&[0, 0, 0, 0, 2, 0x08, 0x01]),
         };
         let Rendered::Sections(s) = Decoded.render(&m, &Ctx::default(), None) else {
             panic!()

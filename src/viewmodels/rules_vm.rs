@@ -6,6 +6,7 @@ use crate::domain::pac;
 use crate::domain::policy::url_matches;
 use crate::domain::rule::{Action, Rule};
 use crate::services::flow_store::FlowStore;
+use bytes::Bytes;
 use std::cell::Cell;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -275,7 +276,7 @@ pub struct BpDraft {
     pub status: String,
     pub headers: String,
     pub body: String,
-    orig_body: Vec<u8>,
+    orig_body: Bytes,
     orig_body_text: String,
     reply: Option<tokio::sync::oneshot::Sender<Decision>>,
 }
@@ -321,7 +322,7 @@ impl BpDraft {
                 body: if self.body == self.orig_body_text {
                     self.orig_body.clone()
                 } else {
-                    self.body.clone().into_bytes()
+                    Bytes::from(self.body.clone().into_bytes())
                 },
             })
         } else {
@@ -761,7 +762,7 @@ mod tests {
             vm.cfg
                 .lock()
                 .unwrap()
-                .matching("GET", "https://a.com/x")
+                .matching("GET", "https://a.com/x", |r| r.id)
                 .len(),
             1
         );
@@ -989,7 +990,7 @@ mod tests {
                         url: "http://a/".into(),
                         status: 0,
                         headers: vec![("a".into(), "1".into())],
-                        body: body.to_vec(),
+                        body: Bytes::copy_from_slice(body),
                     },
                     reply: tx,
                 },
@@ -1005,7 +1006,7 @@ mod tests {
             Decision::Resume(e) => assert_eq!(
                 (e.body, e.headers),
                 (
-                    b"changed".to_vec(),
+                    Bytes::from_static(b"changed"),
                     vec![("a".to_string(), "1".to_string())]
                 )
             ),
@@ -1030,7 +1031,7 @@ mod tests {
                 url: String::new(),
                 status: 200,
                 headers: vec![],
-                body: vec![0xff, 0xfe],
+                body: Bytes::from_static(&[0xff, 0xfe]),
             },
             reply: tx,
         });
@@ -1053,7 +1054,7 @@ mod tests {
                 url: "u".into(),
                 status: 0,
                 headers: vec![],
-                body: vec![],
+                body: Bytes::new(),
             },
             reply: tx,
         });

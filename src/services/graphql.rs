@@ -429,11 +429,12 @@ pub fn response_report(m: &Message) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
 
     fn msg(ct: &str, body: &str) -> Message {
         Message {
             headers: vec![("Content-Type".into(), ct.into())],
-            body: body.as_bytes().to_vec(),
+            body: Bytes::copy_from_slice(body.as_bytes()),
         }
     }
 

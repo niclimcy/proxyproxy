@@ -1,5 +1,5 @@
 use super::config::Config;
-use super::rule::{Action, Rule};
+use super::rule::Rule;
 
 impl Config {
     pub fn next_rule_id(&self) -> u64 {
@@ -42,12 +42,18 @@ impl Config {
         !Self::host_in(&self.bypass_tls, host)
     }
 
-    pub fn matching(&mut self, method: &str, url: &str) -> Vec<Action> {
+    // `pick` runs under the config lock, so it lets callers take a cheap handle instead of cloning actions
+    pub fn matching<T>(
+        &mut self,
+        method: &str,
+        url: &str,
+        mut pick: impl FnMut(&Rule) -> T,
+    ) -> Vec<T> {
         let mut out = vec![];
         for r in self.rules.iter_mut().filter(|r| r.enabled) {
             if rule_matches(r, method, url) {
                 r.hits += 1;
-                out.push(r.action.clone());
+                out.push(pick(r));
             }
         }
         out
@@ -200,7 +206,7 @@ mod tests {
         });
         assert!(!c.captured("https://b.com/"));
         // rules stay evaluable; the proxy just skips them for uncaptured hosts
-        assert_eq!(c.matching("GET", "https://b.com/x").len(), 1);
+        assert_eq!(c.matching("GET", "https://b.com/x", |r| r.id).len(), 1);
         c.capture_paused = true;
         assert!(!c.captured("https://a.com/"));
     }
@@ -212,7 +218,7 @@ mod tests {
             shared
                 .lock()
                 .unwrap()
-                .matching("GET", "https://a.com/")
+                .matching("GET", "https://a.com/", |r| r.id)
                 .is_empty()
         );
         shared.lock().unwrap().rules.push(Rule {
@@ -228,7 +234,7 @@ mod tests {
             shared
                 .lock()
                 .unwrap()
-                .matching("GET", "https://a.com/")
+                .matching("GET", "https://a.com/", |r| r.id)
                 .len(),
             1
         );
@@ -237,7 +243,7 @@ mod tests {
             shared
                 .lock()
                 .unwrap()
-                .matching("GET", "https://a.com/")
+                .matching("GET", "https://a.com/", |r| r.id)
                 .is_empty()
         );
     }
@@ -287,7 +293,7 @@ mod tests {
         let mut c = Config::default();
         c.rules.push(rule(1, "a.com", "", true));
         c.rules.push(rule(2, "a.com", "", false));
-        assert_eq!(c.matching("GET", "https://a.com/").len(), 1);
+        assert_eq!(c.matching("GET", "https://a.com/", |r| r.id).len(), 1);
         assert_eq!((c.rules[0].hits, c.rules[1].hits), (1, 0));
     }
 

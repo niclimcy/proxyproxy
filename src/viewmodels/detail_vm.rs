@@ -199,6 +199,7 @@ pub fn raw_text(first: &str, m: &Message) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
 
     fn flow(id: u64, path: &str, body: &str) -> Flow {
         let mut f = Flow::sample(id);
@@ -207,7 +208,7 @@ mod tests {
         f.duration_ms = Some(u128::from(id) * 10);
         f.response = Some(Message {
             headers: vec![],
-            body: body.as_bytes().to_vec(),
+            body: Bytes::copy_from_slice(body.as_bytes()),
         });
         f
     }
@@ -320,7 +321,7 @@ mod tests {
     fn raw_text_has_start_line_headers_blank_line_body() {
         let m = Message {
             headers: vec![("a".into(), "1".into())],
-            body: b"hi".to_vec(),
+            body: Bytes::from_static(b"hi"),
         };
         assert_eq!(raw_text("GET / HTTP/1.1", &m), "GET / HTTP/1.1\na: 1\n\nhi");
     }

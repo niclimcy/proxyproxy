@@ -258,6 +258,7 @@ pub fn csv(flows: &[&Flow]) -> String {
 mod tests {
     use super::*;
     use crate::domain::flow::Message;
+    use bytes::Bytes;
 
     #[test]
     fn binary_response_bodies_round_trip_through_har() {
@@ -265,7 +266,7 @@ mod tests {
         let bin = vec![0x89, b'P', 0xff, 0x00];
         f.response = Some(Message {
             headers: vec![],
-            body: bin.clone(),
+            body: Bytes::copy_from_slice(&bin),
         });
         f.status = Some(200);
         let back = crate::services::importer::import_bytes(har(&[&f]).as_bytes()).unwrap();
@@ -302,12 +303,12 @@ mod tests {
             started_at: std::time::Instant::now(),
             request: Message {
                 headers: vec![("X-A".into(), "b".into())],
-                body: b"hi".to_vec(),
+                body: Bytes::from_static(b"hi"),
             },
             status: Some(200),
             response: Some(Message {
                 headers: vec![("content-type".into(), "text/plain".into())],
-                body: b"ok".to_vec(),
+                body: Bytes::from_static(b"ok"),
             }),
             duration_ms: Some(12),
             tag: String::new(),

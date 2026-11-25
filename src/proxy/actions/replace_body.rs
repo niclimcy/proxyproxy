@@ -2,17 +2,39 @@ use super::{ResParts, RuleAction};
 use crate::proxy::{http_util::replace_body, sink::FlowSink};
 use bytes::Bytes;
 use hudsucker::hyper::http::request::Parts;
+use regex::Regex;
+use std::sync::OnceLock;
 
 pub struct ReplaceBody {
     pub response: bool,
     pub find: String,
     pub replace: String,
     pub regex: bool,
+    // compiled on first use; an invalid pattern stays None and rewrites nothing
+    compiled: OnceLock<Option<Regex>>,
 }
 
 impl ReplaceBody {
+    pub fn new(response: bool, find: String, replace: String, regex: bool) -> Self {
+        Self {
+            response,
+            find,
+            replace,
+            regex,
+            compiled: OnceLock::new(),
+        }
+    }
+
     fn rewrite(&self, body: &mut Bytes) -> bool {
-        match replace_body(body, &self.find, &self.replace, self.regex) {
+        let re = if self.regex {
+            match self.compiled.get_or_init(|| Regex::new(&self.find).ok()) {
+                Some(re) => Some(re),
+                None => return false,
+            }
+        } else {
+            None
+        };
+        match replace_body(body, &self.find, &self.replace, re) {
             Some(b) => {
                 *body = Bytes::from(b);
                 true
@@ -46,12 +68,7 @@ mod tests {
     use super::*;
 
     fn rule(response: bool) -> ReplaceBody {
-        ReplaceBody {
-            response,
-            find: "world".into(),
-            replace: "there".into(),
-            regex: false,
-        }
+        ReplaceBody::new(response, "world".into(), "there".into(), false)
     }
 
     #[test]
@@ -77,5 +94,21 @@ mod tests {
         let mut b = Bytes::from_static(&[0xff, 0xfe]);
         rule(true).apply_response(&mut res_parts(200), &mut b, &TestSink::default());
         assert_eq!(&b[..], &[0xff, 0xfe]);
+    }
+
+    #[test]
+    fn regex_mode_rewrites_and_an_invalid_pattern_changes_nothing() {
+        let sink = TestSink::default();
+        let run = |find: &str| {
+            let mut b = Bytes::from_static(b"a1b22");
+            let edited = ReplaceBody::new(false, find.into(), "#".into(), true).apply_request(
+                &mut req_parts("http://a/"),
+                &mut b,
+                &sink,
+            );
+            (edited, b)
+        };
+        assert_eq!(run(r"\d+"), (true, Bytes::from_static(b"a#b#")));
+        assert_eq!(run("("), (false, Bytes::from_static(b"a1b22")));
     }
 }

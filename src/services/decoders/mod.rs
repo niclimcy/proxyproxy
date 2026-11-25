@@ -79,11 +79,12 @@ pub fn default_for(avail: &[&'static dyn BodyDecoder]) -> ModeId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
 
     fn msg(ct: &str, body: &str) -> Message {
         Message {
             headers: vec![("content-type".into(), ct.into())],
-            body: body.as_bytes().to_vec(),
+            body: Bytes::copy_from_slice(body.as_bytes()),
         }
     }
 

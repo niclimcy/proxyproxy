@@ -61,7 +61,7 @@ pub fn send(
             )
         })
         .collect();
-    let body = res.bytes().map_err(|e| e.to_string())?.to_vec();
+    let body = res.bytes().map_err(|e| e.to_string())?;
     Ok(Sent {
         status,
         response: Message { headers, body },
@@ -83,7 +83,7 @@ pub fn replayed_flow(
     method: &str,
     url: &str,
     headers: Vec<(String, String)>,
-    body: Vec<u8>,
+    body: bytes::Bytes,
     sent: &Sent,
 ) -> Flow {
     let (scheme, host, path) = split_url(url);

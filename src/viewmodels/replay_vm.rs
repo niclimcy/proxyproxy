@@ -154,7 +154,7 @@ impl ReplayVm {
                 &d.method,
                 &d.url,
                 parse_headers(&d.headers),
-                d.body.clone().into_bytes(),
+                d.body.clone().into_bytes().into(),
                 s,
             ));
         }
@@ -171,6 +171,7 @@ mod tests {
     use super::*;
     use crate::domain::flow::Flow;
     use crate::viewmodels::status::NoRepaint;
+    use bytes::Bytes;
 
     fn vm() -> ReplayVm {
         ReplayVm::new(FlowStore::default(), Arc::new(NoRepaint))
@@ -182,7 +183,7 @@ mod tests {
             ms: 7,
             response: Message {
                 headers: vec![],
-                body: b"ok".to_vec(),
+                body: Bytes::from_static(b"ok"),
             },
         }
     }
@@ -199,7 +200,7 @@ mod tests {
                 ("Content-Length".into(), "2".into()),
                 ("X-A".into(), "1".into()),
             ],
-            body: b"hi".to_vec(),
+            body: Bytes::from_static(b"hi"),
         };
         f.response = Some(Message::default());
         vm.store.lock().push(f);

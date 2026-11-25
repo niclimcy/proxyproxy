@@ -21,9 +21,12 @@ pub mod b64 {
         s.serialize_str(&STANDARD.encode(v))
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<bytes::Bytes, D::Error> {
         let s = String::deserialize(d)?;
-        STANDARD.decode(s).map_err(serde::de::Error::custom)
+        STANDARD
+            .decode(s)
+            .map(bytes::Bytes::from)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -31,7 +34,7 @@ pub mod b64 {
 pub struct Message {
     pub headers: Vec<(String, String)>,
     #[serde(with = "b64")]
-    pub body: Vec<u8>,
+    pub body: bytes::Bytes,
 }
 
 impl Message {
@@ -69,7 +72,7 @@ pub struct WsMsg {
     pub binary: bool,
     pub ms: u128,
     #[serde(with = "b64")]
-    pub data: Vec<u8>,
+    pub data: bytes::Bytes,
 }
 
 fn now() -> Instant {
@@ -229,7 +232,7 @@ pub struct BpEdit {
     pub url: String,
     pub status: u16,
     pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
+    pub body: bytes::Bytes,
 }
 
 pub enum Decision {

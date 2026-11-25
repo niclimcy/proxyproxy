@@ -230,6 +230,7 @@ fn term_matches(t: &Term, f: &Flow) -> bool {
 mod tests {
     use super::*;
     use crate::domain::flow::Message;
+    use bytes::Bytes;
 
     fn flow(method: &str, host: &str, path: &str, status: u16, body: &str) -> Flow {
         Flow {
@@ -245,7 +246,7 @@ mod tests {
             status: Some(status),
             response: Some(Message {
                 headers: vec![("content-type".into(), "application/json".into())],
-                body: body.as_bytes().to_vec(),
+                body: Bytes::copy_from_slice(body.as_bytes()),
             }),
             duration_ms: Some(120),
             tag: String::new(),
@@ -357,7 +358,7 @@ mod tests {
     #[test]
     fn gql_matches_operation_name_in_batches() {
         let mut f = base();
-        f.request.body = br#"[{"operationName":"GetUser","query":"{a}"},{"operationName":"Other","query":"{b}"}]"#.to_vec();
+        f.request.body = Bytes::from_static(br#"[{"operationName":"GetUser","query":"{a}"},{"operationName":"Other","query":"{b}"}]"#);
         assert!(Query::parse("gql:other").matches(&f));
         assert!(!Query::parse("gql:missing").matches(&f));
     }

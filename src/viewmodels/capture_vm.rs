@@ -20,6 +20,14 @@ type Counts = BTreeMap<String, BTreeMap<String, usize>>;
 pub type Tree = Vec<(String, Vec<(String, usize)>)>;
 type VisKey = (u64, String, Option<(usize, bool)>);
 
+// What `visible` was built from, so a later refresh can patch it instead of rescanning.
+#[derive(Default)]
+struct VisSeen {
+    epoch: u64,
+    len: usize,
+    log: usize,
+}
+
 pub struct CaptureVm {
     pub store: FlowStore,
     pub icons: IconStore,
@@ -30,6 +38,7 @@ pub struct CaptureVm {
     query_src: String,
     pub visible: Vec<usize>,
     vis_key: VisKey,
+    vis_seen: VisSeen,
     pub sort: Option<(usize, bool)>,
     pub tree: Tree,
     /// Simulator and emulator apps, one folder per platform, kept apart from host apps.
@@ -96,6 +105,7 @@ impl CaptureVm {
             query_src: String::new(),
             visible: vec![],
             vis_key: (0, String::new(), None),
+            vis_seen: VisSeen::default(),
             sort: None,
             tree: vec![],
             platforms: vec![],
@@ -120,20 +130,53 @@ impl CaptureVm {
         if rev == st.rev() && *filter == self.filter && sort == self.sort {
             return;
         }
-        self.visible = st
-            .flows
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| self.query.matches(f))
-            .map(|(i, _)| i)
-            .collect();
-        if let Some((col, asc)) = self.sort {
-            let fl = &st.flows;
-            self.visible.sort_by(|&a, &b| {
-                let o = sort_cmp(col, &fl[a], &fl[b]);
-                if asc { o } else { o.reverse() }
-            });
+        // Only responses and similar ingested updates: re-test just those flows and the new tail.
+        // Unsorted, so `visible` is ascending and a binary search finds each flow's slot.
+        let patch = self.sort.is_none()
+            && self.vis_key.2.is_none()
+            && self.vis_key.1 == self.filter
+            && self.vis_seen.epoch == st.epoch()
+            && self.vis_seen.len <= st.flows.len();
+        if patch {
+            for &i in &st.log()[self.vis_seen.log..] {
+                if i >= self.vis_seen.len {
+                    continue;
+                }
+                match (
+                    self.visible.binary_search(&i),
+                    self.query.matches(&st.flows[i]),
+                ) {
+                    (Ok(at), false) => {
+                        self.visible.remove(at);
+                    }
+                    (Err(at), true) => self.visible.insert(at, i),
+                    _ => {}
+                }
+            }
+            let tail = st.flows.iter().enumerate().skip(self.vis_seen.len);
+            self.visible
+                .extend(tail.filter(|(_, f)| self.query.matches(f)).map(|(i, _)| i));
+        } else {
+            self.visible = st
+                .flows
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| self.query.matches(f))
+                .map(|(i, _)| i)
+                .collect();
+            if let Some((col, asc)) = self.sort {
+                let fl = &st.flows;
+                self.visible.sort_by(|&a, &b| {
+                    let o = sort_cmp(col, &fl[a], &fl[b]);
+                    if asc { o } else { o.reverse() }
+                });
+            }
         }
+        self.vis_seen = VisSeen {
+            epoch: st.epoch(),
+            len: st.flows.len(),
+            log: st.log().len(),
+        };
         self.vis_key = (st.rev(), self.filter.clone(), self.sort);
     }
 
@@ -996,5 +1039,66 @@ mod tests {
         vm.store.lock().push(f);
         vm.refresh_tree();
         assert_eq!(vm.app_ids["Safari"].icon_key, "safari-1");
+    }
+
+    // the patched list must equal what a from-scratch scan would give
+    fn rebuilt(vm: &CaptureVm) -> Vec<usize> {
+        let st = vm.store.lock();
+        (0..st.flows.len())
+            .filter(|&i| vm.query.matches(&st.flows[i]))
+            .collect()
+    }
+
+    #[test]
+    fn ingested_updates_patch_visible_like_a_full_rebuild() {
+        use crate::domain::flow::{Event, Message};
+        let (mut vm, _) = setup(0);
+        vm.filter = "status:200".into();
+        vm.refresh_visible();
+        let ev = |id, status| Event::Response {
+            id,
+            status,
+            response: Message::default(),
+            duration_ms: 1,
+        };
+        {
+            let mut st = vm.store.lock();
+            for id in 1..=4 {
+                st.push(Flow::sample(id));
+            }
+            st.ingest(ev(2, 200));
+            st.ingest(ev(3, 404));
+        }
+        vm.refresh_visible();
+        assert_eq!(vm.visible, vec![1]);
+        assert_eq!(vm.visible, rebuilt(&vm));
+        {
+            let mut st = vm.store.lock();
+            st.ingest(ev(1, 500));
+            st.ingest(ev(4, 200));
+            st.push(Flow::sample(5));
+            st.ingest(ev(5, 200));
+        }
+        vm.refresh_visible();
+        assert_eq!(vm.visible, vec![1, 3, 4]);
+        assert_eq!(vm.visible, rebuilt(&vm));
+    }
+
+    #[test]
+    fn untracked_edits_and_removals_force_a_rebuild() {
+        let (mut vm, _) = setup(6);
+        vm.filter = "is:pinned".into();
+        vm.refresh_visible();
+        assert!(vm.visible.is_empty());
+        {
+            let mut st = vm.store.lock();
+            st.find_mut(3).unwrap().pinned = true;
+        }
+        vm.refresh_visible();
+        assert_eq!(vm.visible, rebuilt(&vm));
+        assert_eq!(vm.visible, vec![2]);
+        vm.remove_flows(|f| f.id != 1);
+        assert_eq!(vm.visible, rebuilt(&vm));
+        assert_eq!(vm.visible, vec![1]);
     }
 }

@@ -4,75 +4,90 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc::Receiver};
 pub const MAX_FLOWS: usize = 20_000;
 const DROP_BATCH: usize = 1000;
 
-fn find(flows: &mut [Flow], id: u64) -> Option<&mut Flow> {
-    flows.iter_mut().rev().find(|f| f.id == id)
+fn find(flows: &mut [Flow], id: u64) -> Option<(usize, &mut Flow)> {
+    flows.iter_mut().enumerate().rev().find(|(_, f)| f.id == id)
 }
 
-pub fn apply(flows: &mut [Flow], ev: Event) -> bool {
-    match ev {
+#[derive(Debug, PartialEq)]
+pub enum Applied {
+    /// Not a flow update; the caller routes it elsewhere.
+    Ignored,
+    /// A flow update that matched no flow, or was dropped by a cap.
+    Unchanged,
+    Changed(usize),
+}
+
+impl Applied {
+    pub fn handled(&self) -> bool {
+        *self != Self::Ignored
+    }
+}
+
+pub fn apply(flows: &mut [Flow], ev: Event) -> Applied {
+    let changed = match ev {
         Event::Response {
             id,
             status,
             response,
             duration_ms,
-        } => {
-            if let Some(f) = find(flows, id) {
-                f.status = Some(status);
-                f.duration_ms = Some(duration_ms);
-                f.response = Some(response);
-            }
-            true
-        }
+        } => find(flows, id).map(|(i, f)| {
+            f.status = Some(status);
+            f.duration_ms = Some(duration_ms);
+            f.response = Some(response);
+            i
+        }),
         Event::Edited {
             id,
             method,
             host,
             path,
             request,
-        } => {
-            if let Some(f) = find(flows, id) {
-                f.method = method;
-                f.host = host;
-                f.path = path;
-                f.request = request;
-                if f.tag.is_empty() {
-                    f.tag = "Edited".into();
-                }
+        } => find(flows, id).map(|(i, f)| {
+            f.method = method;
+            f.host = host;
+            f.path = path;
+            f.request = request;
+            if f.tag.is_empty() {
+                f.tag = "Edited".into();
             }
-            true
-        }
-        Event::Failed { id, error } => {
-            if let Some(f) = find(flows, id) {
-                f.error = Some(error);
-                f.status = Some(502);
-            }
-            true
-        }
+            i
+        }),
+        Event::Failed { id, error } => find(flows, id).map(|(i, f)| {
+            f.error = Some(error);
+            f.status = Some(502);
+            i
+        }),
         Event::Ws { id, msg } => {
-            if let Some(f) = find(flows, id)
-                && f.ws.len() < 5000
-            {
-                f.ws.push(msg);
-            }
-            true
+            find(flows, id)
+                .filter(|(_, f)| f.ws.len() < 5000)
+                .map(|(i, f)| {
+                    f.ws.push(msg);
+                    i
+                })
         }
-        Event::App { id, app, identity } => {
-            if let Some(f) = find(flows, id) {
-                f.app = app;
-                if identity.is_some() {
-                    f.app_id = identity;
-                }
+        Event::App { id, app, identity } => find(flows, id).map(|(i, f)| {
+            f.app = app;
+            if identity.is_some() {
+                f.app_id = identity;
             }
-            true
-        }
-        _ => false,
-    }
+            i
+        }),
+        _ => return Applied::Ignored,
+    };
+    changed.map_or(Applied::Unchanged, Applied::Changed)
 }
+
+// More logged edits than this and a rebuild is cheaper than replaying them.
+const LOG_CAP: usize = 4096;
 
 #[derive(Default)]
 pub struct Inner {
     pub flows: Vec<Flow>,
     rev: u64,
+    // Bumps when indices shift or an edit is untracked; `log` lists the flows `ingest` changed
+    // since, so a reader can patch its derived state instead of rescanning every flow.
+    epoch: u64,
+    log: Vec<usize>,
 }
 
 impl Inner {
@@ -80,10 +95,25 @@ impl Inner {
         self.rev
     }
 
-    pub fn touch(&mut self) {
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub fn log(&self) -> &[usize] {
+        &self.log
+    }
+
+    fn invalidate(&mut self) {
+        self.epoch += 1;
+        self.log.clear();
         self.rev += 1;
     }
 
+    pub fn touch(&mut self) {
+        self.invalidate();
+    }
+
+    // appends keep every index valid, so readers see them as growth past their last length
     pub fn push(&mut self, f: Flow) {
         self.flows.push(f);
         self.rev += 1;
@@ -96,23 +126,31 @@ impl Inner {
 
     pub fn replace(&mut self, fl: Vec<Flow>) {
         self.flows = fl;
-        self.rev += 1;
+        self.invalidate();
     }
 
     pub fn ingest(&mut self, ev: Event) -> bool {
-        if apply(&mut self.flows, ev) {
-            self.rev += 1;
-            true
-        } else {
-            false
+        let applied = apply(&mut self.flows, ev);
+        if !applied.handled() {
+            return false;
         }
+        self.rev += 1;
+        if let Applied::Changed(i) = applied {
+            self.log.push(i);
+            if self.log.len() > LOG_CAP {
+                self.invalidate();
+            }
+        }
+        true
     }
 
     pub fn find(&self, id: u64) -> Option<&Flow> {
         self.flows.iter().find(|f| f.id == id)
     }
 
+    // the caller's edit can't be tracked, so readers rebuild
     pub fn find_mut(&mut self, id: u64) -> Option<&mut Flow> {
+        self.invalidate();
         self.flows.iter_mut().find(|f| f.id == id)
     }
 
@@ -129,12 +167,12 @@ impl Inner {
             }
             keep
         });
-        self.rev += 1;
+        self.invalidate();
     }
 
     pub fn retain(&mut self, keep: impl Fn(&Flow) -> bool) {
         self.flows.retain(|f| keep(f));
-        self.rev += 1;
+        self.invalidate();
     }
 }
 
@@ -172,6 +210,7 @@ mod tests {
     use super::*;
     use crate::domain::app::AppIdentity;
     use crate::domain::flow::{Dir, Message, WsMsg};
+    use bytes::Bytes;
     use std::time::Instant;
 
     fn flow(id: u64) -> Flow {
@@ -208,13 +247,13 @@ mod tests {
             status: 201,
             response: Message {
                 headers: vec![],
-                body: b"ok".to_vec(),
+                body: Bytes::from_static(b"ok"),
             },
             duration_ms: 9,
         };
-        assert!(apply(&mut fs, ev));
+        assert!(apply(&mut fs, ev).handled());
         assert_eq!((fs[1].status, fs[1].duration_ms), (Some(201), Some(9)));
-        assert_eq!(fs[1].response.as_ref().unwrap().body, b"ok");
+        assert_eq!(fs[1].response.as_ref().unwrap().body, &b"ok"[..]);
         assert_eq!(fs[0].status, None);
     }
 
@@ -230,7 +269,7 @@ mod tests {
                 path: "/x".into(),
                 request: Message::default(),
             };
-            assert!(apply(&mut fs, ev));
+            assert!(apply(&mut fs, ev).handled());
         }
         assert_eq!(
             (
@@ -247,13 +286,16 @@ mod tests {
     #[test]
     fn apply_failed_sets_502_and_error() {
         let mut fs = vec![flow(1)];
-        assert!(apply(
-            &mut fs,
-            Event::Failed {
-                id: 1,
-                error: "boom".into()
-            }
-        ));
+        assert!(
+            apply(
+                &mut fs,
+                Event::Failed {
+                    id: 1,
+                    error: "boom".into()
+                }
+            )
+            .handled()
+        );
         assert_eq!(
             (fs[0].status, fs[0].error.as_deref()),
             (Some(502), Some("boom"))
@@ -272,7 +314,7 @@ mod tests {
                         dir: Dir::In,
                         binary: false,
                         ms: 0,
-                        data: vec![],
+                        data: Bytes::new(),
                     },
                 },
             );
@@ -283,14 +325,17 @@ mod tests {
     #[test]
     fn apply_app_sets_label() {
         let mut fs = vec![flow(1)];
-        assert!(apply(
-            &mut fs,
-            Event::App {
-                id: 1,
-                app: "curl".into(),
-                identity: None
-            }
-        ));
+        assert!(
+            apply(
+                &mut fs,
+                Event::App {
+                    id: 1,
+                    app: "curl".into(),
+                    identity: None
+                }
+            )
+            .handled()
+        );
         assert_eq!(fs[0].app, "curl");
         let identity = AppIdentity {
             name: "Maps".into(),
@@ -319,16 +364,19 @@ mod tests {
     #[test]
     fn apply_unknown_id_is_noop_and_other_events_return_false() {
         let mut fs = vec![flow(1)];
-        assert!(apply(
-            &mut fs,
-            Event::Failed {
-                id: 99,
-                error: "x".into()
-            }
-        ));
+        assert!(
+            apply(
+                &mut fs,
+                Event::Failed {
+                    id: 99,
+                    error: "x".into()
+                }
+            )
+            .handled()
+        );
         assert_eq!(fs[0].status, None);
-        assert!(!apply(&mut fs, Event::Log("hi".into())));
-        assert!(!apply(&mut fs, Event::Request(Box::new(flow(3)))));
+        assert!(!apply(&mut fs, Event::Log("hi".into())).handled());
+        assert!(!apply(&mut fs, Event::Request(Box::new(flow(3)))).handled());
     }
 
     #[test]

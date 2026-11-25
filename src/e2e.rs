@@ -458,6 +458,6 @@ async fn har_export_from_the_api_reimports_the_captured_traffic() {
             .unwrap()
             .request
             .body,
-        b"sent"
+        &b"sent"[..]
     );
 }
