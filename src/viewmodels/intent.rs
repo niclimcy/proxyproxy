@@ -52,13 +52,24 @@ pub enum SidebarIntent {
     Unmute(String),
 }
 
+/// A row menu action aimed at the selected flow, for keyboard shortcuts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RowAction {
+    Replay,
+    Pin,
+    Color(Option<u8>),
+    Comment,
+    DiffBase,
+    Mute,
+    Delete,
+}
+
 pub enum ShortcutIntent {
     ToggleSidebar,
     FocusSearch,
     ClearFilter,
     Step(bool),
-    DeleteSelected,
-    ReplaySelected,
+    Selected(RowAction),
     Deselect,
     OpenSettings,
     ToggleCapture,

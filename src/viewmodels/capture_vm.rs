@@ -1,4 +1,4 @@
-use super::intent::{Effect, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
+use super::intent::{Effect, RowAction, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
 use super::status::{Flash, Status};
 use crate::domain::config::{Config, Shared};
 use crate::domain::filter::Query;
@@ -383,18 +383,25 @@ impl CaptureVm {
         }
     }
 
-    pub fn handle_shortcut(&mut self, intent: ShortcutIntent) -> Option<Effect> {
+    pub fn handle_shortcut(&mut self, intent: ShortcutIntent, status: &mut Status) -> Option<Effect> {
         match intent {
             ShortcutIntent::ToggleSidebar => self.handle_toolbar(ToolbarIntent::ToggleSidebar),
             ShortcutIntent::FocusSearch => self.focus_search = true,
             ShortcutIntent::ClearFilter => self.filter.clear(),
             ShortcutIntent::Step(down) => self.step(down),
-            ShortcutIntent::DeleteSelected => {
-                if let Some(id) = self.selected {
-                    self.remove_flows(|f| f.id != id);
-                }
+            ShortcutIntent::Selected(action) => {
+                let id = self.selected?;
+                let row = match action {
+                    RowAction::Replay => RowIntent::Replay(id),
+                    RowAction::Pin => RowIntent::Pin(id),
+                    RowAction::Color(c) => RowIntent::Color(id, c),
+                    RowAction::Comment => RowIntent::Comment(id),
+                    RowAction::DiffBase => RowIntent::DiffBase(id),
+                    RowAction::Mute => RowIntent::Mute(self.store.lock().find(id)?.hostname().to_string()),
+                    RowAction::Delete => RowIntent::Delete(id),
+                };
+                return self.handle_row(row, status);
             }
-            ShortcutIntent::ReplaySelected => return self.selected.map(Effect::OpenReplay),
             ShortcutIntent::Deselect => self.selected = None,
             ShortcutIntent::OpenSettings => return Some(Effect::OpenSettings),
             ShortcutIntent::ToggleCapture => self.handle_toolbar(ToolbarIntent::ToggleCapture),
@@ -505,12 +512,12 @@ mod tests {
 
     #[test]
     fn sidebar_and_follow_toggle_through_intents() {
-        let (mut vm, _) = setup(0);
+        let (mut vm, mut status) = setup(0);
         let (sidebar, follow) = (vm.show_sidebar, vm.follow);
         vm.handle_toolbar(ToolbarIntent::ToggleSidebar);
         vm.handle_toolbar(ToolbarIntent::ToggleFollow);
         assert_eq!((vm.show_sidebar, vm.follow), (!sidebar, !follow));
-        vm.handle_shortcut(ShortcutIntent::ToggleSidebar);
+        vm.handle_shortcut(ShortcutIntent::ToggleSidebar, &mut status);
         assert_eq!(vm.show_sidebar, sidebar);
     }
 
@@ -629,51 +636,123 @@ mod tests {
 
     #[test]
     fn arrow_stepping_selects_and_stops_follow() {
-        let (mut vm, _) = setup(3);
+        let (mut vm, mut status) = setup(3);
         vm.refresh_visible();
-        vm.handle_shortcut(ShortcutIntent::Step(true));
+        vm.handle_shortcut(ShortcutIntent::Step(true), &mut status);
         assert_eq!(vm.selected, Some(1));
         assert!(!vm.follow);
-        vm.handle_shortcut(ShortcutIntent::Step(true));
-        vm.handle_shortcut(ShortcutIntent::Step(true));
-        vm.handle_shortcut(ShortcutIntent::Step(true));
+        vm.handle_shortcut(ShortcutIntent::Step(true), &mut status);
+        vm.handle_shortcut(ShortcutIntent::Step(true), &mut status);
+        vm.handle_shortcut(ShortcutIntent::Step(true), &mut status);
         assert_eq!(vm.selected, Some(3));
-        vm.handle_shortcut(ShortcutIntent::Step(false));
+        vm.handle_shortcut(ShortcutIntent::Step(false), &mut status);
         assert_eq!(vm.selected, Some(2));
     }
 
     #[test]
     fn settings_shortcut_opens_settings() {
-        let (mut vm, _) = setup(0);
+        let (mut vm, mut status) = setup(0);
         assert!(matches!(
-            vm.handle_shortcut(ShortcutIntent::OpenSettings),
+            vm.handle_shortcut(ShortcutIntent::OpenSettings, &mut status),
             Some(Effect::OpenSettings)
         ));
     }
 
+    const ROW_ACTIONS: [RowAction; 7] = [
+        RowAction::Replay,
+        RowAction::Pin,
+        RowAction::Color(Some(3)),
+        RowAction::Comment,
+        RowAction::DiffBase,
+        RowAction::Mute,
+        RowAction::Delete,
+    ];
+
+    fn selected(a: RowAction) -> ShortcutIntent {
+        ShortcutIntent::Selected(a)
+    }
+
     #[test]
-    fn delete_and_replay_shortcuts_need_a_selection() {
-        let (mut vm, _) = setup(2);
-        assert!(vm.handle_shortcut(ShortcutIntent::ReplaySelected).is_none());
-        vm.handle_shortcut(ShortcutIntent::DeleteSelected);
+    fn row_shortcuts_do_nothing_without_a_selection() {
+        let (mut vm, mut status) = setup(2);
+        for a in ROW_ACTIONS {
+            assert!(vm.handle_shortcut(selected(a), &mut status).is_none(), "{a:?}");
+        }
         assert_eq!(vm.flow_count(), 2);
-        vm.selected = Some(1);
-        assert!(matches!(
-            vm.handle_shortcut(ShortcutIntent::ReplaySelected),
-            Some(Effect::OpenReplay(1))
-        ));
-        vm.handle_shortcut(ShortcutIntent::DeleteSelected);
-        assert_eq!(vm.flow_count(), 1);
+        assert_eq!(vm.selected, None);
+        assert!(status.text.is_empty());
+        assert!(vm.cfg.lock().unwrap().muted.is_empty());
+        let st = vm.store.lock();
+        assert!(st.flows.iter().all(|f| !f.pinned && f.color.is_none()));
+    }
+
+    #[test]
+    fn row_shortcuts_apply_to_the_selected_flow() {
+        let (mut vm, mut status) = setup(3);
+        vm.selected = Some(2);
+        assert!(matches!(vm.handle_shortcut(selected(RowAction::Replay), &mut status), Some(Effect::OpenReplay(2))));
+        assert!(matches!(vm.handle_shortcut(selected(RowAction::DiffBase), &mut status), Some(Effect::DiffBase(2))));
+        assert!(status.text.starts_with("#2 is the diff base"));
+        vm.handle_shortcut(selected(RowAction::Pin), &mut status);
+        vm.handle_shortcut(selected(RowAction::Color(Some(3))), &mut status);
+        {
+            let st = vm.store.lock();
+            let (f1, f2) = (st.find(1).unwrap(), st.find(2).unwrap());
+            assert!(f2.pinned && f2.color == Some(3));
+            assert!(!f1.pinned && f1.color.is_none());
+        }
+        vm.handle_shortcut(selected(RowAction::Mute), &mut status);
+        assert_eq!(vm.cfg.lock().unwrap().muted, vec!["h0.com".to_string()]);
+        // mute only hides from the record; the flow already captured stays
+        assert_eq!(vm.flow_count(), 3);
+        vm.handle_shortcut(selected(RowAction::Delete), &mut status);
+        vm.refresh_visible();
+        assert_eq!(ids(&vm), vec![1, 3]);
         assert_eq!(vm.selected, None);
     }
 
     #[test]
+    fn pin_shortcut_toggles() {
+        let (mut vm, mut status) = setup(1);
+        vm.selected = Some(1);
+        let pinned = |vm: &CaptureVm| vm.store.lock().find(1).unwrap().pinned;
+        vm.handle_shortcut(selected(RowAction::Pin), &mut status);
+        assert!(pinned(&vm));
+        vm.handle_shortcut(selected(RowAction::Pin), &mut status);
+        assert!(!pinned(&vm));
+    }
+
+    #[test]
+    fn color_shortcuts_set_and_clear() {
+        let (mut vm, mut status) = setup(1);
+        vm.selected = Some(1);
+        let color = |vm: &CaptureVm| vm.store.lock().find(1).unwrap().color;
+        vm.handle_shortcut(selected(RowAction::Color(Some(0))), &mut status);
+        assert_eq!(color(&vm), Some(0));
+        vm.handle_shortcut(selected(RowAction::Color(Some(4))), &mut status);
+        assert_eq!(color(&vm), Some(4));
+        vm.handle_shortcut(selected(RowAction::Color(None)), &mut status);
+        assert_eq!(color(&vm), None);
+    }
+
+    #[test]
+    fn comment_shortcut_selects_and_shows_overview() {
+        let (mut vm, mut status) = setup(2);
+        vm.selected = Some(2);
+        assert!(matches!(
+            vm.handle_shortcut(selected(RowAction::Comment), &mut status),
+            Some(Effect::ShowOverview)
+        ));
+        assert_eq!(vm.selected, Some(2));
+    }
+
+    #[test]
     fn row_menu_shortcut_needs_a_selection() {
-        let (mut vm, _) = setup(2);
-        vm.handle_shortcut(ShortcutIntent::OpenRowMenu);
+        let (mut vm, mut status) = setup(2);
+        vm.handle_shortcut(ShortcutIntent::OpenRowMenu, &mut status);
         assert!(!vm.row_menu);
         vm.selected = Some(1);
-        vm.handle_shortcut(ShortcutIntent::OpenRowMenu);
+        vm.handle_shortcut(ShortcutIntent::OpenRowMenu, &mut status);
         assert!(vm.row_menu);
     }
 
@@ -715,7 +794,7 @@ mod tests {
 
     #[test]
     fn column_visibility_and_capture_pause() {
-        let (mut vm, _) = setup(0);
+        let (mut vm, mut status) = setup(0);
         vm.handle_toolbar(ToolbarIntent::SetColumn("Host", false));
         vm.handle_toolbar(ToolbarIntent::SetColumn("Host", false));
         assert_eq!(vm.config_snapshot().hidden_cols, vec!["Host".to_string()]);
@@ -723,7 +802,7 @@ mod tests {
         assert!(vm.config_snapshot().hidden_cols.is_empty());
         vm.handle_toolbar(ToolbarIntent::ToggleCapture);
         assert!(vm.config_snapshot().capture_paused);
-        vm.handle_shortcut(ShortcutIntent::ToggleCapture);
+        vm.handle_shortcut(ShortcutIntent::ToggleCapture, &mut status);
         assert!(!vm.config_snapshot().capture_paused);
     }
 

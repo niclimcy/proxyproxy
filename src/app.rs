@@ -243,9 +243,9 @@ impl App {
 
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.capture.refresh_visible();
-        for i in views::shortcuts::read(ctx) {
+        for i in views::shortcuts::read(ctx, self.capture.selected.is_some()) {
             let before = self.capture.selected;
-            let e = self.capture.handle_shortcut(i);
+            let e = self.capture.handle_shortcut(i, &mut self.status);
             if self.capture.selected != before {
                 self.detail.on_select();
             }
