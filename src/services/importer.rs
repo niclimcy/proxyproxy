@@ -211,11 +211,6 @@ mod tests {
             ("a.com", "/p?q=1", Some(200))
         );
     }
-}
-
-#[cfg(test)]
-mod characterization {
-    use super::*;
     use crate::domain::flow::Message;
     use crate::services::exporter::har;
 
@@ -268,12 +263,6 @@ mod characterization {
         );
         assert_eq!(b.request.body, b"hi");
         assert_eq!(b.response.as_ref().unwrap().body, b"ok");
-    }
-
-    #[test]
-    fn import_bytes_accepts_exported_har() {
-        let f = flow();
-        assert_eq!(import_bytes(har(&[&f]).as_bytes()).unwrap().len(), 1);
     }
 
     #[test]

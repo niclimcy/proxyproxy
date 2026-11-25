@@ -1076,8 +1076,14 @@ mod tests {
         vm.cfg.lock().unwrap().upstream.url = "http://user:secret@proxy:3128".into();
         let json = vm.rules_json();
         assert!(!json.contains("secret"));
-        vm.import_rules(&json, &mut Status::new(String::new(), Arc::new(NoRepaint)));
-        assert_eq!(vm.cfg.lock().unwrap().rules.len(), 2);
+        let mut st = Status::new(String::new(), Arc::new(NoRepaint));
+        vm.import_rules(&json, &mut st);
+        let ids: Vec<u64> = vm.cfg.lock().unwrap().rules.iter().map(|r| r.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert_ne!(ids[0], ids[1], "imported rules get fresh ids");
+        assert_eq!(st.text, "Rules imported");
+        vm.import_rules("not json", &mut st);
+        assert!(st.text.starts_with("Error:"));
     }
 
     #[test]
@@ -1097,21 +1103,6 @@ mod tests {
         f.method = "POST".into();
         vm.store.lock().push(f);
         assert_eq!(vm.live_matches(), 1);
-    }
-
-    #[test]
-    fn rules_export_import_roundtrip_reassigns_ids() {
-        let mut vm = vm();
-        add_block(&mut vm, "a.com");
-        let json = vm.rules_json();
-        let mut st = Status::new(String::new(), Arc::new(NoRepaint));
-        vm.import_rules(&json, &mut st);
-        let ids: Vec<u64> = vm.cfg.lock().unwrap().rules.iter().map(|r| r.id).collect();
-        assert_eq!(ids.len(), 2);
-        assert_ne!(ids[0], ids[1]);
-        assert_eq!(st.text, "Rules imported");
-        vm.import_rules("not json", &mut st);
-        assert!(st.text.starts_with("Error:"));
     }
 
     #[test]

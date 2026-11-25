@@ -250,11 +250,6 @@ mod tests {
         assert!(!c.should_decrypt("api.a.com"));
         assert!(c.should_decrypt("b.com"));
     }
-}
-
-#[cfg(test)]
-mod characterization {
-    use super::*;
 
     fn rule(id: u64, pattern: &str, method: &str, enabled: bool) -> Rule {
         Rule {
@@ -394,10 +389,4 @@ mod characterization {
         assert!(!c.captured("https://b.com/") && c.captured("https://c.com/"));
     }
 
-    #[test]
-    fn config_without_exclude_deserializes() {
-        let c: Config = serde_json::from_str(r#"{"rules":[],"scope_only":true,"scope":["a.com"],"muted":["m.com"]}"#).unwrap();
-        assert!(c.exclude.is_empty());
-        assert!(c.captured("https://a.com/x") && !c.captured("https://b.com/x") && !c.captured("https://m.com/x"));
-    }
 }

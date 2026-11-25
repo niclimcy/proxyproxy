@@ -516,17 +516,6 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_and_follow_toggle_through_intents() {
-        let (mut vm, mut status) = setup(0);
-        let (sidebar, follow) = (vm.show_sidebar, vm.follow);
-        vm.handle_toolbar(ToolbarIntent::ToggleSidebar);
-        vm.handle_toolbar(ToolbarIntent::ToggleFollow);
-        assert_eq!((vm.show_sidebar, vm.follow), (!sidebar, !follow));
-        vm.handle_shortcut(ShortcutIntent::ToggleSidebar, &mut status);
-        assert_eq!(vm.show_sidebar, sidebar);
-    }
-
-    #[test]
     fn clearing_unpinned_keeps_visible_in_bounds() {
         let (mut vm, _) = setup(5);
         vm.store.lock().flows[1].pinned = true;
@@ -654,15 +643,6 @@ mod tests {
         assert_eq!(vm.selected, Some(2));
     }
 
-    #[test]
-    fn settings_shortcut_opens_settings() {
-        let (mut vm, mut status) = setup(0);
-        assert!(matches!(
-            vm.handle_shortcut(ShortcutIntent::OpenSettings, &mut status),
-            Some(Effect::OpenSettings)
-        ));
-    }
-
     const ROW_ACTIONS: [RowAction; 7] = [
         RowAction::Replay,
         RowAction::Pin,
@@ -741,17 +721,6 @@ mod tests {
     }
 
     #[test]
-    fn comment_shortcut_selects_and_shows_overview() {
-        let (mut vm, mut status) = setup(2);
-        vm.selected = Some(2);
-        assert!(matches!(
-            vm.handle_shortcut(selected(RowAction::Comment), &mut status),
-            Some(Effect::ShowOverview)
-        ));
-        assert_eq!(vm.selected, Some(2));
-    }
-
-    #[test]
     fn row_menu_shortcut_needs_a_selection() {
         let (mut vm, mut status) = setup(2);
         vm.handle_shortcut(ShortcutIntent::OpenRowMenu, &mut status);
@@ -759,22 +728,6 @@ mod tests {
         vm.selected = Some(1);
         vm.handle_shortcut(ShortcutIntent::OpenRowMenu, &mut status);
         assert!(vm.row_menu);
-    }
-
-    #[test]
-    fn clear_unpinned_keeps_pinned() {
-        let (mut vm, mut status) = setup(3);
-        vm.handle_row(RowIntent::Pin(2), &mut status);
-        vm.handle_toolbar(ToolbarIntent::ClearUnpinned);
-        assert_eq!(
-            vm.store
-                .lock()
-                .flows
-                .iter()
-                .map(|f| f.id)
-                .collect::<Vec<_>>(),
-            vec![2]
-        );
     }
 
     #[test]

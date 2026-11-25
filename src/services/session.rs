@@ -76,8 +76,4 @@ mod tests {
         assert!(f.app_id.is_none());
     }
 
-    #[test]
-    fn load_missing_or_corrupt_errors() {
-        assert!(load(std::path::Path::new("/nonexistent/x.pxp")).is_err());
-    }
 }

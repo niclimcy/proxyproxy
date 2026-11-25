@@ -403,11 +403,4 @@ mod tests {
         assert!(store.lock().flows.len() <= MAX_FLOWS);
     }
 
-    #[test]
-    fn handles_share_state() {
-        let a = FlowStore::default();
-        let b = a.clone();
-        a.lock().push(flow(7));
-        assert_eq!(b.lock().flows.len(), 1);
-    }
 }

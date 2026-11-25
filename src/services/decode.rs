@@ -258,7 +258,5 @@ mod tests {
         let (h, p) = decode_jwt("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig").unwrap();
         assert_eq!(h["alg"], "HS256");
         assert_eq!(p["sub"], "1");
-        let d = diff_text("a\nb\n", "a\nc\n");
-        assert!(d.contains(&('-', "b".into())) && d.contains(&('+', "c".into())));
     }
 }

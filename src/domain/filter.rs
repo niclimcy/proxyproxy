@@ -279,12 +279,6 @@ mod tests {
         }
         assert!(Query::parse("status:>=x").error.is_some());
     }
-}
-
-#[cfg(test)]
-mod characterization {
-    use super::*;
-    use crate::domain::flow::Message;
 
     fn base() -> Flow {
         Flow {

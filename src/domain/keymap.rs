@@ -204,14 +204,12 @@ mod tests {
     }
 
     #[test]
-    fn overrides_survive_a_config_roundtrip_and_old_configs_get_defaults() {
+    fn overrides_survive_a_config_roundtrip() {
         let mut cfg = Config::default();
         cfg.set_binding(RowAction::Color(Some(2)), b("K", true)).unwrap();
         cfg.set_binding(RowAction::Mute, None).unwrap();
         let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
         assert_eq!(back.binding(RowAction::Color(Some(2))), b("K", true));
         assert_eq!(back.binding(RowAction::Mute), None);
-        let old: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
-        assert_eq!(old.binding(RowAction::Replay), b("R", false));
     }
 }

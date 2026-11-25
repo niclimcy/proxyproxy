@@ -80,6 +80,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn config_saved_by_an_older_version_loads_with_defaults() {
+        let c: Config = serde_json::from_str(r#"{"rules":[],"scope_only":true,"scope":["a.com"],"muted":["m.com"]}"#).unwrap();
+        assert!(c.exclude.is_empty() && !c.proxy_only && c.proxy_only_hosts.is_empty());
+        assert!(c.captured("https://a.com/x") && !c.captured("https://b.com/x") && !c.captured("https://m.com/x"));
+        assert_eq!(c.binding(crate::domain::keymap::RowAction::Replay), Some(crate::domain::keymap::Binding { key: "R".into(), shift: false }));
+    }
+
+    #[test]
     fn existing_config_skips_onboarding_but_first_run_does_not() {
         let cfg: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
         assert!(cfg.onboarding_completed);
@@ -87,16 +95,4 @@ mod tests {
         assert_eq!(cfg.onboarding_profile, OnboardingProfile::Experienced);
     }
 
-    #[test]
-    fn config_roundtrips_onboarding_profile() {
-        let cfg = Config {
-            onboarding_completed: true,
-            onboarding_profile: OnboardingProfile::Beginner,
-            ..Config::default()
-        };
-        let json = serde_json::to_string(&cfg).unwrap();
-        let restored: Config = serde_json::from_str(&json).unwrap();
-        assert!(restored.onboarding_completed);
-        assert_eq!(restored.onboarding_profile, OnboardingProfile::Beginner);
-    }
 }

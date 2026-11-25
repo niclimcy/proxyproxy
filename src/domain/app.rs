@@ -214,7 +214,6 @@ mod tests {
         assert_ne!(icon_key("com.x.a", 1), icon_key("com.x.a", 2));
         let k = icon_key("/Applications/My App.app", 7);
         assert!(!k.contains('/') && !k.contains(' '));
-        assert_eq!(icon_key("com.x.a", 1), icon_key("com.x.a", 1));
     }
 
     #[test]
@@ -255,8 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn avatar_is_deterministic() {
-        assert_eq!(avatar_slot("Maps", 5), avatar_slot("Maps", 5));
+    fn avatar_slot_is_in_range_and_letter_falls_back() {
         assert!(avatar_slot("x", 5) < 5);
         assert_eq!(avatar_letter("maps"), 'M');
         assert_eq!(avatar_letter(""), '?');

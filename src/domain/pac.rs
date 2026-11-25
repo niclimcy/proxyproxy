@@ -171,12 +171,6 @@ mod tests {
     }
 
     #[test]
-    fn old_config_without_proxy_only_still_loads() {
-        let c: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
-        assert!(!c.proxy_only && c.proxy_only_hosts.is_empty());
-    }
-
-    #[test]
     fn file_urls_per_platform() {
         assert_eq!(file_url("/Users/a b/Library/x.pac"), "file:///Users/a%20b/Library/x.pac");
         assert_eq!(file_url(r"C:\Users\a b\AppData\Roaming\proxyproxy\x.pac"), "file:///C:/Users/a%20b/AppData/Roaming/proxyproxy/x.pac");

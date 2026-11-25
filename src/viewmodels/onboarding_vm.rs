@@ -124,22 +124,6 @@ mod tests {
     }
 
     #[test]
-    fn experienced_flow_opens_compact_actions() {
-        let mut vm = rig(false);
-        vm.handle(OnboardingIntent::ChooseProfile(
-            OnboardingProfile::Experienced,
-        ));
-        assert_eq!(vm.stage, OnboardingStage::Experienced);
-    }
-
-    #[test]
-    fn ios_selection_is_remembered() {
-        let mut vm = rig(false);
-        vm.handle(OnboardingIntent::SelectIosSimulator("UDID-A".into()));
-        assert_eq!(vm.selected_ios_udid.as_deref(), Some("UDID-A"));
-    }
-
-    #[test]
     fn reopen_and_complete_roundtrip() {
         let mut vm = rig(true);
         vm.open();

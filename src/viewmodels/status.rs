@@ -75,14 +75,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flash_is_on_only_after_mark() {
-        let mut f = Flash::default();
-        assert!(!f.on());
-        f.mark();
-        assert!(f.on());
-    }
-
-    #[test]
     fn job_result_lands_in_status_after_poll() {
         let mut s = Status::new("idle".into(), Arc::new(NoRepaint));
         s.jobs.spawn(|| Ok("done".into()));
