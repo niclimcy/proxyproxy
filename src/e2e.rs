@@ -288,7 +288,10 @@ async fn socks5_upstream_gets_the_destination_and_credentials() {
         assert_eq!(&host[..n], b"example.test");
         assert_eq!(u16::from_be_bytes([host[n], host[n + 1]]), 8443);
         s.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 80]).unwrap();
-        s.read(&mut [0u8; 1024]).unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            head.push(rd(&mut s, 1)[0]);
+        }
         s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 13\r\nconnection: close\r\n\r\nthrough socks").unwrap();
     });
     let rig = rig(Config {
