@@ -60,6 +60,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `policy.rs` | `Config::captured` (scope, exclude, mute against the full URL), `should_decrypt`, `matching`; URL and glob matching |
 | `app.rs` | `AppIdentity` and pure helpers: `.app` bundle from an executable path, Info.plist fields, simulator and emulator detection, icon cache keys, letter-avatar slot |
 | `filter.rs` | search query parser |
+| `keymap.rs` | `RowAction`, `Binding`, default row shortcuts, and `Config::binding`/`set_binding` (user overrides in `Config::shortcuts`, rejecting conflicts, reserved combos and unsupported keys) |
 | `mime.rs` | file extension to content type |
 | `repaint.rs` | `Repaint` trait |
 | `about.rs` | app name, version, author and license for the About window |
@@ -109,7 +110,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `detail_vm.rs` | tabs, view modes, diff base and cache |
 | `rules_vm.rs` | rule form, breakpoints, console, scope lists, `RuleKind` |
 | `replay_vm.rs` | replay and compose drafts |
-| `network_vm.rs`, `schemas_vm.rs` | the Network and Schemas tabs of Settings |
+| `network_vm.rs`, `schemas_vm.rs`, `keymap_vm.rs` | the Network, Schemas and Shortcuts tabs of Settings (Shortcuts: record, change, turn off and reset row shortcuts) |
 | `settings_vm.rs` | Settings window visibility and tab |
 | `about_vm.rs` | About window visibility |
 | `session_vm.rs` | autosave, session and rules files |
@@ -119,7 +120,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `intent.rs` | intent and effect enums |
 
 ### `views/`
-One file per screen area: `toolbar`, `sidebar`, `table` (its row menu is one function, opened by right-click at the pointer or by Shift+F10 / the Menu key anchored to the selected row), `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab` and `schemas_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts` (reads keys into `ShortcutIntent`s; `ROW_KEYS` holds the row bindings and `hint` labels them in the row menu), `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
+One file per screen area: `toolbar`, `sidebar`, `table` (its row menu is one function, opened by right-click at the pointer or by Shift+F10 / the Menu key anchored to the selected row), `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab`, `schemas_tab` and `shortcuts_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts` (reads keys into `ShortcutIntent`s using the live keymap from `Config`; `hint` labels the row menu), `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
 
 ## Extending
 
