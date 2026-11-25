@@ -106,14 +106,62 @@ jobs:
           chmod +x dist/ProxyProxy.app/Contents/MacOS/proxyproxy
           ditto -c -k --sequesterRsrc --keepParent dist/ProxyProxy.app dist/proxyproxy-macos-universal.zip
 
-          DMG_BG_DIR="$(mktemp -d)"
-          qlmanage -t -s 600 -o "$DMG_BG_DIR" assets/dmg-background.svg >/dev/null
-          DMG_BACKGROUND="$(find "$DMG_BG_DIR" -name '*.png' -print -quit)"
-
           python3 -m venv .dmgbuild-venv
-          .dmgbuild-venv/bin/python -m pip install dmgbuild
+          .dmgbuild-venv/bin/python -m pip install dmgbuild pillow
+
+          # qlmanage pads to a square with the SVG top-left, and only at the size asked;
+          # a 1x PNG gets upscaled on Retina, so build a 1x+2x multi-resolution TIFF.
+          DMG_BG_DIR="$(mktemp -d)"
+          for scale in 1 2; do
+            mkdir "$DMG_BG_DIR/$scale"
+            qlmanage -t -s $((600 * scale)) -o "$DMG_BG_DIR/$scale" assets/dmg-background.svg >/dev/null
+            .dmgbuild-venv/bin/python - "$DMG_BG_DIR" "$scale" <<'PY'
+          import glob, sys
+          from PIL import Image
+          d, scale = sys.argv[1], int(sys.argv[2])
+          src = glob.glob(f"{d}/{scale}/*.png")[0]
+          name = "bg.png" if scale == 1 else "bg@2x.png"
+          Image.open(src).convert("RGB").crop((0, 0, 600 * scale, 400 * scale)).save(
+              f"{d}/{name}", dpi=(72 * scale, 72 * scale)
+          )
+          PY
+          done
+          DMG_BACKGROUND="$DMG_BG_DIR/background.tiff"
+          tiffutil -cathidpicheck "$DMG_BG_DIR/bg.png" "$DMG_BG_DIR/bg@2x.png" -out "$DMG_BACKGROUND"
+
+          cat > "$DMG_BG_DIR/dmgbuild.py" <<'PY'
+          import os.path
+
+
+          application = defines.get("app")
+          appname = os.path.basename(application)
+
+          format = "UDZO"
+          files = [application]
+          symlinks = {"Applications": "/Applications"}
+
+          icon_locations = {
+              appname: (140, 220),
+              "Applications": (460, 220),
+          }
+
+          background = defines.get("background")
+          show_status_bar = False
+          show_tab_view = False
+          show_toolbar = False
+          show_pathbar = False
+          show_sidebar = False
+
+          window_rect = ((100, 100), (600, 400))
+          default_view = "icon-view"
+          arrange_by = None
+          grid_offset = (0, 0)
+          grid_spacing = 100
+          icon_size = 128
+          PY
+
           .dmgbuild-venv/bin/dmgbuild \
-            -s assets/dmgbuild.py \
+            -s "$DMG_BG_DIR/dmgbuild.py" \
             -D app="$PWD/dist/ProxyProxy.app" \
             -D background="$DMG_BACKGROUND" \
             "proxyproxy" \
