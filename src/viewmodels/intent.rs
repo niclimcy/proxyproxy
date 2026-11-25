@@ -1,5 +1,6 @@
 use super::rules_vm::RuleKind;
 use crate::domain::config::OnboardingProfile;
+use crate::domain::keymap::{Binding, RowAction};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -52,18 +53,6 @@ pub enum SidebarIntent {
     Unmute(String),
 }
 
-/// A row menu action aimed at the selected flow, for keyboard shortcuts.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum RowAction {
-    Replay,
-    Pin,
-    Color(Option<u8>),
-    Comment,
-    DiffBase,
-    Mute,
-    Delete,
-}
-
 pub enum ShortcutIntent {
     ToggleSidebar,
     FocusSearch,
@@ -74,6 +63,17 @@ pub enum ShortcutIntent {
     OpenSettings,
     ToggleCapture,
     OpenRowMenu,
+}
+
+pub enum KeymapIntent {
+    /// Wait for the next Cmd combo for this action.
+    Record(RowAction),
+    Cancel,
+    Set(RowAction, Binding),
+    /// Turn the shortcut off.
+    Clear(RowAction),
+    Reset(RowAction),
+    ResetAll,
 }
 
 pub enum SessionIntent {

@@ -1,3 +1,4 @@
+use super::keymap::{Binding, RowAction};
 use super::rule::Rule;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -38,6 +39,9 @@ pub struct Config {
     pub proto_descs: Vec<String>,
     #[serde(default)]
     pub keylog_path: String,
+    /// Changed row shortcuts; `None` turns one off. Actions not listed keep their default.
+    #[serde(default)]
+    pub shortcuts: Vec<(RowAction, Option<Binding>)>,
     #[serde(skip)]
     pub capture_paused: bool,
 }

@@ -1,33 +1,23 @@
-use crate::viewmodels::intent::{RowAction, ShortcutIntent};
+use crate::domain::keymap::{Binding, RowAction};
+use crate::viewmodels::intent::ShortcutIntent;
 use crate::views::theme::cmd;
 use eframe::egui::{self, Key};
 
-/// Cmd+key bindings for the selected row: key, whether Shift is part of it, action.
-/// Cmd+M is taken by macOS (Minimize), so mute adds Shift.
-pub const ROW_KEYS: [(Key, bool, RowAction); 11] = [
-    (Key::R, false, RowAction::Replay),
-    (Key::P, false, RowAction::Pin),
-    (Key::Slash, false, RowAction::Comment),
-    (Key::D, false, RowAction::DiffBase),
-    (Key::M, true, RowAction::Mute),
-    (Key::Num1, false, RowAction::Color(Some(0))),
-    (Key::Num2, false, RowAction::Color(Some(1))),
-    (Key::Num3, false, RowAction::Color(Some(2))),
-    (Key::Num4, false, RowAction::Color(Some(3))),
-    (Key::Num5, false, RowAction::Color(Some(4))),
-    (Key::Num0, false, RowAction::Color(None)),
-];
+/// How a binding reads on screen, e.g. ⌘⇧M or Ctrl+⇧M.
+pub fn combo(b: &Binding) -> String {
+    let key = Key::from_name(&b.key).map_or_else(|| b.key.clone(), |k| k.symbol_or_name().to_string());
+    format!("{}{}{key}", cmd(), if b.shift { "⇧" } else { "" })
+}
 
 /// Shortcut label for a row action, as the row menu shows it.
-pub fn hint(action: RowAction) -> Option<String> {
+pub fn hint(action: RowAction, keymap: &[(RowAction, Binding)]) -> Option<String> {
     if action == RowAction::Delete {
         return Some(Key::Delete.name().to_string());
     }
-    let (key, shift, _) = ROW_KEYS.into_iter().find(|&(_, _, a)| a == action)?;
-    Some(format!("{}{}{}", cmd(), if shift { "⇧" } else { "" }, key.symbol_or_name()))
+    keymap.iter().find(|(a, _)| *a == action).map(|(_, b)| combo(b))
 }
 
-pub fn read(ctx: &egui::Context, has_selection: bool) -> Vec<ShortcutIntent> {
+pub fn read(ctx: &egui::Context, keymap: &[(RowAction, Binding)], has_selection: bool) -> Vec<ShortcutIntent> {
     let mut out = vec![];
     let typing = ctx.text_edit_focused();
     // an open menu owns the arrows, Enter and Escape
@@ -83,9 +73,10 @@ pub fn read(ctx: &egui::Context, has_selection: bool) -> Vec<ShortcutIntent> {
     if has_selection {
         ctx.input_mut(|i| {
             let m = i.modifiers;
-            for (key, shift, action) in ROW_KEYS {
-                if m.command && m.shift == shift && !m.alt && i.consume_key(m, key) {
-                    out.push(ShortcutIntent::Selected(action));
+            for (action, b) in keymap {
+                let Some(key) = Key::from_name(&b.key) else { continue };
+                if m.command && m.shift == b.shift && !m.alt && i.consume_key(m, key) {
+                    out.push(ShortcutIntent::Selected(*action));
                 }
             }
         });

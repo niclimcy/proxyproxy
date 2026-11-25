@@ -2,6 +2,7 @@ pub mod about;
 pub mod app;
 pub mod config;
 pub mod filter;
+pub mod keymap;
 pub mod flow;
 pub mod mime;
 pub mod pac;

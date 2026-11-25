@@ -9,6 +9,7 @@ use crate::viewmodels::{
     detail_vm::DetailVm,
     devices_vm::DevicesVm,
     intent::{Effect, SessionIntent, ToolbarIntent},
+    keymap_vm::KeymapVm,
     network_vm::NetworkVm,
     onboarding_vm::OnboardingVm,
     replay_vm::ReplayVm,
@@ -66,6 +67,7 @@ struct App {
     devices: DevicesVm,
     about: AboutVm,
     settings: SettingsVm,
+    keymap: KeymapVm,
     onboarding: OnboardingVm,
 }
 
@@ -103,6 +105,7 @@ impl App {
             replay: ReplayVm::new(store.clone(), repaint.clone()),
             network: NetworkVm::new(cfg.clone()),
             schemas: SchemasVm::new(cfg.clone()),
+            keymap: KeymapVm::new(cfg.clone()),
             session,
             devices: DevicesVm::new(port, cert.clone(), cfg, repaint.clone()),
             status: Status::new(status_text, repaint),
@@ -207,8 +210,16 @@ impl App {
         }
         self.replay.prune_closed();
         views::about_window::show(ctx, &mut self.about);
-        let (net, schemas) =
-            views::settings_window::show(ctx, &mut self.settings, &self.network, &self.schemas);
+        let (net, schemas, keys) = views::settings_window::show(
+            ctx,
+            &mut self.settings,
+            &self.network,
+            &self.schemas,
+            &self.keymap,
+        );
+        for i in keys {
+            self.keymap.handle(i);
+        }
         for i in net {
             self.network.handle(i, &mut self.status);
         }
@@ -243,7 +254,7 @@ impl App {
 
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.capture.refresh_visible();
-        for i in views::shortcuts::read(ctx, self.capture.selected.is_some()) {
+        for i in views::shortcuts::read(ctx, &self.capture.keymap(), self.capture.selected.is_some()) {
             let before = self.capture.selected;
             let e = self.capture.handle_shortcut(i, &mut self.status);
             if self.capture.selected != before {

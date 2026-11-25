@@ -1,6 +1,7 @@
 use crate::domain::flow::Flow;
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
-use crate::viewmodels::intent::{RowAction, RowIntent};
+use crate::domain::keymap::{Binding, RowAction};
+use crate::viewmodels::intent::RowIntent;
 use crate::viewmodels::rules_vm::RuleKind;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::theme::*;
@@ -58,6 +59,7 @@ pub fn show(
 ) -> Vec<RowIntent> {
     let open_menu = std::mem::take(&mut vm.row_menu);
     let vm = &*vm;
+    let keymap = vm.keymap();
     let mut out = vec![];
     let hidden = vm.hidden_cols();
     let cols: Vec<usize> = (0..ALL_COLS.len())
@@ -251,7 +253,7 @@ pub fn show(
                 if resp.clicked() {
                     out.push(RowIntent::Select(f.id));
                 }
-                resp.context_menu(|ui| row_menu(ui, f, false, &mut out));
+                resp.context_menu(|ui| row_menu(ui, f, false, &keymap, &mut out));
                 if !selected {
                     stray_focus |= resp.has_focus();
                     return;
@@ -273,7 +275,7 @@ pub fn show(
                 menu.show(|ui| {
                     // the first pass is a non-interactive sizing pass, so focus waits for the real one
                     let focus = !ui.is_sizing_pass() && ctx.data_mut(|d| d.remove_temp::<bool>(focus_first)).unwrap_or(false);
-                    row_menu(ui, f, focus, &mut out);
+                    row_menu(ui, f, focus, &keymap, &mut out);
                 });
                 if was_open && !egui::Popup::is_id_open(ctx, menu_id) {
                     resp.request_focus();
@@ -300,8 +302,8 @@ pub fn show(
 }
 
 /// Row actions, shared by right-click and the keyboard.
-fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, out: &mut Vec<RowIntent>) {
-    use crate::views::shortcuts::hint;
+fn row_menu(ui: &mut egui::Ui, f: &Flow, focus_first: bool, keymap: &[(RowAction, Binding)], out: &mut Vec<RowIntent>) {
+    let hint = |a: A| crate::views::shortcuts::hint(a, keymap);
     use RowAction as A;
     let id = f.id;
     let item = |ui: &mut egui::Ui, l: &str, action: Option<A>| {

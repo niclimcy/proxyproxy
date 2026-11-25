@@ -1,4 +1,5 @@
-use super::intent::{Effect, RowAction, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
+use super::intent::{Effect, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
+use crate::domain::keymap::{Binding, RowAction};
 use super::status::{Flash, Status};
 use crate::domain::config::{Config, Shared};
 use crate::domain::filter::Query;
@@ -427,6 +428,10 @@ impl CaptureVm {
             self.selected = Some(st.flows[i].id);
             self.follow = false;
         }
+    }
+
+    pub fn keymap(&self) -> Vec<(RowAction, Binding)> {
+        self.cfg.lock().unwrap().keymap()
     }
 
     pub fn capture_paused(&self) -> bool {

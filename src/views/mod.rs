@@ -11,6 +11,7 @@ pub mod rules_panel;
 pub mod schemas_tab;
 pub mod settings_window;
 pub mod shortcuts;
+pub mod shortcuts_tab;
 pub mod sidebar;
 pub mod table;
 pub mod theme;

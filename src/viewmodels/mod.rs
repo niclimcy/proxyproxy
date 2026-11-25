@@ -3,6 +3,7 @@ pub mod capture_vm;
 pub mod detail_vm;
 pub mod devices_vm;
 pub mod intent;
+pub mod keymap_vm;
 pub mod network_vm;
 pub mod onboarding_vm;
 pub mod replay_vm;

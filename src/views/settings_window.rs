@@ -1,9 +1,10 @@
-use crate::viewmodels::intent::{NetworkIntent, SchemasIntent};
+use crate::viewmodels::intent::{KeymapIntent, NetworkIntent, SchemasIntent};
+use crate::viewmodels::keymap_vm::KeymapVm;
 use crate::viewmodels::network_vm::NetworkVm;
 use crate::viewmodels::schemas_vm::SchemasVm;
 use crate::viewmodels::settings_vm::{SettingsTab, SettingsVm};
 use crate::views::theme::*;
-use crate::views::{network_tab, schemas_tab};
+use crate::views::{network_tab, schemas_tab, shortcuts_tab};
 use eframe::egui::{self, Frame, Margin, ScrollArea};
 
 pub fn show(
@@ -11,10 +12,11 @@ pub fn show(
     vm: &mut SettingsVm,
     network: &NetworkVm,
     schemas: &SchemasVm,
-) -> (Vec<NetworkIntent>, Vec<SchemasIntent>) {
-    let (mut net, mut sch) = (vec![], vec![]);
+    keymap: &KeymapVm,
+) -> (Vec<NetworkIntent>, Vec<SchemasIntent>, Vec<KeymapIntent>) {
+    let (mut net, mut sch, mut keys) = (vec![], vec![], vec![]);
     if !vm.show {
-        return (net, sch);
+        return (net, sch, keys);
     }
     let builder = egui::ViewportBuilder::default()
         .with_title("Settings")
@@ -24,8 +26,10 @@ pub fn show(
         egui::ViewportId::from_hash_of("settings"),
         builder,
         |ui, _| {
+            // while a shortcut is being recorded, Cmd+W is a combo to record (and get rejected), not close
+            let recording = keymap.recording.is_some();
             let close = ui.input(|i| {
-                (i.modifiers.command && i.key_pressed(egui::Key::W))
+                (!recording && i.modifiers.command && i.key_pressed(egui::Key::W))
                     || i.viewport().close_requested()
             });
             if close {
@@ -40,6 +44,7 @@ pub fn show(
                         &[
                             (SettingsTab::Network, "Network"),
                             (SettingsTab::Schemas, "Schemas"),
+                            (SettingsTab::Shortcuts, "Shortcuts"),
                         ],
                     );
                 });
@@ -51,9 +56,10 @@ pub fn show(
                         .show(ui, |ui| match vm.tab {
                             SettingsTab::Network => net = network_tab::show(ui, network),
                             SettingsTab::Schemas => sch = schemas_tab::show(ui, schemas),
+                            SettingsTab::Shortcuts => keys = shortcuts_tab::show(ui, keymap),
                         });
                 });
         },
     );
-    (net, sch)
+    (net, sch, keys)
 }
