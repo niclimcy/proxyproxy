@@ -1,3 +1,4 @@
+use crate::domain::flow::Flow;
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
 use crate::viewmodels::intent::RowIntent;
 use crate::viewmodels::rules_vm::RuleKind;
@@ -247,99 +248,102 @@ pub fn show(
                 if resp.clicked() {
                     out.push(RowIntent::Select(f.id));
                 }
-                resp.context_menu(|ui| {
-                    let id = f.id;
-                    let b = |ui: &mut egui::Ui, l: &str| {
-                        let c = menu_item(ui, l).clicked();
-                        if c {
-                            ui.close();
-                        }
-                        c
-                    };
-                    let host = f.hostname().to_string();
-                    let (route_only, route_add) = (
-                        ico(ph::ARROWS_SPLIT, "Route only this host through proxy"),
-                        ico(ph::ARROWS_SPLIT, "Add to proxy-only list"),
-                    );
-                    let (replay, mute, only, only_path, exclude) = (
-                        ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd())),
-                        ico(ph::EYE_SLASH, &format!("Mute {host}")),
-                        ico(ph::TARGET, "Scope to this host"),
-                        ico(ph::TARGET, "Scope to this URL path"),
-                        ico(ph::EYE_SLASH, "Exclude this URL"),
-                    );
-                    menu_width(ui, &[&replay, &mute, &only, &only_path, &exclude, &route_only, &route_add, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
-                    if b(ui, &replay) {
-                        out.push(RowIntent::Replay(id));
-                    }
-                    ui.menu_button(ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), |ui| {
-                        use RuleKind as K;
-                        menu_width(ui, &["Mock this response", "Throttle / delay"]);
-                        for (k, l) in [(K::Breakpoint, "Breakpoint"), (K::Mock, "Mock this response"), (K::Block, "Block"), (K::Throttle, "Throttle / delay"), (K::Redirect, "Redirect to…"), (K::Header, "Rewrite header"), (K::Script, "Script")] {
-                            if b(ui, l) {
-                                out.push(RowIntent::Rule(id, k));
-                            }
-                        }
-                    });
-                    ui.separator();
-                    if b(ui, &ico(ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" })) {
-                        out.push(RowIntent::Pin(id));
-                    }
-                    ui.menu_button(ico(ph::PALETTE, "Color"), |ui| {
-                        menu_width(ui, &["Purple"]);
-                        if b(ui, "None") {
-                            out.push(RowIntent::Color(id, None));
-                        }
-                        for (i, (n, _)) in tag_colors().iter().enumerate() {
-                            if b(ui, n) {
-                                out.push(RowIntent::Color(id, Some(i as u8)));
-                            }
-                        }
-                    });
-                    if b(ui, &ico(ph::NOTE, "Comment…")) {
-                        out.push(RowIntent::Comment(id));
-                    }
-                    if b(ui, &ico(ph::GIT_DIFF, "Use as diff base")) {
-                        out.push(RowIntent::DiffBase(id));
-                    }
-                    ui.separator();
-                    ui.menu_button(ico(ph::COPY, "Copy as"), |ui| {
-                        use crate::services::exporter as ex;
-                        menu_width(ui, &["Python requests"]);
-                        for (l, s) in [("URL", f.url()), ("cURL", ex::curl(f)), ("fetch", ex::fetch(f)), ("Python requests", ex::python(f)), ("HTTPie", ex::httpie(f)), ("Raw HTTP", ex::raw_http(f))] {
-                            if b(ui, l) {
-                                ctx.copy_text(s);
-                            }
-                        }
-                    });
-                    if b(ui, &mute) {
-                        out.push(RowIntent::Mute(host.clone()));
-                    }
-                    if b(ui, &only) {
-                        out.push(RowIntent::Scope(host.clone()));
-                    }
-                    if b(ui, &only_path) {
-                        out.push(RowIntent::ScopePath(id));
-                    }
-                    if b(ui, &route_only) {
-                        out.push(RowIntent::ProxyOnlyHost(host.clone()));
-                    }
-                    if b(ui, &route_add) {
-                        out.push(RowIntent::ProxyOnlyAdd(host.clone()));
-                    }
-                    if b(ui, &exclude) {
-                        out.push(RowIntent::Exclude(id));
-                    }
-                    if b(ui, &ico(ph::LOCK_OPEN, "Don't decrypt this host")) {
-                        out.push(RowIntent::NoTls(host));
-                    }
-                    ui.separator();
-                    if b(ui, &ico(ph::TRASH, "Delete")) {
-                        out.push(RowIntent::Delete(id));
-                    }
-                });
+                resp.context_menu(|ui| row_menu(ui, f, &mut out));
             });
         });
     });
     out
+}
+
+/// Row actions, shared by right-click and the keyboard.
+fn row_menu(ui: &mut egui::Ui, f: &Flow, out: &mut Vec<RowIntent>) {
+    let id = f.id;
+    let b = |ui: &mut egui::Ui, l: &str| {
+        let c = menu_item(ui, l).clicked();
+        if c {
+            ui.close();
+        }
+        c
+    };
+    let host = f.hostname().to_string();
+    let (route_only, route_add) = (
+        ico(ph::ARROWS_SPLIT, "Route only this host through proxy"),
+        ico(ph::ARROWS_SPLIT, "Add to proxy-only list"),
+    );
+    let (replay, mute, only, only_path, exclude) = (
+        ico(ph::PLAY, &format!("Replay / edit…  ({}R)", cmd())),
+        ico(ph::EYE_SLASH, &format!("Mute {host}")),
+        ico(ph::TARGET, "Scope to this host"),
+        ico(ph::TARGET, "Scope to this URL path"),
+        ico(ph::EYE_SLASH, "Exclude this URL"),
+    );
+    menu_width(ui, &[&replay, &mute, &only, &only_path, &exclude, &route_only, &route_add, &ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request")]);
+    if b(ui, &replay) {
+        out.push(RowIntent::Replay(id));
+    }
+    ui.menu_button(ico(ph::SLIDERS_HORIZONTAL, "Create rule from this request"), |ui| {
+        use RuleKind as K;
+        menu_width(ui, &["Mock this response", "Throttle / delay"]);
+        for (k, l) in [(K::Breakpoint, "Breakpoint"), (K::Mock, "Mock this response"), (K::Block, "Block"), (K::Throttle, "Throttle / delay"), (K::Redirect, "Redirect to…"), (K::Header, "Rewrite header"), (K::Script, "Script")] {
+            if b(ui, l) {
+                out.push(RowIntent::Rule(id, k));
+            }
+        }
+    });
+    ui.separator();
+    if b(ui, &ico(ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" })) {
+        out.push(RowIntent::Pin(id));
+    }
+    ui.menu_button(ico(ph::PALETTE, "Color"), |ui| {
+        menu_width(ui, &["Purple"]);
+        if b(ui, "None") {
+            out.push(RowIntent::Color(id, None));
+        }
+        for (i, (n, _)) in tag_colors().iter().enumerate() {
+            if b(ui, n) {
+                out.push(RowIntent::Color(id, Some(i as u8)));
+            }
+        }
+    });
+    if b(ui, &ico(ph::NOTE, "Comment…")) {
+        out.push(RowIntent::Comment(id));
+    }
+    if b(ui, &ico(ph::GIT_DIFF, "Use as diff base")) {
+        out.push(RowIntent::DiffBase(id));
+    }
+    ui.separator();
+    ui.menu_button(ico(ph::COPY, "Copy as"), |ui| {
+        use crate::services::exporter as ex;
+        menu_width(ui, &["Python requests"]);
+        for (l, s) in [("URL", f.url()), ("cURL", ex::curl(f)), ("fetch", ex::fetch(f)), ("Python requests", ex::python(f)), ("HTTPie", ex::httpie(f)), ("Raw HTTP", ex::raw_http(f))] {
+            if b(ui, l) {
+                ui.ctx().copy_text(s);
+            }
+        }
+    });
+    if b(ui, &mute) {
+        out.push(RowIntent::Mute(host.clone()));
+    }
+    if b(ui, &only) {
+        out.push(RowIntent::Scope(host.clone()));
+    }
+    if b(ui, &only_path) {
+        out.push(RowIntent::ScopePath(id));
+    }
+    if b(ui, &route_only) {
+        out.push(RowIntent::ProxyOnlyHost(host.clone()));
+    }
+    if b(ui, &route_add) {
+        out.push(RowIntent::ProxyOnlyAdd(host.clone()));
+    }
+    if b(ui, &exclude) {
+        out.push(RowIntent::Exclude(id));
+    }
+    if b(ui, &ico(ph::LOCK_OPEN, "Don't decrypt this host")) {
+        out.push(RowIntent::NoTls(host));
+    }
+    ui.separator();
+    if b(ui, &ico(ph::TRASH, "Delete")) {
+        out.push(RowIntent::Delete(id));
+    }
 }
