@@ -359,7 +359,7 @@ pub fn apply_route(route: &Route, port: u16) -> Res {
 
 #[cfg(target_os = "macos")]
 pub fn trust_ca_on_host(cert: &str) -> Res {
-    let kc = dirs::home_dir()
+    let kc = std::env::home_dir()
         .ok_or("no home dir")?
         .join("Library/Keychains/login.keychain-db");
     run(
