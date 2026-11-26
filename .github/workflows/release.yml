@@ -3,21 +3,81 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to create or update"
+      bump:
+        description: "Version bump (none rebuilds the version in Cargo.toml)"
         required: true
-        type: string
-        default: "v0.4.0"
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - none
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    name: Bump version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Bump Cargo.toml, commit and tag
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          CURRENT=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          IFS=. read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          case "$BUMP" in
+            major) VERSION="$((MAJOR + 1)).0.0" ;;
+            minor) VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+            patch) VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+            none) VERSION="$CURRENT" ;;
+          esac
+          TAG="v$VERSION"
+          tag_exists() { git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ "$VERSION" != "$CURRENT" ]; then
+            if tag_exists; then
+              echo "::error::$TAG already exists"
+              exit 1
+            fi
+            sed -i "0,/^version = \".*\"$/s//version = \"$VERSION\"/" Cargo.toml
+            perl -0pi -e "s/(name = \"proxyproxy\"\nversion = \")[^\"]+/\${1}$VERSION/" Cargo.lock
+            git commit -am "chore: bump version to $VERSION"
+            git push origin "HEAD:$BRANCH"
+          fi
+
+          # With bump=none an existing tag is rebuilt as is.
+          if ! tag_exists; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $CURRENT -> $VERSION ($TAG)" >> "$GITHUB_STEP_SUMMARY"
+
   windows:
     name: Windows (x86_64)
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
@@ -44,9 +104,12 @@ jobs:
 
   macos:
     name: macOS (universal)
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
@@ -65,7 +128,7 @@ jobs:
 
       - name: Create app bundle
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
         run: |
           VERSION="${RELEASE_TAG#v}"
           mkdir -p dist/ProxyProxy.app/Contents/{MacOS,Resources}
@@ -177,10 +240,13 @@ jobs:
 
   linux:
     name: Linux distributions
+    needs: version
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Install build and packaging dependencies
         run: |
@@ -275,9 +341,47 @@ jobs:
 
   release:
     name: Publish GitHub release
-    needs: [windows, macos, linux]
+    needs: [version, windows, macos, linux]
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Find changelog range
+        id: range
+        run: |
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' --exclude "$RELEASE_TAG" "$RELEASE_TAG^" 2>/dev/null || true)
+          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          echo "range=${PREV:+$PREV..}$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4.9.1
+        with:
+          config: cliff.toml
+          args: ${{ steps.range.outputs.range }} --tag ${{ env.RELEASE_TAG }} --strip all
+        env:
+          OUTPUT: CHANGES.md
+
+      - name: Write release notes
+        env:
+          PREV: ${{ steps.range.outputs.prev }}
+        run: |
+          {
+            if [ -n "$PREV" ]; then
+              echo "Changes since [$PREV](https://github.com/${{ github.repository }}/releases/tag/$PREV)."
+            fi
+            cat CHANGES.md
+            if [ -n "$PREV" ]; then
+              echo
+              echo "**Full diff:** https://github.com/${{ github.repository }}/compare/$PREV...$RELEASE_TAG"
+            fi
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/download-artifact@v8.0.2
         with:
           path: dist
@@ -287,8 +391,8 @@ jobs:
       - name: Publish
         uses: softprops/action-gh-release@v3.0.4
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          name: proxyproxy ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: proxyproxy ${{ env.RELEASE_TAG }}
           draft: true
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           files: dist/*
