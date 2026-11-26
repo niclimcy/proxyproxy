@@ -5,8 +5,8 @@ use crate::viewmodels::intent::RowIntent;
 use crate::viewmodels::rules_vm::RuleKind;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::theme::{
-    FS_CAPTION, FS_TITLE, GAP, HIT, PAD, accent, action_button, action_button_sized, badge, card,
-    card_panel, fg_muted, fmt_size, ico, menu_item, menu_width, method_color, muted, overline,
+    FS_CAPTION, FS_TITLE, HIT, PAD, accent, action_button, action_button_sized, badge, card,
+    clipped_card, fg_muted, fmt_size, ico, menu_item, menu_width, method_color, muted, overline,
     pill, status_color, status_dot, submenu_item, success, tag_colors, violet, warning,
 };
 use eframe::egui::{self, RichText};
@@ -77,16 +77,7 @@ pub fn show(
     let sort = vm.sort;
     let has_flows = vm.has_flows();
 
-    // The card is painted at the slot's size, not the content's, so columns that can't shrink further
-    // get clipped instead of stretching the border over the neighbouring panel.
-    egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
-        let frame = card_panel();
-        let slot = ui.max_rect().shrink(f32::from(GAP) / 2.0);
-        ui.painter().rect(slot, frame.corner_radius, frame.fill, frame.stroke, egui::StrokeKind::Inside);
-        let inner = slot.shrink(f32::from(PAD));
-        let mut body = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-        body.set_clip_rect(inner.intersect(ui.clip_rect()));
-        let ui = &mut body;
+    egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| clipped_card(ui, |ui| {
         if !has_flows {
             ui.vertical_centered(|ui| {
                 ui.add_space((ui.available_height() - 280.0).max(24.0) / 2.0);
@@ -306,7 +297,7 @@ pub fn show(
                 ctx.memory_mut(|m| m.request_focus(id));
             }
         });
-    });
+    }));
     out
 }
 

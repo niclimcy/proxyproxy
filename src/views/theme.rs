@@ -830,6 +830,28 @@ pub fn card_panel() -> Frame {
         .inner_margin(Margin::same(PAD))
 }
 
+/// A `card_panel` painted at the slot's size, not the content's: content that can't shrink
+/// further is clipped instead of stretching the card into the gap, over a neighbour's
+/// resize grip. Use inside a panel with `Frame::NONE`; the slot is the whole `ui.max_rect()`.
+pub fn clipped_card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let frame = card_panel();
+    let slot = ui.max_rect().shrink(f32::from(GAP) / 2.0);
+    ui.painter().rect(
+        slot,
+        frame.corner_radius,
+        frame.fill,
+        frame.stroke,
+        egui::StrokeKind::Inside,
+    );
+    let inner = slot.shrink(f32::from(PAD));
+    let mut body = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    body.set_clip_rect(inner.intersect(ui.clip_rect()));
+    let r = add(&mut body);
+    // The child doesn't advance its parent; claim the slot so a sized panel keeps its size.
+    ui.expand_to_include_rect(ui.max_rect());
+    r
+}
+
 /// Root frame for secondary windows: the same backdrop the main workspace sits on, so
 /// `pane` cards inside get the same gaps as the main window's panels.
 pub fn window_frame() -> Frame {

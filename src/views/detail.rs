@@ -8,9 +8,9 @@ use crate::viewmodels::intent::DetailIntent;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::body;
 use crate::views::theme::{
-    RADIUS, badge, canvas, card_panel, checkbox, cmd, danger, fg_muted, fmt_size, icon_button,
-    icon_only, menu_item, menu_width, method_color, muted, overline, pill, resize_grip,
-    resize_line, segmented, status_color, success, toolbar_menu, violet, warning,
+    RADIUS, badge, canvas, card_panel, checkbox, clipped_card, cmd, danger, fg_muted, fmt_size,
+    icon_button, icon_only, menu_item, menu_width, method_color, muted, overline, pill,
+    resize_grip, resize_line, segmented, status_color, success, toolbar_menu, violet, warning,
 };
 use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
@@ -120,111 +120,116 @@ pub fn show(
         .size_range(SNAP_WITHIN..=max_h)
         .default_size(if full { max_h } else { 360.0 })
         .show_separator_line(false)
-        .frame(card_panel())
+        .frame(Frame::NONE)
         .show_collapsible(ui, &mut expanded, |ui| {
-            resize_line(ui, false);
-            let Some(f) = selected_flow else {
-                return;
-            };
-            let url = f.url();
-            Frame::new()
-                .fill(canvas())
-                .corner_radius(CornerRadius::same(RADIUS))
-                .inner_margin(Margin::symmetric(8, 4))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let name = f.app_label();
-                        app_label_hover(
-                            app_icon(ui, icons, &name, f.app_id.as_ref()),
-                            &name,
-                            f.app_id.as_ref(),
-                        );
-                        badge(
-                            ui,
-                            if f.is_ws { "WS" } else { &f.method },
-                            if f.is_ws {
-                                violet()
-                            } else {
-                                method_color(&f.method)
-                            },
-                            false,
-                        );
-                        if let Some(s) = f.status {
-                            badge(ui, &s.to_string(), status_color(s), false);
-                        }
-                        if !f.tag.is_empty() {
-                            pill(ui, &f.tag, violet());
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_only(ui, ph::X, "Close details (Esc)").clicked() {
-                                close_clicked = true;
+            clipped_card(ui, |ui| {
+                resize_line(ui, false);
+                let Some(f) = selected_flow else {
+                    return;
+                };
+                let url = f.url();
+                Frame::new()
+                    .fill(canvas())
+                    .corner_radius(CornerRadius::same(RADIUS))
+                    .inner_margin(Margin::symmetric(8, 4))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let name = f.app_label();
+                            app_label_hover(
+                                app_icon(ui, icons, &name, f.app_id.as_ref()),
+                                &name,
+                                f.app_id.as_ref(),
+                            );
+                            badge(
+                                ui,
+                                if f.is_ws { "WS" } else { &f.method },
+                                if f.is_ws {
+                                    violet()
+                                } else {
+                                    method_color(&f.method)
+                                },
+                                false,
+                            );
+                            if let Some(s) = f.status {
+                                badge(ui, &s.to_string(), status_color(s), false);
                             }
-                            if icon_only(ui, ph::COPY, "Copy URL").clicked() {
-                                ctx.copy_text(url.clone());
+                            if !f.tag.is_empty() {
+                                pill(ui, &f.tag, violet());
                             }
-                            // URL reads on from the badges; the copy button stays at the edge
                             ui.with_layout(
-                                egui::Layout::left_to_right(egui::Align::Center),
+                                egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    ui.add(
-                                        egui::Label::new(RichText::new(&url).monospace())
-                                            .truncate(),
-                                    )
-                                    .on_hover_text(&url);
+                                    if icon_only(ui, ph::X, "Close details (Esc)").clicked() {
+                                        close_clicked = true;
+                                    }
+                                    if icon_only(ui, ph::COPY, "Copy URL").clicked() {
+                                        ctx.copy_text(url.clone());
+                                    }
+                                    // URL reads on from the badges; the copy button stays at the edge
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Label::new(RichText::new(&url).monospace())
+                                                    .truncate(),
+                                            )
+                                            .on_hover_text(&url);
+                                        },
+                                    );
                                 },
                             );
                         });
                     });
-                });
-            ui.horizontal(|ui| {
-                let mut tabs = vec![
-                    (DTab::Split, "Request / Response"),
-                    (DTab::Overview, "Overview"),
-                    (DTab::Diff, "Diff"),
-                ];
-                if f.is_ws {
-                    tabs.push((DTab::Messages, "Messages"));
-                }
-                segmented(ui, &mut vm.tab, &tabs);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    toolbar_menu(ui, ph::COPY, "Copy as", false, |ui| {
-                        menu_width(ui, &["Python requests"]);
-                        for (l, s) in [
-                            ("URL", f.url()),
-                            ("cURL", ex::curl(f)),
-                            ("fetch", ex::fetch(f)),
-                            ("Python requests", ex::python(f)),
-                            ("HTTPie", ex::httpie(f)),
-                            ("Raw HTTP", ex::raw_http(f)),
-                        ] {
-                            if menu_item(ui, l, None).clicked() {
-                                ctx.copy_text(s);
-                                ui.close();
+                ui.horizontal(|ui| {
+                    let mut tabs = vec![
+                        (DTab::Split, "Request / Response"),
+                        (DTab::Overview, "Overview"),
+                        (DTab::Diff, "Diff"),
+                    ];
+                    if f.is_ws {
+                        tabs.push((DTab::Messages, "Messages"));
+                    }
+                    segmented(ui, &mut vm.tab, &tabs);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        toolbar_menu(ui, ph::COPY, "Copy as", false, |ui| {
+                            menu_width(ui, &["Python requests"]);
+                            for (l, s) in [
+                                ("URL", f.url()),
+                                ("cURL", ex::curl(f)),
+                                ("fetch", ex::fetch(f)),
+                                ("Python requests", ex::python(f)),
+                                ("HTTPie", ex::httpie(f)),
+                                ("Raw HTTP", ex::raw_http(f)),
+                            ] {
+                                if menu_item(ui, l, None).clicked() {
+                                    ctx.copy_text(s);
+                                    ui.close();
+                                }
                             }
+                        });
+                        if icon_button(ui, ph::PLAY, "Replay / edit", true).clicked() {
+                            out.push(DetailIntent::Replay(f.id));
+                        }
+                        if icon_button(
+                            ui,
+                            ph::PUSH_PIN,
+                            if f.pinned { "Unpin" } else { "Pin" },
+                            true,
+                        )
+                        .clicked()
+                        {
+                            out.push(DetailIntent::TogglePin(f.id));
                         }
                     });
-                    if icon_button(ui, ph::PLAY, "Replay / edit", true).clicked() {
-                        out.push(DetailIntent::Replay(f.id));
-                    }
-                    if icon_button(
-                        ui,
-                        ph::PUSH_PIN,
-                        if f.pinned { "Unpin" } else { "Pin" },
-                        true,
-                    )
-                    .clicked()
-                    {
-                        out.push(DetailIntent::TogglePin(f.id));
-                    }
                 });
+                ui.add_space(4.0);
+                match vm.tab {
+                    DTab::Split => split_ui(ui, vm, f),
+                    DTab::Overview => overview_ui(ui, &st.flows, f, &mut out),
+                    DTab::Diff => diff_ui(ui, vm, &st.flows, f, &mut out),
+                    DTab::Messages => ws_ui(ui, vm, f, &mut out),
+                }
             });
-            ui.add_space(4.0);
-            match vm.tab {
-                DTab::Split => split_ui(ui, vm, f),
-                DTab::Overview => overview_ui(ui, &st.flows, f, &mut out),
-                DTab::Diff => diff_ui(ui, vm, &st.flows, f, &mut out),
-                DTab::Messages => ws_ui(ui, vm, f, &mut out),
-            }
         })
     else {
         // Fully slid shut. A fresh id drops the stored tiny size so it reopens at default.
