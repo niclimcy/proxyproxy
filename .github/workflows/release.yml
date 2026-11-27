@@ -374,7 +374,7 @@ jobs:
             cat CHANGES.md
             if [ -n "$PREV" ]; then
               echo
-              echo "**Full diff:** https://github.com/${{ github.repository }}/compare/$PREV...$RELEASE_TAG"
+              echo "**Full Changelog:** https://github.com/${{ github.repository }}/compare/$PREV...$RELEASE_TAG"
             fi
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
