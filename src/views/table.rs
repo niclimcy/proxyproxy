@@ -1,7 +1,7 @@
 use crate::domain::flow::Flow;
 use crate::domain::keymap::{Binding, RowAction};
 use crate::viewmodels::capture_vm::{ALL_COLS, CaptureVm};
-use crate::viewmodels::intent::RowIntent;
+use crate::viewmodels::intent::{MockTarget, RowIntent};
 use crate::viewmodels::rules_vm::RuleKind;
 use crate::views::app_icon::{app_icon, app_label_hover};
 use crate::views::theme::{
@@ -64,10 +64,16 @@ pub fn show(
     vm: &mut CaptureVm,
     diff_base: Option<u64>,
     port: u16,
+    collections: &dyn Fn() -> Vec<(u64, String)>,
 ) -> Vec<RowIntent> {
     let open_menu = std::mem::take(&mut vm.row_menu);
     let vm = &*vm;
     let keymap = vm.keymap();
+    let mockable_visible = || vm.mockable_visible();
+    let mock = MockMenu {
+        collections,
+        mockable_visible: &mockable_visible,
+    };
     let mut out = vec![];
     let hidden = vm.hidden_cols();
     let cols: Vec<usize> = (0..ALL_COLS.len())
@@ -253,7 +259,7 @@ pub fn show(
                 if resp.clicked() {
                     out.push(RowIntent::Select(f.id));
                 }
-                resp.context_menu(|ui| row_menu(ui, f, false, &keymap, &mut out));
+                resp.context_menu(|ui| row_menu(ui, f, false, &keymap, &mock, &mut out));
                 if !selected {
                     stray_focus |= resp.has_focus();
                     return;
@@ -275,7 +281,7 @@ pub fn show(
                 menu.show(|ui| {
                     // the first pass is a non-interactive sizing pass, so focus waits for the real one
                     let focus = !ui.is_sizing_pass() && ctx.data_mut(|d| d.remove_temp::<bool>(focus_first)).unwrap_or(false);
-                    row_menu(ui, f, focus, &keymap, &mut out);
+                    row_menu(ui, f, focus, &keymap, &mock, &mut out);
                 });
                 if was_open && !egui::Popup::is_id_open(ctx, menu_id) {
                     resp.request_focus();
@@ -301,12 +307,19 @@ pub fn show(
     out
 }
 
+/// Looked up only while the "Mock response" submenu is open.
+struct MockMenu<'a> {
+    collections: &'a dyn Fn() -> Vec<(u64, String)>,
+    mockable_visible: &'a dyn Fn() -> usize,
+}
+
 /// Row actions, shared by right-click and the keyboard.
 fn row_menu(
     ui: &mut egui::Ui,
     f: &Flow,
     focus_first: bool,
     keymap: &[(RowAction, Binding)],
+    mock: &MockMenu,
     out: &mut Vec<RowIntent>,
 ) {
     use RowAction as A;
@@ -391,6 +404,38 @@ fn row_menu(
             }
         }
     });
+    let mock_label = ico(ph::FLASK, "Mock response");
+    if let Some(why) = f.mock_problem() {
+        ui.add_enabled_ui(false, |ui| menu_item(ui, &mock_label, None))
+            .inner
+            .on_disabled_hover_text(why);
+    } else {
+        submenu_item(ui, &mock_label, |ui| {
+            let collections = (mock.collections)();
+            let all = (mock.mockable_visible)();
+            let mock_all = format!("Mock all {all} visible…");
+            let names: Vec<&str> = collections.iter().map(|(_, n)| n.as_str()).collect();
+            let fixed = ["New collection…", "No collection", &mock_all];
+            menu_width(ui, &[&fixed[..], &names[..]].concat());
+            if b(ui, fixed[0], None) {
+                out.push(RowIntent::Mock(id, MockTarget::NewCollection));
+            }
+            for (cid, name) in &collections {
+                if b(ui, name, None) {
+                    out.push(RowIntent::Mock(id, MockTarget::Collection(*cid)));
+                }
+            }
+            if b(ui, fixed[1], None) {
+                out.push(RowIntent::Mock(id, MockTarget::NoCollection));
+            }
+            if all > 1 {
+                ui.separator();
+                if b(ui, &mock_all, None) {
+                    out.push(RowIntent::MockVisible);
+                }
+            }
+        });
+    }
     ui.separator();
     if b(ui, &pin.0, pin.1) {
         out.push(RowIntent::Pin(id));

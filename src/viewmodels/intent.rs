@@ -34,6 +34,10 @@ pub enum RowIntent {
     Comment(u64),
     Replay(u64),
     Rule(u64, RuleKind),
+    /// Mock this flow's response straight away, without opening the rule form.
+    Mock(u64, MockTarget),
+    /// Mock every visible flow's response into a new collection (latest per method and URL).
+    MockVisible,
     Mute(String),
     Scope(String),
     ScopePath(u64),
@@ -45,6 +49,13 @@ pub enum RowIntent {
     Delete(u64),
     DiffBase(u64),
     TestCommandCopied,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum MockTarget {
+    NewCollection,
+    Collection(u64),
+    NoCollection,
 }
 
 pub enum SidebarIntent {
@@ -108,6 +119,7 @@ pub enum DeviceAction {
 pub enum Effect {
     OpenReplay(u64),
     RuleFromFlow(u64, RuleKind),
+    Mock(Vec<u64>, MockTarget),
     ShowOverview,
     DiffBase(u64),
     Device(DeviceAction),
@@ -176,8 +188,7 @@ pub enum RuleIntent {
     SetRuleCollection(u64, Option<u64>),
     SetCollectionEnabled(u64, bool),
     SoloCollection(u64),
-    EnableAllCollections,
-    /// Creates a collection named after `RulesVm::new_collection`.
+    /// Adds a "New collection" folder and starts renaming it.
     AddCollection,
     RenameCollection(u64, String),
     /// `true` deletes the collection's rules too; `false` moves them to Ungrouped.

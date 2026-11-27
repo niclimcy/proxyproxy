@@ -1,4 +1,4 @@
-use super::intent::{Effect, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
+use super::intent::{Effect, MockTarget, RowIntent, ShortcutIntent, SidebarIntent, ToolbarIntent};
 use super::status::{Flash, Status};
 use crate::domain::app::AppIdentity;
 use crate::domain::config::{Config, Shared};
@@ -118,6 +118,15 @@ impl CaptureVm {
             row_menu: false,
             test_command_copied: Flash::default(),
         }
+    }
+
+    /// Visible flows whose response can become a Mock rule.
+    pub fn mockable_visible(&self) -> usize {
+        let st = self.store.lock();
+        self.visible
+            .iter()
+            .filter(|&&i| st.flows[i].mock_problem().is_none())
+            .count()
     }
 
     pub fn refresh_visible(&mut self) {
@@ -380,6 +389,12 @@ impl CaptureVm {
             }
             RowIntent::Replay(id) => return Some(Effect::OpenReplay(id)),
             RowIntent::Rule(id, kind) => return Some(Effect::RuleFromFlow(id, kind)),
+            RowIntent::Mock(id, target) => return Some(Effect::Mock(vec![id], target)),
+            RowIntent::MockVisible => {
+                let st = self.store.lock();
+                let ids = self.visible.iter().map(|&i| st.flows[i].id).collect();
+                return Some(Effect::Mock(ids, MockTarget::NewCollection));
+            }
             RowIntent::Mute(h) => {
                 self.cfg.lock().unwrap().muted.push(h.clone());
                 status.set(format!(
@@ -574,6 +589,18 @@ mod tests {
         vm.filter = "status:>=500".into();
         vm.refresh_visible();
         assert_eq!(ids(&vm), vec![2, 4]);
+    }
+
+    #[test]
+    fn mock_visible_sends_only_the_filtered_flows() {
+        let (mut vm, mut status) = setup(4);
+        vm.filter = "status:>=500".into();
+        vm.refresh_visible();
+        let effect = vm.handle_row(RowIntent::MockVisible, &mut status);
+        let Some(Effect::Mock(got, MockTarget::NewCollection)) = effect else {
+            panic!("expected a mock effect");
+        };
+        assert_eq!(got, vec![2, 4]);
     }
 
     #[test]

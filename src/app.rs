@@ -173,6 +173,12 @@ impl App {
         match effect {
             Some(Effect::OpenReplay(id)) => self.replay.open_replay(id),
             Some(Effect::RuleFromFlow(id, kind)) => self.rules.open_from_flow(id, kind),
+            Some(Effect::Mock(ids, target)) => {
+                self.rules.mock_flows(&ids, target);
+                if let Some(m) = self.rules.message.take() {
+                    self.status.set(m);
+                }
+            }
             Some(Effect::ShowOverview) => self.detail.show_overview(),
             Some(Effect::DiffBase(id)) => self.detail.use_as_base(id),
             Some(Effect::Device(action)) => self.devices.run(action, &self.status),
@@ -333,7 +339,14 @@ impl App {
         }
         // toolbar and session intents above can replace the flows this frame
         self.capture.refresh_visible();
-        for i in views::table::show(ui, ctx, &mut self.capture, self.detail.diff_base, self.port) {
+        for i in views::table::show(
+            ui,
+            ctx,
+            &mut self.capture,
+            self.detail.diff_base,
+            self.port,
+            &|| self.rules.cfg.lock().unwrap().collection_names(),
+        ) {
             let before = self.capture.selected;
             let e = self.capture.handle_row(i, &mut self.status);
             if self.capture.selected != before {

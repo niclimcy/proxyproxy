@@ -1,5 +1,5 @@
 use super::config::Config;
-use super::rule::{Rule, RuleCollection};
+use super::rule::{Action, Rule, RuleCollection};
 use std::collections::HashMap;
 
 impl Config {
@@ -18,6 +18,47 @@ impl Config {
             id,
             name: name.to_string(),
             enabled: true,
+        });
+        id
+    }
+
+    pub fn collection_names(&self) -> Vec<(u64, String)> {
+        self.collections
+            .iter()
+            .map(|c| (c.id, c.name.clone()))
+            .collect()
+    }
+
+    /// Adds a Mock rule, or points the one already there (same collection, method and pattern) at the
+    /// new response and turns it on. Returns the rule's id.
+    pub fn upsert_mock(
+        &mut self,
+        collection: Option<u64>,
+        method: &str,
+        pattern: &str,
+        action: Action,
+    ) -> u64 {
+        let existing = self.rules.iter_mut().find(|r| {
+            r.collection == collection
+                && r.method == method
+                && r.pattern == pattern
+                && matches!(r.action, Action::Mock { .. })
+        });
+        if let Some(r) = existing {
+            r.action = action;
+            r.enabled = true;
+            return r.id;
+        }
+        let id = self.next_rule_id();
+        self.rules.push(Rule {
+            id,
+            enabled: true,
+            name: String::new(),
+            pattern: pattern.into(),
+            method: method.into(),
+            action,
+            collection,
+            hits: 0,
         });
         id
     }
@@ -123,7 +164,6 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::rule::Action;
 
     fn rule(id: u64, pattern: &str, collection: Option<u64>) -> Rule {
         Rule {
@@ -249,6 +289,24 @@ mod tests {
             enabled: true,
         });
         assert_eq!(old.add_collection("Y"), 6);
+    }
+
+    #[test]
+    fn upsert_mock_replaces_in_place_and_turns_the_rule_on() {
+        let mut c = Config::default();
+        let a = c.add_collection("A");
+        let mock = |body: &str| Action::Mock {
+            status: 200,
+            content_type: "text/plain".into(),
+            body: body.into(),
+        };
+        let first = c.upsert_mock(Some(a), "GET", "x.com/y", mock("1"));
+        c.rules[0].enabled = false;
+        assert_eq!(c.upsert_mock(Some(a), "GET", "x.com/y", mock("2")), first);
+        assert_eq!(c.rules.len(), 1);
+        assert!(c.rules[0].enabled && c.rules[0].action == mock("2"));
+        assert_ne!(c.upsert_mock(None, "GET", "x.com/y", mock("3")), first);
+        assert_eq!(c.rules.len(), 2);
     }
 
     #[test]

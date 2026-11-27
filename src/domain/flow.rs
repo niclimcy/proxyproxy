@@ -119,6 +119,23 @@ impl Flow {
         format!("{}://{}{}", self.scheme, self.host, self.path)
     }
 
+    /// Why this flow's response can't become a Mock rule; `None` when it can.
+    /// Bodies the proxy could decode are stored decoded, so a non-UTF-8 body is binary or in an encoding it couldn't undo.
+    pub fn mock_problem(&self) -> Option<&'static str> {
+        match &self.response {
+            None => Some("No response yet"),
+            Some(r) if std::str::from_utf8(&r.body).is_err() => {
+                Some("Compressed or binary response")
+            }
+            Some(_) => None,
+        }
+    }
+
+    /// What a rule for this endpoint matches: host and path, no query.
+    pub fn rule_pattern(&self) -> String {
+        format!("{}{}", self.host, self.path_only())
+    }
+
     pub fn path_only(&self) -> &str {
         self.path.split('?').next().unwrap_or("")
     }

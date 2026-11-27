@@ -824,7 +824,6 @@ mod tests {
         settle(&mut vm);
         assert!(stored(&name).is_err());
 
-        vm.new_collection = "C".into();
         vm.handle(RuleIntent::AddCollection);
         let id = add_stored_rule(&mut vm, "b.json", "2");
         let c = vm.cfg.lock().unwrap().collections[0].id;

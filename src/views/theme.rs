@@ -162,6 +162,10 @@ pub const RADIUS_CARD: u8 = 10;
 pub const GAP: i8 = 6;
 pub const ITEM_SPACING: egui::Vec2 = egui::vec2(8.0, 6.0);
 pub const HIT: f32 = 28.0;
+/// `switch` track size and the clear space on each side of it.
+pub const SWITCH_W: f32 = 30.0;
+pub const SWITCH_H: f32 = 18.0;
+pub const SWITCH_PAD: f32 = 4.0;
 pub const ICON_SIZE: f32 = 18.0;
 
 fn visuals(p: &Palette) -> egui::Visuals {
@@ -721,9 +725,62 @@ pub fn toolbar_menu(
     });
 }
 
+/// On/off switch for a whole group such as a rule collection; checkboxes stay for per-item choices.
+/// `label` is what a screen reader announces.
+pub fn switch(ui: &mut egui::Ui, on: &mut bool, label: &str) -> egui::Response {
+    let enabled = ui.is_enabled();
+    let (rect, mut resp) = ui.allocate_exact_size(
+        egui::vec2(SWITCH_W + 2.0 * SWITCH_PAD, HIT),
+        egui::Sense::click(),
+    );
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Switch, enabled, *on, label));
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let t = ui.ctx().animate_bool_responsive(resp.id, *on);
+    let track = egui::Rect::from_center_size(rect.center(), egui::vec2(SWITCH_W, SWITCH_H));
+    let painter = ui.painter();
+    painter.rect_filled(
+        track,
+        CornerRadius::same(RADIUS_PILL),
+        if *on { accent() } else { pal().border_strong },
+    );
+    // outside the track, in a colour that differs from both track fills
+    if resp.has_focus() {
+        painter.rect_stroke(
+            track.expand(2.0),
+            CornerRadius::same(RADIUS_PILL),
+            Stroke::new(2.0, fg()),
+            egui::StrokeKind::Outside,
+        );
+    } else if resp.hovered() && enabled {
+        painter.rect_stroke(
+            track,
+            CornerRadius::same(RADIUS_PILL),
+            Stroke::new(1.5, fg_muted()),
+            egui::StrokeKind::Outside,
+        );
+    }
+    let knob_x = egui::lerp(
+        (track.left() + SWITCH_H / 2.0)..=(track.right() - SWITCH_H / 2.0),
+        t,
+    );
+    painter.circle_filled(
+        egui::pos2(knob_x, track.center().y),
+        SWITCH_H / 2.0 - 3.0,
+        pal().panel,
+    );
+    resp
+}
+
 /// Icon-only "…" menu. `name` is the tooltip and what a screen reader announces.
-pub fn overflow_menu(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) {
-    let resp = secondary(ui, |ui| {
+pub fn overflow_menu(
+    ui: &mut egui::Ui,
+    name: &str,
+    add: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    let resp = flat(ui, |ui| {
         ui.spacing_mut().interact_size.x = HIT;
         ui.spacing_mut().interact_size.y = HIT;
         egui::containers::menu::MenuButton::new(
@@ -733,7 +790,7 @@ pub fn overflow_menu(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::
         .0
     });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-    resp.on_hover_text(name);
+    resp.on_hover_text(name)
 }
 
 /// Popup-menu row with a restrained rounded hover fill and no widget border.
@@ -1222,6 +1279,16 @@ mod tests {
             ] {
                 let r = ratio(p.border_strong, bg);
                 assert!(r >= 3.0, "border_strong on {n} (dark={}) = {r:.2}", p.dark);
+            }
+        }
+    }
+
+    #[test]
+    fn switch_knob_stands_out_on_both_tracks() {
+        for p in [&DARK, &LIGHT] {
+            for (n, track) in [("accent", p.accent), ("border_strong", p.border_strong)] {
+                let r = ratio(p.panel, track);
+                assert!(r >= 3.0, "knob on {n} track (dark={}) = {r:.2}", p.dark);
             }
         }
     }

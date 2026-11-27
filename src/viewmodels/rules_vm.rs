@@ -1,17 +1,18 @@
-use super::intent::{Effect, ListKind, RuleIntent};
+use super::intent::{Effect, ListKind, MockTarget, RuleIntent};
 use super::map_local::{Live, MapLocalForm};
 use super::status::Status;
 use crate::domain::config::{Config, Shared};
 use crate::domain::flow::{BpEdit, Decision, Flow, Paused, Stage};
 use crate::domain::pac;
 use crate::domain::policy::{rule_active, url_matches};
-use crate::domain::rule::{Action, MapStorage, Rule, RuleCollection};
+use crate::domain::rule::{Action, MapStorage, Rule};
 use crate::services::flow_store::FlowStore;
 use crate::services::mocks::{self, Source};
 use bytes::Bytes;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::time::{Duration, Instant};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum RuleKind {
@@ -95,16 +96,21 @@ impl Default for RuleForm {
 }
 
 impl RuleForm {
-    pub fn from_flow(f: &Flow, kind: RuleKind) -> Self {
+    /// `raw_body` keeps the response bytes as they are; otherwise the body is pretty-printed for editing.
+    pub fn from_flow(f: &Flow, kind: RuleKind, raw_body: bool) -> Self {
         let mut s = Self {
             kind,
-            pattern: format!("{}{}", f.host, f.path_only()),
+            pattern: f.rule_pattern(),
             method: f.method.clone(),
             ..Default::default()
         };
         if let Some(r) = &f.response {
             s.status = f.status.unwrap_or(200).to_string();
-            s.body = crate::services::decode::pretty_text(r);
+            s.body = if raw_body {
+                String::from_utf8_lossy(&r.body).into_owned()
+            } else {
+                crate::services::decode::pretty_text(r)
+            };
             s.ctype = r
                 .header("content-type")
                 .unwrap_or("application/json")
@@ -356,8 +362,6 @@ pub struct RulesVm {
     pub editing: Option<u64>,
     /// where new rules go: the collection last created or last given a "+"
     pub working: Option<u64>,
-    pub new_collection: String,
-    pub adding_collection: bool,
     /// status-line text for the app to show after a handled intent
     pub message: Option<String>,
     pub renaming: Option<u64>,
@@ -365,6 +369,10 @@ pub struct RulesVm {
     pub rename_focus: bool,
     pub confirm_delete: Option<u64>,
     pub collapsed: HashSet<Option<u64>>,
+    /// rules just created by a mock, and when; they glow for `HIGHLIGHT`
+    pub highlight: Option<(HashSet<u64>, Instant)>,
+    /// the list scrolls to this rule once
+    pub scroll_to: Option<u64>,
     pub list_inputs: [String; 5],
     pub console: Vec<String>,
     pub paused: Vec<BpDraft>,
@@ -410,7 +418,8 @@ pub struct RuleRow {
     pub method: String,
     pub pattern: String,
     pub name: String,
-    pub description: String,
+    /// `None` when the pill already says it all
+    pub description: Option<String>,
     pub hits: u64,
     pub enabled: bool,
 }
@@ -420,8 +429,6 @@ pub struct RuleGroup {
     pub id: Option<u64>,
     pub name: String,
     pub enabled: bool,
-    /// rules with their own switch on, whatever the collection says
-    pub on: usize,
     pub rows: Vec<RuleRow>,
 }
 
@@ -429,9 +436,6 @@ pub struct RuleList {
     pub groups: Vec<RuleGroup>,
     /// id and name of every collection, for pickers
     pub collections: Vec<(u64, String)>,
-    /// one line about which collections are on; `None` while there are none
-    pub summary: Option<String>,
-    pub all_on: bool,
 }
 
 pub struct ScopeView {
@@ -456,6 +460,7 @@ pub enum RulesTab {
     Console,
 }
 
+pub const HIGHLIGHT: Duration = Duration::from_millis(1500);
 const CONSOLE_MAX: usize = 2000;
 const CONSOLE_DROP: usize = 500;
 
@@ -469,14 +474,14 @@ impl RulesVm {
             form: RuleForm::default(),
             editing: None,
             working: None,
-            new_collection: String::new(),
-            adding_collection: false,
             message: None,
             renaming: None,
             rename_input: String::new(),
             rename_focus: false,
             confirm_delete: None,
             collapsed: HashSet::new(),
+            highlight: None,
+            scroll_to: None,
             list_inputs: Default::default(),
             console: vec![],
             paused: vec![],
@@ -503,7 +508,7 @@ impl RulesVm {
             .store
             .lock()
             .find(id)
-            .map(|f| RuleForm::from_flow(f, kind));
+            .map(|f| RuleForm::from_flow(f, kind, false));
         if let Some(form) = form {
             self.form = RuleForm {
                 collection: self.working,
@@ -534,7 +539,6 @@ impl RulesVm {
     /// and collections exist, so it only shows up when it has something to say.
     pub fn rule_list(&self) -> RuleList {
         let cfg = self.cfg.lock().unwrap();
-        let counts = cfg.collection_counts();
         let mut groups: Vec<RuleGroup> = std::iter::once((None, "No collection", true))
             .chain(
                 cfg.collections
@@ -545,7 +549,6 @@ impl RulesVm {
                 id,
                 name: name.into(),
                 enabled,
-                on: counts.get(&id).map_or(0, |c| c.1),
                 rows: vec![],
             })
             .collect();
@@ -567,7 +570,8 @@ impl RulesVm {
                 method: r.method.clone(),
                 pattern: r.pattern.clone(),
                 name: r.name.clone(),
-                description: r.action.describe(),
+                description: (!matches!(r.action, Action::Breakpoint { .. }) || !r.name.is_empty())
+                    .then(|| r.action.describe()),
                 hits: r.hits,
                 enabled: r.enabled,
             });
@@ -575,21 +579,118 @@ impl RulesVm {
         if !cfg.collections.is_empty() && groups[0].rows.is_empty() {
             groups.remove(0);
         }
-        let named: Vec<&RuleCollection> = cfg.collections.iter().collect();
-        let on: Vec<&&RuleCollection> = named.iter().filter(|c| c.enabled).collect();
-        let summary = match (named.len(), on.len()) {
-            (0, _) => None,
-            (_, 0) => Some("All collections off".to_string()),
-            (n, k) if k == n && n > 1 => Some("All collections on".to_string()),
-            (_, 1) => Some(format!("Active: {}", on[0].name)),
-            (n, k) => Some(format!("{k} of {n} collections on")),
-        };
         RuleList {
-            collections: named.iter().map(|c| (c.id, c.name.clone())).collect(),
-            all_on: on.len() == named.len(),
-            summary,
+            collections: cfg.collection_names(),
             groups,
         }
+    }
+
+    /// Adds a collection and opens it for renaming, so its first name is typed over.
+    fn new_collection_for_rename(&mut self, name: &str) -> u64 {
+        let id = self.cfg.lock().unwrap().add_collection(name);
+        self.working = Some(id);
+        self.renaming = Some(id);
+        self.rename_input = name.to_string();
+        self.rename_focus = true;
+        self.collapsed.remove(&Some(id));
+        self.show = true;
+        self.tab = RulesTab::Rules;
+        if self.editing.is_none() {
+            self.form.collection = Some(id);
+        }
+        id
+    }
+
+    /// Turns captured responses into Mock rules in the target collection, with the bodies byte for byte.
+    /// A rule with the same method and pattern already there gets the new response instead of a twin;
+    /// several flows for one endpoint keep the latest. Then the panel opens on what changed.
+    pub fn mock_flows(&mut self, ids: &[u64], target: MockTarget) {
+        if let MockTarget::Collection(c) = target
+            && !self.cfg.lock().unwrap().collection_exists(c)
+        {
+            self.message = Some("That collection no longer exists".into());
+            return;
+        }
+        let wanted: HashSet<u64> = ids.iter().copied().collect();
+        let mut forms: Vec<(u64, RuleForm)> = vec![];
+        let mut slot: HashMap<(String, String), usize> = HashMap::new();
+        let mut hosts: Vec<String> = vec![];
+        let mut skipped = 0;
+        {
+            let st = self.store.lock();
+            for f in st.flows.iter().filter(|f| wanted.contains(&f.id)) {
+                if f.mock_problem().is_some() {
+                    skipped += 1;
+                    continue;
+                }
+                if !hosts.iter().any(|h| h == f.hostname()) {
+                    hosts.push(f.hostname().to_string());
+                }
+                let at = slot.get(&(f.method.clone(), f.rule_pattern())).copied();
+                match at {
+                    Some(i) if forms[i].0 > f.id => {}
+                    Some(i) => forms[i] = (f.id, RuleForm::from_flow(f, RuleKind::Mock, true)),
+                    None => {
+                        slot.insert((f.method.clone(), f.rule_pattern()), forms.len());
+                        forms.push((f.id, RuleForm::from_flow(f, RuleKind::Mock, true)));
+                    }
+                }
+            }
+        }
+        if forms.is_empty() {
+            self.message = Some("Nothing to mock: no text response".into());
+            return;
+        }
+        let collection = match target {
+            MockTarget::NewCollection => {
+                let name = match hosts.as_slice() {
+                    [one] => one.clone(),
+                    _ => "Mocked responses".into(),
+                };
+                Some(self.new_collection_for_rename(&name))
+            }
+            MockTarget::Collection(id) => Some(id),
+            MockTarget::NoCollection => None,
+        };
+        let touched: Vec<u64> = {
+            let mut cfg = self.cfg.lock().unwrap();
+            forms
+                .iter()
+                .map(|(_, f)| cfg.upsert_mock(collection, &f.method, &f.pattern, f.action()))
+                .collect()
+        };
+        let dest = collection
+            .and_then(|c| {
+                let cfg = self.cfg.lock().unwrap();
+                cfg.collections
+                    .iter()
+                    .find(|x| x.id == c)
+                    .map(|x| x.name.clone())
+            })
+            .unwrap_or_else(|| "no collection".into());
+        let skipped = if skipped > 0 {
+            format!(" ({skipped} skipped)")
+        } else {
+            String::new()
+        };
+        self.message = Some(match forms.as_slice() {
+            [(_, f)] if skipped.is_empty() => {
+                format!("Mocked {} {} into {dest}", f.method, f.pattern)
+            }
+            _ => format!("Mocked {} responses into {dest}{skipped}", forms.len()),
+        });
+        self.show = true;
+        self.tab = RulesTab::Rules;
+        self.collapsed.remove(&collection);
+        self.scroll_to = touched.first().copied();
+        self.highlight = Some((touched.into_iter().collect(), Instant::now()));
+    }
+
+    /// True while a rule that was just mocked should still glow.
+    pub fn highlighted(&self, rule: u64) -> bool {
+        self.highlight
+            .as_ref()
+            .is_some_and(|(ids, at)| at.elapsed() < HIGHLIGHT && ids.contains(&rule))
     }
 
     fn blank_form(&self) -> RuleForm {
@@ -679,15 +780,7 @@ impl RulesVm {
                 self.cfg.lock().unwrap().assign_rule(id, collection);
             }
             RuleIntent::SetCollectionEnabled(id, on) => {
-                let mut cfg = self.cfg.lock().unwrap();
-                if cfg.set_collection_enabled(id, on) {
-                    let name = cfg
-                        .collections
-                        .iter()
-                        .find(|c| c.id == id)
-                        .map(|c| c.name.clone());
-                    self.message = name.map(|n| format!("{n} {}", if on { "on" } else { "off" }));
-                }
+                self.cfg.lock().unwrap().set_collection_enabled(id, on);
             }
             RuleIntent::SoloCollection(id) => {
                 let mut cfg = self.cfg.lock().unwrap();
@@ -704,23 +797,8 @@ impl RulesVm {
                     });
                 }
             }
-            RuleIntent::EnableAllCollections => {
-                for c in &mut self.cfg.lock().unwrap().collections {
-                    c.enabled = true;
-                }
-                self.message = Some("All collections on".into());
-            }
             RuleIntent::AddCollection => {
-                let name = self.new_collection.trim().to_string();
-                if !name.is_empty() {
-                    let id = self.cfg.lock().unwrap().add_collection(&name);
-                    self.new_collection.clear();
-                    self.adding_collection = false;
-                    self.working = Some(id);
-                    if self.editing.is_none() {
-                        self.form.collection = Some(id);
-                    }
-                }
+                self.new_collection_for_rename("New collection");
             }
             RuleIntent::RenameCollection(id, name) => {
                 let name = name.trim();
@@ -1409,13 +1487,14 @@ mod tests {
     }
 
     fn add_collection(vm: &mut RulesVm, name: &str) -> u64 {
-        vm.new_collection = name.into();
         vm.handle(RuleIntent::AddCollection);
-        vm.cfg.lock().unwrap().collections.last().unwrap().id
+        let id = vm.cfg.lock().unwrap().collections.last().unwrap().id;
+        vm.handle(RuleIntent::RenameCollection(id, name.into()));
+        id
     }
 
     #[test]
-    fn collection_toggle_applies_to_the_next_request_and_says_so() {
+    fn collection_toggle_applies_to_the_next_request() {
         let mut vm = vm();
         let a = add_collection(&mut vm, "Errors");
         add_block(&mut vm, "a.com");
@@ -1423,8 +1502,8 @@ mod tests {
         vm.handle(RuleIntent::SetCollectionEnabled(a, false));
         assert!(matches(&vm, "https://a.com/").is_empty());
         assert_eq!(vm.active_rule_count(), 0);
-        assert_eq!(vm.message.take().as_deref(), Some("Errors off"));
-        vm.handle(RuleIntent::EnableAllCollections);
+        assert!(vm.message.is_none(), "a plain toggle stays quiet");
+        vm.handle(RuleIntent::SetCollectionEnabled(a, true));
         assert_eq!(matches(&vm, "https://a.com/").len(), 1);
     }
 
@@ -1492,9 +1571,6 @@ mod tests {
         assert_eq!(vm.cfg.lock().unwrap().collections[0].name, "A");
         vm.handle(RuleIntent::RenameCollection(a, " Slow ".into()));
         assert_eq!(vm.cfg.lock().unwrap().collections[0].name, "Slow");
-        vm.new_collection = " ".into();
-        vm.handle(RuleIntent::AddCollection);
-        assert_eq!(vm.cfg.lock().unwrap().collections.len(), 1);
     }
 
     #[test]
@@ -1554,39 +1630,192 @@ mod tests {
     }
 
     #[test]
-    fn rule_list_groups_counts_and_summarises() {
+    fn rule_list_puts_ungrouped_first_and_hides_it_when_empty() {
         let mut vm = vm();
-        let list = vm.rule_list();
-        assert_eq!((list.groups.len(), list.summary), (1, None));
+        assert_eq!(vm.rule_list().groups.len(), 1);
         let a = add_collection(&mut vm, "A");
-        let b = add_collection(&mut vm, "B");
         let list = vm.rule_list();
-        assert_eq!(list.groups.len(), 2, "empty Ungrouped is hidden");
-        assert_eq!(list.summary.as_deref(), Some("All collections on"));
+        assert_eq!(list.groups.len(), 1, "empty Ungrouped is hidden");
+        assert_eq!(list.groups[0].id, Some(a));
         vm.handle(RuleIntent::NewRuleIn(Some(a)));
         add_block(&mut vm, "a.com");
-        add_block(&mut vm, "b.com");
-        let first = vm.cfg.lock().unwrap().rules[0].id;
-        vm.handle(RuleIntent::SetEnabled(first, false));
-        vm.handle(RuleIntent::SetCollectionEnabled(a, false));
         vm.handle(RuleIntent::NewRuleIn(None));
         add_block(&mut vm, "c.com");
+        vm.handle(RuleIntent::SetCollectionEnabled(a, false));
         let list = vm.rule_list();
         assert_eq!(list.groups[0].id, None);
-        assert_eq!(list.groups[1].rows.len(), 2);
-        assert_eq!((list.groups[1].on, list.groups[1].enabled), (1, false));
-        assert_eq!(list.summary.as_deref(), Some("Active: B"));
-        assert!(!list.all_on);
-        vm.handle(RuleIntent::SetCollectionEnabled(b, false));
+        assert_eq!(list.groups[1].rows.len(), 1);
+        assert!(!list.groups[1].enabled);
+    }
+
+    #[test]
+    fn new_collection_starts_in_rename_mode() {
+        let mut vm = vm();
+        vm.handle(RuleIntent::AddCollection);
+        let id = vm.cfg.lock().unwrap().collections[0].id;
+        assert_eq!(vm.cfg.lock().unwrap().collections[0].name, "New collection");
+        assert_eq!(vm.renaming, Some(id));
+        assert!(vm.rename_focus && vm.rename_input == "New collection");
+        assert_eq!(vm.working, Some(id));
+    }
+
+    fn answered(id: u64, host: &str, path: &str, body: &[u8]) -> Flow {
+        let mut f = Flow::sample(id);
+        f.host = host.into();
+        f.path = path.into();
+        f.status = Some(200);
+        f.response = Some(crate::domain::flow::Message {
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: Bytes::copy_from_slice(body),
+        });
+        f
+    }
+
+    fn mock_rules(vm: &RulesVm) -> Vec<(Option<u64>, String, String)> {
+        let cfg = vm.cfg.lock().unwrap();
+        cfg.rules
+            .iter()
+            .filter_map(|r| match &r.action {
+                Action::Mock { body, .. } => Some((r.collection, r.pattern.clone(), body.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn mocking_a_response_creates_a_rule_without_opening_the_form() {
+        let mut vm = vm();
+        vm.store
+            .lock()
+            .push(answered(1, "api.x.com", "/u?q=1", b"{\"a\":1}"));
+        let a = add_collection(&mut vm, "A");
+        vm.handle(RuleIntent::CancelEdit);
+        vm.mock_flows(&[1], MockTarget::Collection(a));
+        assert_eq!(mock_rules(&vm).len(), 1);
+        assert_eq!(mock_rules(&vm)[0].0, Some(a));
+        assert_eq!(mock_rules(&vm)[0].1, "api.x.com/u");
+        assert!(vm.form.pattern.is_empty() && vm.editing.is_none());
+        assert_eq!(vm.message.as_deref(), Some("Mocked GET api.x.com/u into A"));
+        vm.mock_flows(&[1], MockTarget::NoCollection);
+        assert_eq!(mock_rules(&vm)[1].0, None);
+    }
+
+    #[test]
+    fn mocking_into_a_new_collection_names_it_after_the_host_and_opens_rename() {
+        let mut vm = vm();
+        vm.store.lock().push(answered(1, "api.x.com", "/u", b"{}"));
+        vm.mock_flows(&[1], MockTarget::NewCollection);
+        let (id, name) = {
+            let cfg = vm.cfg.lock().unwrap();
+            (cfg.collections[0].id, cfg.collections[0].name.clone())
+        };
+        assert_eq!(name, "api.x.com");
+        assert!(vm.show && vm.tab == RulesTab::Rules);
+        assert_eq!(vm.renaming, Some(id));
+        assert_eq!(mock_rules(&vm)[0].0, Some(id));
+    }
+
+    #[test]
+    fn mocking_again_replaces_the_response_in_the_same_collection() {
+        let mut vm = vm();
+        vm.store.lock().push(answered(1, "a.com", "/x", b"old"));
+        let c = add_collection(&mut vm, "C");
+        vm.mock_flows(&[1], MockTarget::Collection(c));
+        vm.store.lock().push(answered(2, "a.com", "/x", b"new"));
+        vm.mock_flows(&[2], MockTarget::Collection(c));
         assert_eq!(
-            vm.rule_list().summary.as_deref(),
-            Some("All collections off")
+            mock_rules(&vm),
+            vec![(Some(c), "a.com/x".to_string(), "new".to_string())]
         );
-        vm.handle(RuleIntent::SetCollectionEnabled(b, true));
-        add_collection(&mut vm, "C");
+        vm.mock_flows(&[2], MockTarget::NoCollection);
         assert_eq!(
-            vm.rule_list().summary.as_deref(),
-            Some("2 of 3 collections on")
+            mock_rules(&vm).len(),
+            2,
+            "another collection gets its own rule"
+        );
+    }
+
+    #[test]
+    fn mocked_bodies_are_the_captured_bytes_not_a_reformat() {
+        let mut vm = vm();
+        vm.store
+            .lock()
+            .push(answered(1, "a.com", "/j", br#"{"b":1,"a":2}"#));
+        vm.store
+            .lock()
+            .push(answered(2, "a.com", "/t", b"plain  text\n"));
+        vm.mock_flows(&[1, 2], MockTarget::NoCollection);
+        let bodies: Vec<String> = mock_rules(&vm).into_iter().map(|r| r.2).collect();
+        assert_eq!(bodies, [r#"{"b":1,"a":2}"#, "plain  text\n"]);
+    }
+
+    #[test]
+    fn mocking_into_a_deleted_collection_changes_nothing() {
+        let mut vm = vm();
+        vm.store.lock().push(answered(1, "a.com", "/x", b"{}"));
+        let a = add_collection(&mut vm, "A");
+        vm.cfg.lock().unwrap().delete_collection(a, false);
+        vm.mock_flows(&[1], MockTarget::Collection(a));
+        assert!(mock_rules(&vm).is_empty());
+        assert_eq!(
+            vm.message.as_deref(),
+            Some("That collection no longer exists")
+        );
+    }
+
+    #[test]
+    fn mocking_opens_the_rules_tab_and_marks_what_changed() {
+        let mut vm = vm();
+        vm.store.lock().push(answered(1, "a.com", "/x", b"{}"));
+        let c = add_collection(&mut vm, "C");
+        vm.collapsed.insert(Some(c));
+        vm.show = false;
+        vm.mock_flows(&[1], MockTarget::Collection(c));
+        let id = vm.cfg.lock().unwrap().rules[0].id;
+        assert!(vm.show && vm.tab == RulesTab::Rules);
+        assert!(!vm.collapsed.contains(&Some(c)));
+        assert_eq!(vm.scroll_to, Some(id));
+        assert!(vm.highlighted(id) && !vm.highlighted(id + 1));
+    }
+
+    #[test]
+    fn mocking_a_flow_without_a_text_response_does_nothing() {
+        let mut vm = vm();
+        vm.store.lock().push(Flow::sample(1));
+        vm.store
+            .lock()
+            .push(answered(2, "a.com", "/bin", &[0xff, 0xfe]));
+        assert_eq!(
+            vm.store.lock().find(1).unwrap().mock_problem(),
+            Some("No response yet")
+        );
+        assert_eq!(
+            vm.store.lock().find(2).unwrap().mock_problem(),
+            Some("Compressed or binary response")
+        );
+        vm.mock_flows(&[1, 2], MockTarget::NewCollection);
+        assert!(mock_rules(&vm).is_empty() && vm.cfg.lock().unwrap().collections.is_empty());
+        assert!(vm.message.is_some());
+    }
+
+    #[test]
+    fn mocking_all_visible_keeps_the_latest_per_endpoint_and_counts_skips() {
+        let mut vm = vm();
+        {
+            let mut st = vm.store.lock();
+            st.push(answered(1, "a.com", "/x", b"first"));
+            st.push(answered(2, "a.com", "/y", b"y"));
+            st.push(answered(3, "a.com", "/x", b"second"));
+            st.push(Flow::sample(4));
+            st.push(answered(5, "b.com", "/z", &[0xff]));
+        }
+        vm.mock_flows(&[1, 2, 3, 4, 5], MockTarget::NewCollection);
+        let rules = mock_rules(&vm);
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules.iter().find(|r| r.1 == "a.com/x").unwrap().2, "second");
+        assert_eq!(
+            vm.message.as_deref(),
+            Some("Mocked 2 responses into a.com (2 skipped)")
         );
     }
 
