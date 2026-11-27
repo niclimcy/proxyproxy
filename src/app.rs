@@ -2,7 +2,11 @@ use crate::domain::config::Shared;
 use crate::domain::flow::Event;
 use crate::domain::repaint::Repaint;
 use crate::proxy;
-use crate::services::{self, app_menu::MenuRequest, flow_store::FlowStore};
+use crate::services::{
+    self,
+    app_menu::{EditAction, MenuRequest},
+    flow_store::FlowStore,
+};
 use crate::viewmodels::{
     about_vm::AboutVm,
     capture_vm::CaptureVm,
@@ -153,12 +157,13 @@ impl App {
         }
     }
 
-    fn drain(&mut self) {
+    fn drain(&mut self, ctx: &egui::Context) {
         self.status.poll();
         for r in services::app_menu::AppMenu::take_requests() {
             match r {
                 MenuRequest::SetupGuide => self.onboarding.open(),
                 MenuRequest::Settings => self.settings.open(),
+                MenuRequest::Edit(a) => edit(ctx, a),
             }
         }
         let rules = &mut self.rules;
@@ -357,11 +362,39 @@ impl App {
     }
 }
 
+fn edit(ctx: &egui::Context, action: EditAction) {
+    use egui::{Key, ViewportCommand};
+    let key = |key, shift| {
+        ctx.input_mut(|i| {
+            i.events.push(egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers {
+                    command: true,
+                    mac_cmd: cfg!(target_os = "macos"),
+                    shift,
+                    ..Default::default()
+                },
+            });
+        });
+    };
+    match action {
+        EditAction::Cut => ctx.send_viewport_cmd(ViewportCommand::RequestCut),
+        EditAction::Copy => ctx.send_viewport_cmd(ViewportCommand::RequestCopy),
+        EditAction::Paste => ctx.send_viewport_cmd(ViewportCommand::RequestPaste),
+        EditAction::SelectAll => key(Key::A, false),
+        EditAction::Undo => key(Key::Z, false),
+        EditAction::Redo => key(Key::Z, true),
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         views::theme::sync(&ctx);
-        self.drain();
+        self.drain(&ctx);
         self.devices.tick(&self.status);
         self.replay.poll();
         if self.onboarding.show {

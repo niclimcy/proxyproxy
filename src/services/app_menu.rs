@@ -28,7 +28,11 @@ impl AppMenu {
                 match event.id.as_ref() {
                     SETUP_GUIDE => out.push(MenuRequest::SetupGuide),
                     SETTINGS => out.push(MenuRequest::Settings),
-                    _ => {}
+                    id => {
+                        if let Some(a) = EditAction::ALL.into_iter().find(|a| a.id() == id) {
+                            out.push(MenuRequest::Edit(a));
+                        }
+                    }
                 }
             }
             out
@@ -45,6 +49,47 @@ impl AppMenu {
 pub enum MenuRequest {
     SetupGuide,
     Settings,
+    Edit(EditAction),
+}
+
+/// Edit menu entries. The system's own Cut/Copy/Paste items send selectors egui's view ignores, and
+/// their key equivalents swallow ⌘X/C/V/A, so these are plain items the app replays into egui.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditAction {
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
+impl EditAction {
+    const ALL: [Self; 6] = [
+        Self::Undo,
+        Self::Redo,
+        Self::Cut,
+        Self::Copy,
+        Self::Paste,
+        Self::SelectAll,
+    ];
+
+    #[cfg(target_os = "macos")]
+    fn id(self) -> &'static str {
+        match self {
+            Self::Undo => "proxyproxy.edit.undo",
+            Self::Redo => "proxyproxy.edit.redo",
+            Self::Cut => "proxyproxy.edit.cut",
+            Self::Copy => "proxyproxy.edit.copy",
+            Self::Paste => "proxyproxy.edit.paste",
+            Self::SelectAll => "proxyproxy.edit.select-all",
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    fn id(self) -> &'static str {
+        ""
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -92,15 +137,23 @@ fn install(_hwnd: Option<isize>, icon_rgba: Vec<u8>, icon_size: u32) -> Option<I
     .ok()?;
     menu.append(&app).ok()?;
 
+    let item = |a: EditAction, label: &str, code: Code, shift: bool| {
+        let mods = if shift {
+            Modifiers::META | Modifiers::SHIFT
+        } else {
+            Modifiers::META
+        };
+        MenuItem::with_id(a.id(), label, true, Some(Accelerator::new(mods, code)))
+    };
     let edit = Submenu::new("Edit", true);
     edit.append_items(&[
-        &PredefinedMenuItem::undo(None),
-        &PredefinedMenuItem::redo(None),
+        &item(EditAction::Undo, "Undo", Code::KeyZ, false),
+        &item(EditAction::Redo, "Redo", Code::KeyZ, true),
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::cut(None),
-        &PredefinedMenuItem::copy(None),
-        &PredefinedMenuItem::paste(None),
-        &PredefinedMenuItem::select_all(None),
+        &item(EditAction::Cut, "Cut", Code::KeyX, false),
+        &item(EditAction::Copy, "Copy", Code::KeyC, false),
+        &item(EditAction::Paste, "Paste", Code::KeyV, false),
+        &item(EditAction::SelectAll, "Select All", Code::KeyA, false),
     ])
     .ok()?;
     menu.append(&edit).ok()?;
