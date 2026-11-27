@@ -14,6 +14,7 @@ use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
 const FORM_COL_GAP: f32 = 10.0;
+const SCOPE_INPUT_ROW: f32 = 340.0;
 const FORM_LABELS: [&str; 21] = [
     "Apply to",
     "Body",
@@ -952,24 +953,27 @@ fn scope_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
         ui.add_space(8.0);
         ui.label(RichText::new(title).strong());
         ui.label(muted(hint));
+        let w = ui.available_width();
         for (i, h) in list.iter().enumerate() {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(h).monospace());
+            row_within(ui, w, true, |ui| {
                 if icon_only(ui, ph::X, &format!("Remove {h}")).clicked() {
                     out.push(RuleIntent::RemoveHost(kind, i));
                 }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(egui::Label::new(RichText::new(h).monospace()).truncate())
+                        .on_hover_text(h);
+                });
             });
         }
-        ui.horizontal(|ui| {
+        row_within(ui, w.min(SCOPE_INPUT_ROW), true, |ui| {
+            let add = icon_button(ui, ph::PLUS, "Add", true);
             let input = &mut vm.list_inputs[slot];
             let r = ui.add(
                 TextEdit::singleline(input)
                     .hint_text("domain, host/path/* or https://*.host/path")
-                    .desired_width(260.0),
+                    .desired_width(ui.available_width()),
             );
-            if icon_button(ui, ph::PLUS, "Add", true).clicked()
-                || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-            {
+            if add.clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
                 out.push(RuleIntent::AddHost(kind));
             }
         });
@@ -1069,7 +1073,7 @@ mod tests {
     use crate::viewmodels::rules_vm::RuleKind;
     use std::sync::{Arc, Mutex};
 
-    fn panel_width_after_frames(kind: RuleKind) -> f32 {
+    fn panel_width_after_frames(tab: RulesTab, kind: RuleKind) -> f32 {
         let ctx = egui::Context::default();
         crate::views::theme::apply_theme(&ctx);
         let mut vm = RulesVm::new(
@@ -1077,6 +1081,7 @@ mod tests {
             FlowStore::default(),
         );
         vm.show = true;
+        vm.tab = tab;
         vm.form.kind = kind;
         let input = || egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -1105,8 +1110,10 @@ mod tests {
             RuleKind::Mock,
             RuleKind::Header,
         ] {
-            let w = panel_width_after_frames(kind);
+            let w = panel_width_after_frames(RulesTab::Rules, kind);
             assert!(w <= 441.0, "{kind:?} widened the panel to {w}");
         }
+        let w = panel_width_after_frames(RulesTab::Scope, RuleKind::Block);
+        assert!(w <= 441.0, "the scope tab widened the panel to {w}");
     }
 }

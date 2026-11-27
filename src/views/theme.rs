@@ -421,9 +421,14 @@ pub fn muted(text: impl Into<String>) -> RichText {
 pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Response {
     let box_size = 18.0;
     let text_x = box_size + 8.0;
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text.to_string(), egui::FontId::proportional(FS_BODY), fg());
+    // wraps to the space left, so a long label can't hold its panel wider than the user set it
+    let wrap = (ui.available_width() - text_x - 4.0).max(80.0);
+    let galley = ui.painter().layout(
+        text.to_string(),
+        egui::FontId::proportional(FS_BODY),
+        fg(),
+        wrap,
+    );
     let row_height = HIT.max(galley.size().y + 10.0);
     let row_width = text_x + galley.size().x + 4.0;
     let (rect, mut response) =
@@ -443,7 +448,7 @@ pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Resp
     }
 
     let box_rect = egui::Rect::from_center_size(
-        rect.left_top() + egui::vec2(text_x / 2.0, row_height / 2.0),
+        rect.left_top() + egui::vec2(text_x / 2.0, HIT / 2.0),
         egui::vec2(box_size, box_size),
     );
     let painter = ui.painter();
