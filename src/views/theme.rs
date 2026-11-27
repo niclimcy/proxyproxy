@@ -285,6 +285,9 @@ pub fn ico(icon: &str, text: &str) -> String {
     if text.is_empty() {
         return icon.to_string();
     }
+    if icon.is_empty() {
+        return text.to_string();
+    }
     format!("{icon}  {text}")
 }
 
@@ -716,6 +719,21 @@ pub fn toolbar_menu(
             .config(egui::containers::menu::MenuConfig::new().close_behavior(close))
             .ui(ui, add);
     });
+}
+
+/// Icon-only "…" menu. `name` is the tooltip and what a screen reader announces.
+pub fn overflow_menu(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) {
+    let resp = secondary(ui, |ui| {
+        ui.spacing_mut().interact_size.x = HIT;
+        ui.spacing_mut().interact_size.y = HIT;
+        egui::containers::menu::MenuButton::new(
+            RichText::new(egui_phosphor::regular::DOTS_THREE).size(FS_SMALL),
+        )
+        .ui(ui, add)
+        .0
+    });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    resp.on_hover_text(name);
 }
 
 /// Popup-menu row with a restrained rounded hover fill and no widget border.

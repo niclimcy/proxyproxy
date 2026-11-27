@@ -156,11 +156,23 @@ pub enum ListKind {
     ProxyOnly,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum RuleIntent {
     SetEnabled(u64, bool),
     Delete(u64),
-    Move(usize, i32),
+    /// Swaps with the neighbour in the same collection, so the list order and the priority agree.
+    Move(u64, i32),
+    SetRuleCollection(u64, Option<u64>),
+    SetCollectionEnabled(u64, bool),
+    SoloCollection(u64),
+    EnableAllCollections,
+    /// Creates a collection named after `RulesVm::new_collection`.
+    AddCollection,
+    RenameCollection(u64, String),
+    /// `true` deletes the collection's rules too; `false` moves them to Ungrouped.
+    DeleteCollection(u64, bool),
+    /// Start a new rule in this collection (and remember it for the next ones).
+    NewRuleIn(Option<u64>),
     Edit(u64),
     CancelEdit,
     Submit,

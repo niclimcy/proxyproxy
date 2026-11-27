@@ -39,6 +39,7 @@ src/
 
 - `FlowStore` (`services/flow_store.rs`) holds all captured flows behind `Arc<Mutex<Inner>>`. `Inner::rev()` goes up on every change; viewmodels use it as a cache key. The REST API reads the same store.
 - `Shared` (`domain/config.rs`) is `Arc<Mutex<Config>>`, read when needed, so rule edits apply to the next request. `should_decrypt` is only checked on CONNECT, so "don't decrypt" applies to new connections only.
+- Rule collections: `Rule::collection` is `None` (Ungrouped, always active) or a `RuleCollection` id in `Config::collections`. `policy::rule_active` is the one test for "applies": the rule is on and its collection isn't in the list of off collections that `matching` builds once per call, so a collection toggle or solo applies to the next request like any rule edit. Collection ids only go up (`Config::next_collection_id`), so a deleted id is never reused. Turning a collection off leaves each rule's own switch alone. List order is rule priority; reordering swaps within a collection. Rules JSON carries `collections`; import (also of an old bare array of rules) gives collections and rules fresh ids.
 - Mute, scope and exclude only affect what is recorded (`Config::captured`), not the network. Scope and exclude entries are hosts or `host/path*` URL patterns; CONNECT tunnels are never judged, only the requests inside them.
 
 - Proxy-only hosts (`Config::proxy_only_hosts`) are network level, unlike scope: with the system proxy on, `devices::apply_route` writes `proxyproxy.pac` in the app data dir and sets it as the macOS auto-proxy URL, so other hosts connect directly. `DevicesVm::tick` rewrites the file when the list or toggle changes while the proxy is on. Only hosts are expressible, so path patterns are reduced to their host. Connections already open keep their old route, and WebKit sandboxed apps and some Windows apps may ignore `file://` PACs.
@@ -55,10 +56,11 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | File | Contents |
 |---|---|
 | `flow.rs` | `Flow`, `Message`, `WsMsg`, `Event`, breakpoint types |
-| `rule.rs` | `Rule` and `Action` (data, label, description) |
+| `rule.rs` | `Rule`, `RuleCollection` and `Action` (data, label, description) |
+| `collection.rs` | `Config` methods for rule collections: add, enable, solo, assign, counts, delete (move or remove rules), `merge_rules` for import with id remap |
 | `config.rs` | `Config`, `Upstream`, `UpstreamMode` (HTTP, SOCKS5 or PAC), `Shared` |
 | `pac.rs` | `Route`, `Config::proxy_route`, proxy-only host normalizing, `FindProxyForURL` generation and `file_url` |
-| `policy.rs` | `Config::captured` (scope, exclude, mute against the full URL), `should_decrypt`, `matching`; URL and glob matching |
+| `policy.rs` | `Config::captured` (scope, exclude, mute against the full URL), `should_decrypt`, `matching`, `rule_active`; URL and glob matching |
 | `app.rs` | `AppIdentity` and pure helpers: `.app` bundle from an executable path, Info.plist fields, simulator and emulator detection, icon cache keys, letter-avatar slot |
 | `filter.rs` | search query parser |
 | `keymap.rs` | `RowAction`, `Binding`, default row shortcuts, and `Config::binding`/`set_binding` (user overrides in `Config::shortcuts`, rejecting conflicts, reserved combos and unsupported keys) |
@@ -109,7 +111,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 |---|---|
 | `capture_vm.rs` | filter, sort, selection, visible rows, sidebar tree; row, sidebar and shortcut intents. A `ShortcutIntent::Selected(RowAction)` becomes the `RowIntent` for the selected flow, so keyboard and menu share one handler |
 | `detail_vm.rs` | tabs, view modes, diff base and cache |
-| `rules_vm.rs` | rule form, breakpoints, console, scope lists, `RuleKind` |
+| `rules_vm.rs` | rule form, rule groups (collections) and where new rules go, breakpoints, console, scope lists, `RuleKind` |
 | `replay_vm.rs` | replay and compose drafts |
 | `network_vm.rs`, `mcp_vm.rs`, `schemas_vm.rs`, `keymap_vm.rs` | the Network, MCP (toggle plus endpoint and stdio command), Schemas and Shortcuts tabs of Settings (Shortcuts: record, change, turn off and reset row shortcuts) |
 | `settings_vm.rs` | Settings window visibility and tab |

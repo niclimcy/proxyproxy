@@ -115,6 +115,13 @@ impl Action {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RuleCollection {
+    pub id: u64,
+    pub name: String,
+    pub enabled: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rule {
     pub id: u64,
@@ -124,6 +131,9 @@ pub struct Rule {
     pub pattern: String,
     pub method: String,
     pub action: Action,
+    /// `None` is "Ungrouped", which is always active.
+    #[serde(default)]
+    pub collection: Option<u64>,
     #[serde(skip)]
     pub hits: u64,
 }

@@ -229,6 +229,9 @@ impl App {
     fn rules_panel(&mut self, ui: &mut egui::Ui) {
         for i in views::rules_panel::show(ui, &mut self.rules) {
             let e = self.rules.handle(i);
+            if let Some(m) = self.rules.message.take() {
+                self.status.set(m);
+            }
             self.apply(e);
         }
     }

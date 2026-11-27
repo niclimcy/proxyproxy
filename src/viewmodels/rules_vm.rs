@@ -3,11 +3,12 @@ use super::status::Status;
 use crate::domain::config::{Config, Shared};
 use crate::domain::flow::{BpEdit, Decision, Flow, Paused, Stage};
 use crate::domain::pac;
-use crate::domain::policy::url_matches;
-use crate::domain::rule::{Action, Rule};
+use crate::domain::policy::{rule_active, url_matches};
+use crate::domain::rule::{Action, Rule, RuleCollection};
 use crate::services::flow_store::FlowStore;
 use bytes::Bytes;
 use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -42,6 +43,7 @@ pub struct RuleForm {
     pub name: String,
     pub pattern: String,
     pub method: String,
+    pub collection: Option<u64>,
     pub bp_request: bool,
     pub bp_response: bool,
     pub file: String,
@@ -73,6 +75,7 @@ impl Default for RuleForm {
             name: String::new(),
             pattern: String::new(),
             method: String::new(),
+            collection: None,
             bp_request: true,
             bp_response: false,
             file: String::new(),
@@ -130,6 +133,7 @@ impl RuleForm {
             name: r.name.clone(),
             pattern: r.pattern.clone(),
             method: r.method.clone(),
+            collection: r.collection,
             ..Default::default()
         };
         match &r.action {
@@ -344,6 +348,17 @@ pub struct RulesVm {
     pub tab: RulesTab,
     pub form: RuleForm,
     pub editing: Option<u64>,
+    /// where new rules go: the collection last created or last given a "+"
+    pub working: Option<u64>,
+    pub new_collection: String,
+    pub adding_collection: bool,
+    /// status-line text for the app to show after a handled intent
+    pub message: Option<String>,
+    pub renaming: Option<u64>,
+    pub rename_input: String,
+    pub rename_focus: bool,
+    pub confirm_delete: Option<u64>,
+    pub collapsed: HashSet<Option<u64>>,
     pub list_inputs: [String; 5],
     pub console: Vec<String>,
     pub paused: Vec<BpDraft>,
@@ -370,6 +385,47 @@ fn cached_count(
             n
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Tone {
+    Warning,
+    Danger,
+    Violet,
+    Info,
+    Success,
+}
+
+/// What the list draws for one rule; the action itself stays in the config.
+pub struct RuleRow {
+    pub id: u64,
+    pub label: &'static str,
+    pub tone: Tone,
+    pub method: String,
+    pub pattern: String,
+    pub name: String,
+    pub description: String,
+    pub hits: u64,
+    pub enabled: bool,
+}
+
+pub struct RuleGroup {
+    /// `None` is Ungrouped
+    pub id: Option<u64>,
+    pub name: String,
+    pub enabled: bool,
+    /// rules with their own switch on, whatever the collection says
+    pub on: usize,
+    pub rows: Vec<RuleRow>,
+}
+
+pub struct RuleList {
+    pub groups: Vec<RuleGroup>,
+    /// id and name of every collection, for pickers
+    pub collections: Vec<(u64, String)>,
+    /// one line about which collections are on; `None` while there are none
+    pub summary: Option<String>,
+    pub all_on: bool,
 }
 
 pub struct ScopeView {
@@ -407,6 +463,15 @@ impl RulesVm {
             tab: RulesTab::Rules,
             form: RuleForm::default(),
             editing: None,
+            working: None,
+            new_collection: String::new(),
+            adding_collection: false,
+            message: None,
+            renaming: None,
+            rename_input: String::new(),
+            rename_focus: false,
+            confirm_delete: None,
+            collapsed: HashSet::new(),
             list_inputs: Default::default(),
             console: vec![],
             paused: vec![],
@@ -435,7 +500,10 @@ impl RulesVm {
             .find(id)
             .map(|f| RuleForm::from_flow(f, kind));
         if let Some(form) = form {
-            self.form = form;
+            self.form = RuleForm {
+                collection: self.working,
+                ..form
+            };
             self.editing = None;
             self.tab = RulesTab::Rules;
             self.show = true;
@@ -457,8 +525,73 @@ impl RulesVm {
         })
     }
 
-    pub fn rules_snapshot(&self) -> Vec<Rule> {
-        self.cfg.lock().unwrap().rules.clone()
+    /// Ungrouped first, then collections in creation order. Ungrouped is left out when it is empty
+    /// and collections exist, so it only shows up when it has something to say.
+    pub fn rule_list(&self) -> RuleList {
+        let cfg = self.cfg.lock().unwrap();
+        let counts = cfg.collection_counts();
+        let mut groups: Vec<RuleGroup> = std::iter::once((None, "No collection", true))
+            .chain(
+                cfg.collections
+                    .iter()
+                    .map(|c| (Some(c.id), c.name.as_str(), c.enabled)),
+            )
+            .map(|(id, name, enabled)| RuleGroup {
+                id,
+                name: name.into(),
+                enabled,
+                on: counts.get(&id).map_or(0, |c| c.1),
+                rows: vec![],
+            })
+            .collect();
+        let slot: HashMap<Option<u64>, usize> =
+            groups.iter().enumerate().map(|(i, g)| (g.id, i)).collect();
+        for r in &cfg.rules {
+            // a dangling id shows with Ungrouped, matching how it is treated
+            let g = slot.get(&r.collection).copied().unwrap_or(0);
+            groups[g].rows.push(RuleRow {
+                id: r.id,
+                label: r.action.label(),
+                tone: match r.action {
+                    Action::Breakpoint { .. } => Tone::Warning,
+                    Action::Block { .. } => Tone::Danger,
+                    Action::Script { .. } => Tone::Violet,
+                    Action::Delay { .. } => Tone::Info,
+                    _ => Tone::Success,
+                },
+                method: r.method.clone(),
+                pattern: r.pattern.clone(),
+                name: r.name.clone(),
+                description: r.action.describe(),
+                hits: r.hits,
+                enabled: r.enabled,
+            });
+        }
+        if !cfg.collections.is_empty() && groups[0].rows.is_empty() {
+            groups.remove(0);
+        }
+        let named: Vec<&RuleCollection> = cfg.collections.iter().collect();
+        let on: Vec<&&RuleCollection> = named.iter().filter(|c| c.enabled).collect();
+        let summary = match (named.len(), on.len()) {
+            (0, _) => None,
+            (_, 0) => Some("All collections off".to_string()),
+            (n, k) if k == n && n > 1 => Some("All collections on".to_string()),
+            (_, 1) => Some(format!("Active: {}", on[0].name)),
+            (n, k) => Some(format!("{k} of {n} collections on")),
+        };
+        RuleList {
+            collections: named.iter().map(|c| (c.id, c.name.clone())).collect(),
+            all_on: on.len() == named.len(),
+            summary,
+            groups,
+        }
+    }
+
+    fn blank_form(&self) -> RuleForm {
+        RuleForm {
+            collection: self.working,
+            ..RuleForm::default()
+        }
     }
 
     pub fn scope_view(&self) -> ScopeView {
@@ -498,13 +631,9 @@ impl RulesVm {
     }
 
     pub fn active_rule_count(&self) -> usize {
-        self.cfg
-            .lock()
-            .unwrap()
-            .rules
-            .iter()
-            .filter(|r| r.enabled)
-            .count()
+        let cfg = self.cfg.lock().unwrap();
+        let off = cfg.disabled_collections();
+        cfg.rules.iter().filter(|r| rule_active(&off, r)).count()
     }
 
     pub fn handle(&mut self, intent: RuleIntent) -> Option<Effect> {
@@ -522,17 +651,107 @@ impl RulesVm {
                 }
             }
             RuleIntent::Delete(id) => self.cfg.lock().unwrap().rules.retain(|r| r.id != id),
-            RuleIntent::Move(i, d) => {
+            // priority is the flat order, but the list shows groups, so a rule trades places with its neighbour in the same group
+            RuleIntent::Move(id, d) => {
                 let mut cfg = self.cfg.lock().unwrap();
-                let target = isize::try_from(d)
-                    .ok()
-                    .and_then(|d| i.checked_add_signed(d));
-                if let Some(j) = target
-                    && j < cfg.rules.len()
-                    && i < cfg.rules.len()
-                {
+                let i = cfg.rules.iter().position(|r| r.id == id)?;
+                let group = cfg.rules[i].collection;
+                let neighbour = if d > 0 {
+                    (i + 1..cfg.rules.len()).find(|&j| cfg.rules[j].collection == group)
+                } else {
+                    cfg.rules[..i].iter().rposition(|r| r.collection == group)
+                };
+                if let Some(j) = neighbour {
                     cfg.rules.swap(i, j);
                 }
+            }
+            RuleIntent::SetRuleCollection(id, collection) => {
+                self.cfg.lock().unwrap().assign_rule(id, collection);
+            }
+            RuleIntent::SetCollectionEnabled(id, on) => {
+                let mut cfg = self.cfg.lock().unwrap();
+                if cfg.set_collection_enabled(id, on) {
+                    let name = cfg
+                        .collections
+                        .iter()
+                        .find(|c| c.id == id)
+                        .map(|c| c.name.clone());
+                    self.message = name.map(|n| format!("{n} {}", if on { "on" } else { "off" }));
+                }
+            }
+            RuleIntent::SoloCollection(id) => {
+                let mut cfg = self.cfg.lock().unwrap();
+                if cfg.solo_collection(id) {
+                    let others = cfg.collections.len() - 1;
+                    let name = cfg
+                        .collections
+                        .iter()
+                        .find(|c| c.id == id)
+                        .map_or("", |c| c.name.as_str());
+                    self.message = Some(match others {
+                        0 => format!("{name} on"),
+                        n => format!("{name} on, {n} other{} off", if n == 1 { "" } else { "s" }),
+                    });
+                }
+            }
+            RuleIntent::EnableAllCollections => {
+                for c in &mut self.cfg.lock().unwrap().collections {
+                    c.enabled = true;
+                }
+                self.message = Some("All collections on".into());
+            }
+            RuleIntent::AddCollection => {
+                let name = self.new_collection.trim().to_string();
+                if !name.is_empty() {
+                    let id = self.cfg.lock().unwrap().add_collection(&name);
+                    self.new_collection.clear();
+                    self.adding_collection = false;
+                    self.working = Some(id);
+                    if self.editing.is_none() {
+                        self.form.collection = Some(id);
+                    }
+                }
+            }
+            RuleIntent::RenameCollection(id, name) => {
+                let name = name.trim();
+                if !name.is_empty()
+                    && let Some(c) = self
+                        .cfg
+                        .lock()
+                        .unwrap()
+                        .collections
+                        .iter_mut()
+                        .find(|c| c.id == id)
+                {
+                    c.name = name.to_string();
+                }
+            }
+            RuleIntent::DeleteCollection(id, delete_rules) => {
+                let editing_gone = {
+                    let mut cfg = self.cfg.lock().unwrap();
+                    cfg.delete_collection(id, delete_rules);
+                    self.editing
+                        .is_some_and(|e| !cfg.rules.iter().any(|r| r.id == e))
+                };
+                self.confirm_delete = None;
+                if self.working == Some(id) {
+                    self.working = None;
+                }
+                if self.form.collection == Some(id) {
+                    self.form.collection = None;
+                }
+                self.collapsed.remove(&Some(id));
+                if editing_gone {
+                    self.editing = None;
+                    self.form = self.blank_form();
+                }
+            }
+            RuleIntent::NewRuleIn(collection) => {
+                self.working =
+                    collection.filter(|c| self.cfg.lock().unwrap().collection_exists(*c));
+                self.editing = None;
+                self.collapsed.remove(&collection);
+                self.form = self.blank_form();
             }
             RuleIntent::Edit(id) => {
                 let r = self
@@ -553,7 +772,7 @@ impl RulesVm {
             }
             RuleIntent::CancelEdit => {
                 self.editing = None;
-                self.form = RuleForm::default();
+                self.form = self.blank_form();
             }
             RuleIntent::Submit => self.submit(),
             RuleIntent::SetScopeOnly(on) => self.cfg.lock().unwrap().scope_only = on,
@@ -682,6 +901,8 @@ impl RulesVm {
             f.method.trim().to_string(),
         );
         let mut cfg = self.cfg.lock().unwrap();
+        // the collection may have been deleted since the form was filled in
+        let collection = f.collection.filter(|c| cfg.collection_exists(*c));
         if let Some(r) = self
             .editing
             .take()
@@ -691,6 +912,7 @@ impl RulesVm {
             r.pattern = pattern;
             r.method = method;
             r.action = action;
+            r.collection = collection;
         } else {
             let id = cfg.next_rule_id();
             cfg.rules.push(Rule {
@@ -700,21 +922,26 @@ impl RulesVm {
                 pattern,
                 method,
                 action,
+                collection,
                 hits: 0,
             });
         }
         drop(cfg);
-        self.form = RuleForm::default();
+        self.form = self.blank_form();
     }
 
     pub fn import_rules(&mut self, text: &str, status: &mut Status) {
-        match serde_json::from_str::<crate::domain::config::Config>(text) {
-            Ok(mut c) => {
-                let mut cfg = self.cfg.lock().unwrap();
-                let first = cfg.next_rule_id();
-                for (id, r) in (first..).zip(c.rules.drain(..)) {
-                    cfg.rules.push(Rule { id, ..r });
-                }
+        // files from before collections were a bare array, or a config-shaped object without them
+        let parsed = serde_json::from_str::<Config>(text)
+            .map(|c| (c.collections, c.rules))
+            .or_else(|e| {
+                serde_json::from_str::<Vec<Rule>>(text)
+                    .map(|rules| (vec![], rules))
+                    .map_err(|_| e)
+            });
+        match parsed {
+            Ok((collections, rules)) => {
+                self.cfg.lock().unwrap().merge_rules(collections, rules);
                 status.set("Rules imported");
             }
             Err(e) => status.set(format!("Error: {e}")),
@@ -724,8 +951,10 @@ impl RulesVm {
     // config-shaped so older builds can import it, but only the rules: the rest
     // (upstream credentials, keylog path, scope) shouldn't travel with a shared file
     pub fn rules_json(&self) -> String {
+        let cfg = self.cfg.lock().unwrap();
         let only_rules = Config {
-            rules: self.cfg.lock().unwrap().rules.clone(),
+            rules: cfg.rules.clone(),
+            collections: cfg.collections.clone(),
             ..Config::default()
         };
         serde_json::to_string_pretty(&only_rules).unwrap_or_default()
@@ -1133,6 +1362,223 @@ mod tests {
         assert!(!f.valid());
     }
 
+    fn matches(vm: &RulesVm, url: &str) -> Vec<u64> {
+        vm.cfg.lock().unwrap().matching("GET", url, |r| r.id)
+    }
+
+    fn add_collection(vm: &mut RulesVm, name: &str) -> u64 {
+        vm.new_collection = name.into();
+        vm.handle(RuleIntent::AddCollection);
+        vm.cfg.lock().unwrap().collections.last().unwrap().id
+    }
+
+    #[test]
+    fn collection_toggle_applies_to_the_next_request_and_says_so() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "Errors");
+        add_block(&mut vm, "a.com");
+        assert_eq!(matches(&vm, "https://a.com/").len(), 1);
+        vm.handle(RuleIntent::SetCollectionEnabled(a, false));
+        assert!(matches(&vm, "https://a.com/").is_empty());
+        assert_eq!(vm.active_rule_count(), 0);
+        assert_eq!(vm.message.take().as_deref(), Some("Errors off"));
+        vm.handle(RuleIntent::EnableAllCollections);
+        assert_eq!(matches(&vm, "https://a.com/").len(), 1);
+    }
+
+    #[test]
+    fn solo_reports_how_many_others_went_off() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "Checkout");
+        add_collection(&mut vm, "B");
+        add_collection(&mut vm, "C");
+        vm.handle(RuleIntent::SoloCollection(a));
+        assert_eq!(
+            vm.message.take().as_deref(),
+            Some("Checkout on, 2 others off")
+        );
+        vm.handle(RuleIntent::SoloCollection(99));
+        assert!(vm.message.is_none());
+    }
+
+    #[test]
+    fn new_rules_go_to_the_working_collection() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "A");
+        assert_eq!(vm.form.collection, Some(a));
+        add_block(&mut vm, "a.com");
+        assert_eq!(vm.form.collection, Some(a), "stays for the next rule");
+        vm.handle(RuleIntent::NewRuleIn(None));
+        add_block(&mut vm, "b.com");
+        vm.handle(RuleIntent::NewRuleIn(Some(99)));
+        assert_eq!(vm.working, None, "an unknown collection isn't remembered");
+        let cfg = vm.cfg.lock().unwrap();
+        assert_eq!(cfg.rules[0].collection, Some(a));
+        assert_eq!(cfg.rules[1].collection, None);
+    }
+
+    #[test]
+    fn submit_drops_a_collection_that_was_deleted_meanwhile() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "A");
+        vm.form.collection = Some(a);
+        vm.cfg.lock().unwrap().delete_collection(a, false);
+        add_block(&mut vm, "a.com");
+        assert_eq!(vm.cfg.lock().unwrap().rules[0].collection, None);
+    }
+
+    #[test]
+    fn editing_a_rule_can_move_it_to_another_collection() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "A");
+        let b = add_collection(&mut vm, "B");
+        add_block(&mut vm, "a.com");
+        let id = vm.cfg.lock().unwrap().rules[0].id;
+        vm.handle(RuleIntent::Edit(id));
+        assert_eq!(vm.form.collection, Some(b));
+        vm.form.collection = Some(a);
+        vm.handle(RuleIntent::Submit);
+        assert_eq!(vm.cfg.lock().unwrap().rules[0].collection, Some(a));
+    }
+
+    #[test]
+    fn rename_ignores_blank_names() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "  A  ");
+        assert_eq!(vm.cfg.lock().unwrap().collections[0].name, "A");
+        vm.handle(RuleIntent::RenameCollection(a, "  ".into()));
+        assert_eq!(vm.cfg.lock().unwrap().collections[0].name, "A");
+        vm.handle(RuleIntent::RenameCollection(a, " Slow ".into()));
+        assert_eq!(vm.cfg.lock().unwrap().collections[0].name, "Slow");
+        vm.new_collection = " ".into();
+        vm.handle(RuleIntent::AddCollection);
+        assert_eq!(vm.cfg.lock().unwrap().collections.len(), 1);
+    }
+
+    #[test]
+    fn deleting_a_collection_resets_what_pointed_at_it() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "A");
+        add_block(&mut vm, "a.com");
+        let id = vm.cfg.lock().unwrap().rules[0].id;
+        vm.handle(RuleIntent::Edit(id));
+        vm.confirm_delete = Some(a);
+        vm.handle(RuleIntent::DeleteCollection(a, true));
+        assert!(vm.cfg.lock().unwrap().rules.is_empty());
+        assert!(vm.editing.is_none() && vm.confirm_delete.is_none());
+        assert_eq!((vm.working, vm.form.collection), (None, None));
+    }
+
+    #[test]
+    fn moving_a_rule_swaps_within_its_group_only() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "A");
+        add_block(&mut vm, "a1.com");
+        vm.handle(RuleIntent::NewRuleIn(None));
+        add_block(&mut vm, "u.com");
+        vm.handle(RuleIntent::NewRuleIn(Some(a)));
+        add_block(&mut vm, "a2.com");
+        let id = |vm: &RulesVm, p: &str| {
+            vm.cfg
+                .lock()
+                .unwrap()
+                .rules
+                .iter()
+                .find(|r| r.pattern == p)
+                .unwrap()
+                .id
+        };
+        let order = |vm: &RulesVm| -> Vec<String> {
+            vm.cfg
+                .lock()
+                .unwrap()
+                .rules
+                .iter()
+                .map(|r| r.pattern.clone())
+                .collect()
+        };
+        let a1 = id(&vm, "a1.com");
+        vm.handle(RuleIntent::Move(a1, 1));
+        assert_eq!(order(&vm), ["a2.com", "u.com", "a1.com"]);
+        vm.handle(RuleIntent::Move(a1, 1));
+        assert_eq!(
+            order(&vm),
+            ["a2.com", "u.com", "a1.com"],
+            "already last in its group"
+        );
+        vm.handle(RuleIntent::Move(a1, -1));
+        assert_eq!(order(&vm), ["a1.com", "u.com", "a2.com"]);
+        vm.handle(RuleIntent::Move(12345, 1));
+    }
+
+    #[test]
+    fn rule_list_groups_counts_and_summarises() {
+        let mut vm = vm();
+        let list = vm.rule_list();
+        assert_eq!((list.groups.len(), list.summary), (1, None));
+        let a = add_collection(&mut vm, "A");
+        let b = add_collection(&mut vm, "B");
+        let list = vm.rule_list();
+        assert_eq!(list.groups.len(), 2, "empty Ungrouped is hidden");
+        assert_eq!(list.summary.as_deref(), Some("All collections on"));
+        vm.handle(RuleIntent::NewRuleIn(Some(a)));
+        add_block(&mut vm, "a.com");
+        add_block(&mut vm, "b.com");
+        let first = vm.cfg.lock().unwrap().rules[0].id;
+        vm.handle(RuleIntent::SetEnabled(first, false));
+        vm.handle(RuleIntent::SetCollectionEnabled(a, false));
+        vm.handle(RuleIntent::NewRuleIn(None));
+        add_block(&mut vm, "c.com");
+        let list = vm.rule_list();
+        assert_eq!(list.groups[0].id, None);
+        assert_eq!(list.groups[1].rows.len(), 2);
+        assert_eq!((list.groups[1].on, list.groups[1].enabled), (1, false));
+        assert_eq!(list.summary.as_deref(), Some("Active: B"));
+        assert!(!list.all_on);
+        vm.handle(RuleIntent::SetCollectionEnabled(b, false));
+        assert_eq!(
+            vm.rule_list().summary.as_deref(),
+            Some("All collections off")
+        );
+        vm.handle(RuleIntent::SetCollectionEnabled(b, true));
+        add_collection(&mut vm, "C");
+        assert_eq!(
+            vm.rule_list().summary.as_deref(),
+            Some("2 of 3 collections on")
+        );
+    }
+
+    #[test]
+    fn exported_collections_reimport_under_new_ids() {
+        let mut vm = vm();
+        let a = add_collection(&mut vm, "A");
+        add_block(&mut vm, "a.com");
+        vm.handle(RuleIntent::SetCollectionEnabled(a, false));
+        let json = vm.rules_json();
+        let mut st = Status::new(String::new(), Arc::new(NoRepaint));
+        vm.import_rules(&json, &mut st);
+        let cfg = vm.cfg.lock().unwrap();
+        assert_eq!(cfg.collections.len(), 2);
+        let copy = &cfg.collections[1];
+        assert_ne!(copy.id, a);
+        assert!(!copy.enabled);
+        assert_eq!(cfg.rules[1].collection, Some(copy.id));
+        assert_eq!(cfg.rules[0].collection, Some(a));
+    }
+
+    #[test]
+    fn imports_a_plain_array_of_rules_from_before_collections() {
+        let mut vm = vm();
+        let mut st = Status::new(String::new(), Arc::new(NoRepaint));
+        vm.import_rules(
+            r#"[{"id":7,"enabled":true,"pattern":"a.com","method":"","action":{"Block":{"status":503}}}]"#,
+            &mut st,
+        );
+        assert_eq!(st.text, "Rules imported");
+        let cfg = vm.cfg.lock().unwrap();
+        assert_eq!((cfg.rules.len(), cfg.rules[0].collection), (1, None));
+    }
+
     #[test]
     fn form_roundtrips_every_action_kind() {
         let actions = vec![
@@ -1178,6 +1624,7 @@ mod tests {
                 pattern: "p".into(),
                 method: String::new(),
                 action: a.clone(),
+                collection: None,
                 hits: 0,
             };
             assert_eq!(RuleForm::from_rule(&r).action(), a);

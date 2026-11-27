@@ -1,10 +1,11 @@
-use crate::domain::rule::Action;
 use crate::viewmodels::intent::{ListKind, RuleIntent};
-use crate::viewmodels::rules_vm::{KINDS, RuleForm, RuleKind, RulesTab, RulesVm};
+use crate::viewmodels::rules_vm::{
+    KINDS, RuleForm, RuleGroup, RuleKind, RuleRow, RulesTab, RulesVm, Tone,
+};
 use crate::views::theme::{
-    FS_CAPTION, accent, action_button, card, card_panel, checkbox, code_layouter, danger, fg,
-    fg_muted, ico, icon_button, icon_only, info, method_color, muted, overline, pill, resize_grip,
-    resize_line, segmented, success, violet, warning,
+    FS_CAPTION, accent, action_button, canvas, card, card_panel, checkbox, code_layouter, danger,
+    fg, fg_muted, ico, icon_button, icon_only, info, menu_item, menu_width, method_color, muted,
+    overflow_menu, overline, pill, resize_grip, resize_line, segmented, success, violet, warning,
 };
 use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
@@ -71,79 +72,80 @@ pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
 fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     ui.label(muted("Match = URL pattern (plain text matches anywhere; * and ? are wildcards) + optional method. Right-click any request → Create rule from this request."));
     ui.add_space(6.0);
-    let rules = vm.rules_snapshot();
+    let list = vm.rule_list();
+    let grouped = !list.collections.is_empty();
+    new_collection_row(ui, vm, out);
+    if let Some(summary) = &list.summary {
+        ui.horizontal(|ui| {
+            ui.label(muted(summary));
+            if !list.all_on && ui.link("Turn all on").clicked() {
+                out.push(RuleIntent::EnableAllCollections);
+            }
+        });
+    }
+    ui.add_space(4.0);
     ScrollArea::vertical()
-        .max_height(220.0)
+        .max_height(260.0)
         .id_salt("rule-list")
         .show(ui, |ui| {
-            if rules.is_empty() {
+            if !grouped && list.groups.iter().all(|g| g.rows.is_empty()) {
                 ui.label(RichText::new("No rules yet").color(fg_muted()));
+                ui.label(muted(
+                    "Group rules into collections to switch between scenarios.",
+                ));
             }
-            let n = rules.len();
-            for (i, r) in rules.iter().enumerate() {
-                card().inner_margin(8).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let mut enabled = r.enabled;
-                        if checkbox(ui, &mut enabled, "").changed() {
-                            out.push(RuleIntent::SetEnabled(r.id, enabled));
+            for g in &list.groups {
+                if grouped {
+                    group_header(ui, vm, g, out);
+                    if vm.collapsed.contains(&g.id) {
+                        continue;
+                    }
+                }
+                egui::Frame::new()
+                    .inner_margin(egui::Margin {
+                        left: if grouped { 16 } else { 0 },
+                        ..Default::default()
+                    })
+                    .show(ui, |ui| {
+                        if grouped && g.rows.is_empty() && ui.link("+ Add a rule").clicked() {
+                            out.push(RuleIntent::NewRuleIn(g.id));
                         }
-                        let c = match r.action {
-                            Action::Breakpoint { .. } => warning(),
-                            Action::Block { .. } => danger(),
-                            Action::Script { .. } => violet(),
-                            Action::Delay { .. } => info(),
-                            _ => success(),
-                        };
-                        pill(ui, r.action.label(), c);
-                        if !r.method.is_empty() {
-                            pill(
-                                ui,
-                                &r.method.to_uppercase(),
-                                method_color(&r.method.to_uppercase()),
-                            );
-                        }
-                        ui.label(RichText::new(&r.pattern).monospace());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let tool = |ui: &mut egui::Ui, icon: &str, tip: &str| {
-                                icon_only(ui, icon, tip).clicked()
+                        let last = g.rows.len().saturating_sub(1);
+                        for (pos, r) in g.rows.iter().enumerate() {
+                            let order = Order {
+                                can_up: pos > 0,
+                                can_down: pos < last,
                             };
-                            if tool(ui, ph::X, "Delete") {
-                                out.push(RuleIntent::Delete(r.id));
-                            }
-                            if tool(ui, ph::PENCIL, "Edit") {
-                                out.push(RuleIntent::Edit(r.id));
-                            }
-                            if i + 1 < n && tool(ui, ph::ARROW_DOWN, "Lower priority") {
-                                out.push(RuleIntent::Move(i, 1));
-                            }
-                            if i > 0 && tool(ui, ph::ARROW_UP, "Higher priority") {
-                                out.push(RuleIntent::Move(i, -1));
-                            }
-                            if r.hits > 0 {
-                                ui.label(muted(format!("{} hits", r.hits)));
-                            }
-                        });
+                            rule_card(ui, r, &order, !g.enabled, &list.collections, out);
+                        }
                     });
-                    ui.label(muted(if r.name.is_empty() {
-                        r.action.describe()
-                    } else {
-                        format!("{} — {}", r.name, r.action.describe())
-                    }));
-                });
             }
         });
 
     ui.add_space(6.0);
     ui.separator();
     let editing = vm.editing.is_some();
+    let target = |c: Option<u64>| {
+        c.and_then(|id| list.collections.iter().find(|(i, _)| *i == id))
+            .map(|(_, n)| n.as_str())
+    };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(if editing { "Edit rule" } else { "New rule" }).strong());
+        let title = if editing {
+            "Edit rule".to_string()
+        } else if !grouped {
+            "New rule".to_string()
+        } else if let Some(name) = target(vm.form.collection) {
+            format!("New rule in {name}")
+        } else {
+            "New rule with no collection".to_string()
+        };
+        ui.label(RichText::new(title).strong());
         if editing && icon_button(ui, ph::X, "Cancel edit", true).clicked() {
             out.push(RuleIntent::CancelEdit);
         }
     });
     let live = vm.live_matches();
-    form_ui(ui, &mut vm.form, out);
+    form_ui(ui, &mut vm.form, &list.collections, out);
     ui.horizontal(|ui| {
         let (icon, label) = if editing {
             (ph::CHECK, "Save rule")
@@ -166,7 +168,340 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     });
 }
 
-fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
+fn new_collection_row(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
+    if !vm.adding_collection {
+        if icon_button(ui, ph::FOLDER_SIMPLE_PLUS, "New collection", true).clicked() {
+            vm.adding_collection = true;
+            vm.rename_focus = true;
+        }
+        return;
+    }
+    ui.horizontal(|ui| {
+        let edit = ui.add(
+            TextEdit::singleline(&mut vm.new_collection)
+                .desired_width(220.0)
+                .hint_text("e.g. Checkout happy path"),
+        );
+        if std::mem::take(&mut vm.rename_focus) {
+            edit.request_focus();
+        }
+        let ready = !vm.new_collection.trim().is_empty();
+        let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if (icon_button(ui, ph::CHECK, "Add collection", ready).clicked() || enter) && ready {
+            out.push(RuleIntent::AddCollection);
+        }
+        if icon_button(ui, ph::X, "Cancel", true).clicked() || escape {
+            vm.adding_collection = false;
+            vm.new_collection.clear();
+        }
+    });
+}
+
+struct Order {
+    can_up: bool,
+    can_down: bool,
+}
+
+fn rule_card(
+    ui: &mut egui::Ui,
+    r: &RuleRow,
+    order: &Order,
+    collection_off: bool,
+    collections: &[(u64, String)],
+    out: &mut Vec<RuleIntent>,
+) {
+    card().inner_margin(8).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            let mut enabled = r.enabled;
+            let on = checkbox(ui, &mut enabled, "");
+            let who = if r.name.is_empty() {
+                &r.pattern
+            } else {
+                &r.name
+            };
+            let spoken = if collection_off {
+                format!("Rule {who} (collection is off)")
+            } else {
+                format!("Rule {who}")
+            };
+            on.widget_info(|| {
+                egui::WidgetInfo::selected(egui::Role::CheckBox, true, enabled, spoken.clone())
+            });
+            if on.changed() {
+                out.push(RuleIntent::SetEnabled(r.id, enabled));
+            }
+            let c = match r.tone {
+                Tone::Warning => warning(),
+                Tone::Danger => danger(),
+                Tone::Violet => violet(),
+                Tone::Info => info(),
+                Tone::Success => success(),
+            };
+            pill(ui, r.label, c);
+            if !r.method.is_empty() {
+                pill(
+                    ui,
+                    &r.method.to_uppercase(),
+                    method_color(&r.method.to_uppercase()),
+                );
+            }
+            ui.label(RichText::new(&r.pattern).monospace());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if icon_only(ui, ph::X, "Delete").clicked() {
+                    out.push(RuleIntent::Delete(r.id));
+                }
+                if icon_only(ui, ph::PENCIL, "Edit").clicked() {
+                    out.push(RuleIntent::Edit(r.id));
+                }
+                if order.can_up || order.can_down || !collections.is_empty() {
+                    overflow_menu(ui, "Rule actions", |ui| {
+                        rule_menu(ui, r.id, order, collections, out);
+                    });
+                }
+                if r.hits > 0 {
+                    ui.label(muted(format!("{} hits", r.hits)));
+                }
+            });
+        });
+        ui.label(muted(if r.name.is_empty() {
+            r.description.clone()
+        } else {
+            format!("{} — {}", r.name, r.description)
+        }));
+    });
+}
+
+fn rule_menu(
+    ui: &mut egui::Ui,
+    id: u64,
+    order: &Order,
+    collections: &[(u64, String)],
+    out: &mut Vec<RuleIntent>,
+) {
+    let names: Vec<&str> = collections.iter().map(|(_, n)| n.as_str()).collect();
+    menu_width(
+        ui,
+        &[
+            &[
+                "Higher priority",
+                "Lower priority",
+                "Move to collection",
+                "No collection",
+            ],
+            &names[..],
+        ]
+        .concat(),
+    );
+    let priority = "Rules run top to bottom: the order is the global priority";
+    if order.can_up
+        && menu_item(ui, "Higher priority", None)
+            .on_hover_text(priority)
+            .clicked()
+    {
+        out.push(RuleIntent::Move(id, -1));
+    }
+    if order.can_down
+        && menu_item(ui, "Lower priority", None)
+            .on_hover_text(priority)
+            .clicked()
+    {
+        out.push(RuleIntent::Move(id, 1));
+    }
+    if !collections.is_empty() {
+        ui.label(muted("Move to collection"));
+        let targets = std::iter::once((None, "No collection"))
+            .chain(collections.iter().map(|(id, n)| (Some(*id), n.as_str())));
+        for (target, name) in targets {
+            if menu_item(ui, name, None).clicked() {
+                out.push(RuleIntent::SetRuleCollection(id, target));
+            }
+        }
+    }
+}
+
+fn group_header(ui: &mut egui::Ui, vm: &mut RulesVm, g: &RuleGroup, out: &mut Vec<RuleIntent>) {
+    let collapsed = vm.collapsed.contains(&g.id);
+    let mut start_rename = false;
+    let strip = card()
+        .fill(canvas())
+        .stroke(egui::Stroke::NONE)
+        .inner_margin(4)
+        .show(ui, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if icon_only(ui, ph::PLUS, "New rule in this collection").clicked() {
+                    out.push(RuleIntent::NewRuleIn(g.id));
+                }
+                if let Some(id) = g.id {
+                    overflow_menu(ui, "Collection actions", |ui| {
+                        menu_width(ui, &["Rename", "Delete…"]);
+                        if menu_item(ui, "Rename", None).clicked() {
+                            start_rename = true;
+                        }
+                        if menu_item(ui, "Delete…", None).clicked() {
+                            if g.rows.is_empty() {
+                                out.push(RuleIntent::DeleteCollection(id, false));
+                            } else {
+                                vm.confirm_delete = Some(id);
+                            }
+                        }
+                    });
+                    let only = icon_button(ui, "", "Only", true).on_hover_text(
+                        "Turn this collection on and every other collection off. Rules with no collection stay on.",
+                    );
+                    if only.clicked() {
+                        out.push(RuleIntent::SoloCollection(id));
+                    }
+                }
+                let n = g.rows.len();
+                let plural = if n == 1 { "" } else { "s" };
+                ui.label(muted(match (g.id, g.enabled) {
+                    (None, _) => format!("{n} rule{plural}"),
+                    (Some(_), true) => format!("{n} rule{plural} · {} on", g.on),
+                    (Some(_), false) => format!("Off · {n} rule{plural}"),
+                }));
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let (icon, tip) = if collapsed {
+                        (ph::CARET_RIGHT, "Expand")
+                    } else {
+                        (ph::CARET_DOWN, "Collapse")
+                    };
+                    if icon_only(ui, icon, tip).clicked() && !vm.collapsed.remove(&g.id) {
+                        vm.collapsed.insert(g.id);
+                    }
+                    if let Some(id) = g.id {
+                        let mut on = g.enabled;
+                        let toggle = checkbox(ui, &mut on, "")
+                            .on_hover_text("Turn every rule in this collection on or off");
+                        toggle.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::CheckBox,
+                                true,
+                                g.enabled,
+                                format!("Turn on collection {}", g.name),
+                            )
+                        });
+                        if toggle.changed() {
+                            out.push(RuleIntent::SetCollectionEnabled(id, on));
+                        }
+                    }
+                    if let Some(id) = g.id.filter(|id| vm.renaming == Some(*id)) {
+                        rename_field(ui, vm, id, out);
+                    } else {
+                        let name = if g.id.is_some() {
+                            g.name.clone()
+                        } else {
+                            format!("{} · always on", g.name)
+                        };
+                        let text = RichText::new(name).strong();
+                        let label = ui.add(
+                            egui::Label::new(if g.enabled { text.color(fg()) } else { text.color(fg_muted()) })
+                                .truncate()
+                                .sense(egui::Sense::click()),
+                        );
+                        if g.id.is_some() && label.double_clicked() {
+                            start_rename = true;
+                        }
+                    }
+                    if !g.enabled {
+                        pill(ui, "Off", fg_muted());
+                    }
+                });
+            });
+        });
+    if vm.working == g.id {
+        let r = strip.response.rect;
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(r.left_top(), egui::vec2(3.0, r.height())),
+            0.0,
+            accent(),
+        );
+    }
+    if start_rename && let Some(id) = g.id {
+        vm.renaming = Some(id);
+        vm.rename_input.clone_from(&g.name);
+        vm.rename_focus = true;
+    }
+    if let Some(id) = g.id.filter(|id| vm.confirm_delete == Some(*id)) {
+        delete_confirm(ui, vm, id, g, out);
+    }
+}
+
+fn rename_field(ui: &mut egui::Ui, vm: &mut RulesVm, id: u64, out: &mut Vec<RuleIntent>) {
+    let mut edit = TextEdit::singleline(&mut vm.rename_input)
+        .desired_width(160.0)
+        .show(ui);
+    if std::mem::take(&mut vm.rename_focus) {
+        edit.response.request_focus();
+        let end = vm.rename_input.chars().count();
+        edit.state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(end),
+            )));
+        edit.state.store(ui.ctx(), edit.response.id);
+    }
+    // Escape also drops focus this frame, so it has to win over the lost-focus commit
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        vm.renaming = None;
+    } else if edit.response.lost_focus() {
+        out.push(RuleIntent::RenameCollection(
+            id,
+            std::mem::take(&mut vm.rename_input),
+        ));
+        vm.renaming = None;
+    }
+}
+
+fn delete_confirm(
+    ui: &mut egui::Ui,
+    vm: &mut RulesVm,
+    id: u64,
+    g: &RuleGroup,
+    out: &mut Vec<RuleIntent>,
+) {
+    let n = g.rows.len();
+    let rules = format!("{n} rule{}", if n == 1 { "" } else { "s" });
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        vm.confirm_delete = None;
+        return;
+    }
+    card().inner_margin(8).show(ui, |ui| {
+        ui.label(format!("Delete collection \"{}\"?", g.name));
+        ui.horizontal_wrapped(|ui| {
+            if icon_button(
+                ui,
+                ph::FOLDER_SIMPLE,
+                &format!("Move {rules} to No collection"),
+                true,
+            )
+            .clicked()
+            {
+                out.push(RuleIntent::DeleteCollection(id, false));
+            }
+            if ui
+                .add(action_button(
+                    ico(ph::TRASH, &format!("Delete collection and {rules}")),
+                    danger(),
+                ))
+                .clicked()
+            {
+                out.push(RuleIntent::DeleteCollection(id, true));
+            }
+            if icon_button(ui, ph::X, "Cancel", true).clicked() {
+                vm.confirm_delete = None;
+            }
+        });
+    });
+}
+
+fn form_ui(
+    ui: &mut egui::Ui,
+    f: &mut RuleForm,
+    collections: &[(u64, String)],
+    out: &mut Vec<RuleIntent>,
+) {
     let w = (ui.available_width() - 100.0).clamp(120.0, 700.0);
     let kind_picker = |ui: &mut egui::Ui, kind: &mut RuleKind| {
         let current = KINDS.iter().find(|(k, _)| k == kind).map_or("", |(_, l)| l);
@@ -207,6 +542,23 @@ fn form_ui(ui: &mut egui::Ui, f: &mut RuleForm, out: &mut Vec<RuleIntent>) {
                         .hint_text("optional"),
                 );
             });
+            if !collections.is_empty() {
+                field(ui, "Collection", |ui| {
+                    let current = collections
+                        .iter()
+                        .find(|(id, _)| Some(*id) == f.collection)
+                        .map_or("No collection", |(_, n)| n.as_str());
+                    egui::ComboBox::from_id_salt("rule-collection")
+                        .selected_text(current)
+                        .width(160.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut f.collection, None, "No collection");
+                            for (id, name) in collections {
+                                ui.selectable_value(&mut f.collection, Some(*id), name);
+                            }
+                        });
+                });
+            }
             field(ui, "URL pattern", |ui| {
                 ui.add(
                     TextEdit::singleline(&mut f.pattern)

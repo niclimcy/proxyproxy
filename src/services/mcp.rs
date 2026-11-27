@@ -163,9 +163,31 @@ fn tools() -> Vec<Value> {
                     "pattern": {"type": "string"},
                     "method": {"type": "string"},
                     "enabled": {"type": "boolean"},
+                    "collection": {"type": ["integer", "null"], "description": "Collection id from proxyproxy_list_collections; null for Ungrouped. Omitted on an existing rule keeps its collection"},
                     "action": {"type": "object"}
                 },
                 "required": ["pattern", "action"]
+            }),
+        ),
+        tool(
+            "proxyproxy_list_collections",
+            "List rule collections with their rule counts",
+            &json!({
+                "type": "object",
+                "properties": {}
+            }),
+        ),
+        tool(
+            "proxyproxy_set_collection_enabled",
+            "Turn a rule collection on or off; its rules keep their own on/off state",
+            &json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "enabled": {"type": "boolean"},
+                    "solo": {"type": "boolean", "description": "Turn this collection on and all other collections off; enabled is ignored"}
+                },
+                "required": ["id"]
             }),
         ),
         tool(
@@ -237,6 +259,47 @@ fn call_tool(
             Ok(serde_json::to_value(rules).unwrap_or(json!([])))
         }
         "proxyproxy_add_rule" => add_rule(cfg, arguments),
+        "proxyproxy_list_collections" => {
+            let cfg = cfg.lock().unwrap();
+            let counts = cfg.collection_counts();
+            let collections: Vec<Value> = cfg
+                .collections
+                .iter()
+                .map(|c| {
+                    let (rules, rules_on) = counts.get(&Some(c.id)).copied().unwrap_or_default();
+                    json!({
+                        "id": c.id,
+                        "name": c.name,
+                        "enabled": c.enabled,
+                        "rules": rules,
+                        "rules_on": rules_on
+                    })
+                })
+                .collect();
+            Ok(json!(collections))
+        }
+        "proxyproxy_set_collection_enabled" => {
+            let id = arguments
+                .get("id")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "id is required".to_string())?;
+            let solo = arguments.get("solo").and_then(Value::as_bool) == Some(true);
+            let enabled = arguments
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| "enabled is required unless solo is true".to_string());
+            let mut cfg = cfg.lock().unwrap();
+            let found = if solo {
+                cfg.solo_collection(id)
+            } else {
+                cfg.set_collection_enabled(id, enabled?)
+            };
+            if found {
+                Ok(json!({"id": id, "collections": cfg.collections}))
+            } else {
+                Err("no such collection".into())
+            }
+        }
         "proxyproxy_delete_rule" => {
             let id = arguments
                 .get("id")
@@ -323,6 +386,22 @@ fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
         .get("id")
         .and_then(Value::as_u64)
         .unwrap_or_else(|| cfg.next_rule_id());
+    let collection = match arguments.get("collection") {
+        Some(Value::Number(n)) => {
+            let c = n.as_u64().ok_or_else(|| "invalid collection".to_string())?;
+            if !cfg.collection_exists(c) {
+                return Err(format!("no such collection: {c}"));
+            }
+            Some(c)
+        }
+        Some(Value::Null) => None,
+        Some(_) => return Err("collection must be an integer or null".into()),
+        None => cfg
+            .rules
+            .iter()
+            .find(|r| r.id == id)
+            .and_then(|r| r.collection),
+    };
     let rule = Rule {
         id,
         enabled: arguments
@@ -341,6 +420,7 @@ fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
             .unwrap_or("")
             .to_string(),
         action,
+        collection,
         hits: 0,
     };
     if let Some(existing) = cfg.rules.iter_mut().find(|existing| existing.id == id) {
@@ -585,5 +665,111 @@ mod tests {
                 .unwrap()
         );
         assert!(cfg.lock().unwrap().rules.is_empty());
+    }
+
+    fn call(store: &FlowStore, cfg: &Shared, name: &str, arguments: &Value) -> Value {
+        let response = handle(
+            store,
+            cfg,
+            &json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            }),
+        )
+        .unwrap();
+        response["result"].clone()
+    }
+
+    #[test]
+    fn collections_are_listed_toggled_and_assigned_through_tools() {
+        let (store, cfg) = setup();
+        let (a, b) = {
+            let mut c = cfg.lock().unwrap();
+            (c.add_collection("Errors"), c.add_collection("Slow"))
+        };
+        let block = json!({"Block": {"status": 503}});
+        let added = call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"pattern": "a.com", "action": block, "collection": a}),
+        );
+        assert_eq!(added["structuredContent"]["collection"], a);
+        let id = added["structuredContent"]["id"].clone();
+
+        let listed = call(&store, &cfg, "proxyproxy_list_rules", &json!({}));
+        assert_eq!(listed["structuredContent"][0]["collection"], a);
+
+        let missing = call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"pattern": "b.com", "action": block, "collection": 99}),
+        );
+        assert_eq!(missing["isError"], true);
+
+        // an update that omits the field leaves the rule where it is; null ungroups it
+        call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"id": id, "pattern": "a.com", "action": block}),
+        );
+        assert_eq!(cfg.lock().unwrap().rules[0].collection, Some(a));
+        call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"id": id, "pattern": "a.com", "action": block, "collection": null}),
+        );
+        assert_eq!(cfg.lock().unwrap().rules[0].collection, None);
+
+        let counts = call(&store, &cfg, "proxyproxy_list_collections", &json!({}));
+        assert_eq!(counts["structuredContent"][0]["name"], "Errors");
+        assert_eq!(counts["structuredContent"][0]["rules"], 0);
+        call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"pattern": "c.com", "action": block, "collection": b, "enabled": false}),
+        );
+        call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"pattern": "d.com", "action": block, "collection": b}),
+        );
+        let counts = call(&store, &cfg, "proxyproxy_list_collections", &json!({}));
+        assert_eq!(counts["structuredContent"][1]["rules"], 2);
+        assert_eq!(counts["structuredContent"][1]["rules_on"], 1);
+
+        call(
+            &store,
+            &cfg,
+            "proxyproxy_set_collection_enabled",
+            &json!({"id": a, "enabled": false}),
+        );
+        assert!(!cfg.lock().unwrap().collections[0].enabled);
+        call(
+            &store,
+            &cfg,
+            "proxyproxy_set_collection_enabled",
+            &json!({"id": a, "solo": true}),
+        );
+        let on: Vec<bool> = cfg
+            .lock()
+            .unwrap()
+            .collections
+            .iter()
+            .map(|c| c.enabled)
+            .collect();
+        assert_eq!(on, [true, false]);
+        let bad = call(
+            &store,
+            &cfg,
+            "proxyproxy_set_collection_enabled",
+            &json!({"id": b + 10, "enabled": true}),
+        );
+        assert_eq!(bad["isError"], true);
     }
 }

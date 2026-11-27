@@ -50,7 +50,8 @@ impl Config {
         mut pick: impl FnMut(&Rule) -> T,
     ) -> Vec<T> {
         let mut out = vec![];
-        for r in self.rules.iter_mut().filter(|r| r.enabled) {
+        let off = self.disabled_collections();
+        for r in self.rules.iter_mut().filter(|r| rule_active(&off, r)) {
             if rule_matches(r, method, url) {
                 r.hits += 1;
                 out.push(pick(r));
@@ -58,6 +59,12 @@ impl Config {
         }
         out
     }
+}
+
+/// A rule applies when it is on and its collection (if it has one) is not in `off`.
+/// An id that no longer exists isn't in `off`, so a dangling id never hides a rule.
+pub fn rule_active(off: &[u64], r: &Rule) -> bool {
+    r.enabled && r.collection.is_none_or(|c| !off.contains(&c))
 }
 
 fn host_entry_matches(entry: &str, host: &str) -> bool {
@@ -202,6 +209,7 @@ mod tests {
             pattern: "b.com".into(),
             method: String::new(),
             action: Action::Block { status: 403 },
+            collection: None,
             hits: 0,
         });
         assert!(!c.captured("https://b.com/"));
@@ -228,6 +236,7 @@ mod tests {
             pattern: "a.com".into(),
             method: String::new(),
             action: Action::Block { status: 403 },
+            collection: None,
             hits: 0,
         });
         assert_eq!(
@@ -265,6 +274,7 @@ mod tests {
             pattern: pattern.into(),
             method: method.into(),
             action: Action::Block { status: 403 },
+            collection: None,
             hits: 0,
         }
     }

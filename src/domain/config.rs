@@ -1,11 +1,16 @@
 use super::keymap::{Binding, RowAction};
-use super::rule::Rule;
+use super::rule::{Rule, RuleCollection};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub rules: Vec<Rule>,
+    #[serde(default)]
+    pub collections: Vec<RuleCollection>,
+    /// Zero in configs from before it existed; `new_collection_id` also looks at the highest id in use.
+    #[serde(default)]
+    pub next_collection_id: u64,
     // configs from before onboarding existed belong to users who are already set up;
     // first runs have no config file and get `Default` (false)
     #[serde(default = "already_onboarded")]

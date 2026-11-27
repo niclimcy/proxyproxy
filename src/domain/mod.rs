@@ -1,5 +1,6 @@
 pub mod about;
 pub mod app;
+pub mod collection;
 pub mod config;
 pub mod filter;
 pub mod flow;
