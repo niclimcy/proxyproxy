@@ -1,3 +1,4 @@
+use super::mcp_vm::McpClient;
 use super::rules_vm::RuleKind;
 use crate::domain::config::OnboardingProfile;
 use crate::domain::keymap::{Binding, RowAction};
@@ -185,8 +186,7 @@ pub enum NetworkIntent {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum McpCopy {
     Endpoint,
-    ClaudeCode,
-    Stdio,
+    Client(McpClient),
 }
 
 #[derive(Clone, Copy)]

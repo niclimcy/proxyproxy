@@ -2,12 +2,46 @@ use super::intent::{McpCopy, McpIntent};
 use super::status::Flash;
 use crate::domain::config::Shared;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum McpClient {
+    Custom,
+    ClaudeCode,
+    Codex,
+    GeminiCli,
+    Antigravity,
+}
+
+impl McpClient {
+    pub const ALL: [McpClient; 5] = [
+        Self::Custom,
+        Self::ClaudeCode,
+        Self::Codex,
+        Self::GeminiCli,
+        Self::Antigravity,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Custom => "Custom",
+            Self::ClaudeCode => "Claude Code",
+            Self::Codex => "Codex",
+            Self::GeminiCli => "Gemini CLI",
+            Self::Antigravity => "Antigravity",
+        }
+    }
+}
+
+/// What to show for one client: the text to copy and where it goes.
+pub struct Snippet {
+    pub text: String,
+    pub hint: &'static str,
+}
+
 pub struct McpVm {
     cfg: Shared,
     pub endpoint: String,
-    pub claude_command: String,
-    pub stdio_command: String,
-    copied: [Flash; 3],
+    snippets: Vec<(McpClient, Snippet)>,
+    copied: Option<(McpCopy, Flash)>,
 }
 
 fn shell_quote(path: &str) -> String {
@@ -19,18 +53,47 @@ fn shell_quote(path: &str) -> String {
 }
 
 impl McpVm {
-    /// `exe` is this program's path, so the stdio command works even when it isn't on `PATH`.
+    /// `exe` is this program's path, so stdio setups work even when it isn't on `PATH`.
     pub fn new(cfg: Shared, port: u16, api_port: u16, exe: Option<&str>) -> Self {
         let endpoint = format!("http://127.0.0.1:{api_port}/mcp");
+        let exe = exe.unwrap_or("proxyproxy");
+        let json = serde_json::to_string_pretty(&serde_json::json!({
+            "mcpServers": {
+                "proxyproxy": { "command": exe, "args": ["mcp", "--port", port.to_string()] }
+            }
+        }))
+        .expect("a json! value always serializes");
+        let http = |cli: &str| format!("{cli} mcp add --transport http proxyproxy {endpoint}");
+        let snippets = McpClient::ALL
+            .into_iter()
+            .map(|c| {
+                let (text, hint) = match c {
+                    McpClient::Custom => (
+                        json.clone(),
+                        "Paste into your client's MCP config (mcpServers)",
+                    ),
+                    McpClient::ClaudeCode => (http("claude"), "Run in a terminal"),
+                    McpClient::Codex => (
+                        format!(
+                            "codex mcp add proxyproxy -- {} mcp --port {port}",
+                            shell_quote(exe)
+                        ),
+                        "Run in a terminal (stdio)",
+                    ),
+                    McpClient::GeminiCli => (http("gemini"), "Run in a terminal"),
+                    McpClient::Antigravity => (
+                        json.clone(),
+                        "In the agent panel: MCP servers → Manage MCP Servers → View raw config, then paste into mcp_config.json",
+                    ),
+                };
+                (c, Snippet { text, hint })
+            })
+            .collect();
         Self {
             cfg,
-            claude_command: format!("claude mcp add --transport http proxyproxy {endpoint}"),
-            stdio_command: format!(
-                "{} mcp --port {port}",
-                exe.map_or_else(|| "proxyproxy".to_string(), shell_quote)
-            ),
             endpoint,
-            copied: Default::default(),
+            snippets,
+            copied: None,
         }
     }
 
@@ -38,14 +101,29 @@ impl McpVm {
         self.cfg.lock().unwrap().mcp_enabled
     }
 
+    pub fn snippet(&self, client: McpClient) -> &Snippet {
+        &self
+            .snippets
+            .iter()
+            .find(|(c, _)| *c == client)
+            .expect("every client has a snippet")
+            .1
+    }
+
     pub fn copied(&self, what: McpCopy) -> bool {
-        self.copied[what as usize].on()
+        self.copied
+            .as_ref()
+            .is_some_and(|(w, f)| *w == what && f.on())
     }
 
     pub fn handle(&mut self, intent: McpIntent) {
         match intent {
             McpIntent::SetEnabled(on) => self.cfg.lock().unwrap().mcp_enabled = on,
-            McpIntent::Copied(what) => self.copied[what as usize].mark(),
+            McpIntent::Copied(what) => {
+                let mut flash = Flash::default();
+                flash.mark();
+                self.copied = Some((what, flash));
+            }
         }
     }
 }
@@ -71,28 +149,54 @@ mod tests {
         assert!(!cfg.lock().unwrap().mcp_enabled);
     }
 
+    fn snippet(vm: &McpVm, c: McpClient) -> &str {
+        &vm.snippet(c).text
+    }
+
     #[test]
-    fn connection_strings_follow_the_ports_and_quote_the_exe_path() {
+    fn json_snippet_is_valid_and_carries_exe_and_port() {
+        let (vm, _) = vm(Some("/Applications/Proxy Proxy.app/pp"));
+        for c in [McpClient::Custom, McpClient::Antigravity] {
+            let v: serde_json::Value = serde_json::from_str(snippet(&vm, c)).unwrap();
+            let server = &v["mcpServers"]["proxyproxy"];
+            assert_eq!(server["command"], "/Applications/Proxy Proxy.app/pp");
+            assert_eq!(
+                server["args"],
+                serde_json::json!(["mcp", "--port", "19090"])
+            );
+        }
+        let (bare, _) = self::vm(None);
+        assert!(snippet(&bare, McpClient::Custom).contains("\"proxyproxy\""));
+    }
+
+    #[test]
+    fn cli_commands_use_the_right_endpoint_and_port() {
         let (vm, _) = vm(None);
         assert_eq!(vm.endpoint, "http://127.0.0.1:19091/mcp");
         assert_eq!(
-            vm.claude_command,
+            snippet(&vm, McpClient::ClaudeCode),
             "claude mcp add --transport http proxyproxy http://127.0.0.1:19091/mcp"
         );
-        assert_eq!(vm.stdio_command, "proxyproxy mcp --port 19090");
-        let (plain, _) = self::vm(Some("/opt/pp"));
-        assert_eq!(plain.stdio_command, "/opt/pp mcp --port 19090");
+        assert_eq!(
+            snippet(&vm, McpClient::GeminiCli),
+            "gemini mcp add --transport http proxyproxy http://127.0.0.1:19091/mcp"
+        );
+        assert_eq!(
+            snippet(&vm, McpClient::Codex),
+            "codex mcp add proxyproxy -- proxyproxy mcp --port 19090"
+        );
         let (spaced, _) = self::vm(Some("/Applications/Proxy Proxy.app/pp"));
         assert_eq!(
-            spaced.stdio_command,
-            "\"/Applications/Proxy Proxy.app/pp\" mcp --port 19090"
+            snippet(&spaced, McpClient::Codex),
+            "codex mcp add proxyproxy -- \"/Applications/Proxy Proxy.app/pp\" mcp --port 19090"
         );
     }
 
     #[test]
-    fn copy_feedback_is_per_row() {
+    fn copy_feedback_is_per_snippet() {
         let (mut vm, _) = vm(None);
-        vm.handle(McpIntent::Copied(McpCopy::Stdio));
-        assert!(vm.copied(McpCopy::Stdio) && !vm.copied(McpCopy::Endpoint));
+        let claude = McpCopy::Client(McpClient::ClaudeCode);
+        vm.handle(McpIntent::Copied(claude));
+        assert!(vm.copied(claude) && !vm.copied(McpCopy::Endpoint));
     }
 }

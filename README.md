@@ -42,7 +42,7 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 - TLS key log in NSS format for Wireshark. `proxyproxy run` also honours `SSLKEYLOGFILE`.
 - Export HAR, CSV and rules JSON. Import HAR and Charles JSON sessions (`.chlsj`).
 - REST API: `http://127.0.0.1:<port+1>/flows?q=&limit=`, `/flows/{id}`, `/har`.
-- MCP (off by default; turn it on in Settings → MCP, otherwise `POST /mcp` answers 403). Any program on this computer can connect while it is on, and captured flows may contain secrets such as tokens and passwords. HTTP JSON-RPC at `http://127.0.0.1:<port+1>/mcp` (`Content-Type: application/json`; requests from web pages are refused), or stdio with `proxyproxy mcp --port 9090`.
+- MCP (off by default; turn it on in Settings → MCP, otherwise `POST /mcp` answers 403). Any program on this computer can connect while it is on, and captured flows may contain secrets such as tokens and passwords. HTTP JSON-RPC at `http://127.0.0.1:<port+1>/mcp` (`Content-Type: application/json`; requests from web pages are refused), or stdio with `proxyproxy mcp --port 9090`. Settings → MCP → Connect a client shows a ready-to-copy setup per client: a pasteable `mcp.json` (Custom, also used for Antigravity's raw MCP config) or the add command for Claude Code, Codex and Gemini CLI.
   - Resources: captured traffic and individual flows.
   - Tools: list/get flows, replay requests, list/add/delete rules, and export HAR.
 

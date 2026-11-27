@@ -1,6 +1,8 @@
 use crate::viewmodels::intent::{McpCopy, McpIntent};
-use crate::viewmodels::mcp_vm::McpVm;
-use crate::views::theme::{checkbox, icon_only, muted, overline, status_dot, success, warning};
+use crate::viewmodels::mcp_vm::{McpClient, McpVm};
+use crate::views::theme::{
+    RADIUS, canvas, checkbox, icon_only, muted, overline, segmented, status_dot, success, warning,
+};
 use eframe::egui::{self, RichText};
 use egui_phosphor::regular as ph;
 use std::time::Duration;
@@ -30,57 +32,73 @@ pub fn show(ui: &mut egui::Ui, vm: &McpVm) -> Vec<McpIntent> {
 
     ui.separator();
     ui.label(RichText::new("Connect a client").strong());
-    copy_row(
+    ui.add_space(4.0);
+    let id = egui::Id::unique("mcp-client");
+    let mut client = ui.data(|d| d.get_temp(id)).unwrap_or(McpClient::Custom);
+    segmented(ui, &mut client, &McpClient::ALL.map(|c| (c, c.label())));
+    ui.data_mut(|d| d.insert_temp(id, client));
+    let snippet = vm.snippet(client);
+    ui.add_space(6.0);
+    ui.label(muted(snippet.hint));
+    ui.add_space(4.0);
+    code_block(
+        ui,
+        vm,
+        &mut out,
+        McpCopy::Client(client),
+        &format!(
+            "Copy {} {}",
+            client.label(),
+            if snippet.text.starts_with('{') {
+                "config"
+            } else {
+                "command"
+            }
+        ),
+        &snippet.text,
+    );
+    ui.add_space(8.0);
+    ui.label(overline("HTTP endpoint"));
+    ui.label(muted("For clients that take a URL"));
+    code_block(
         ui,
         vm,
         &mut out,
         McpCopy::Endpoint,
-        "HTTP endpoint",
+        "Copy HTTP endpoint",
         &vm.endpoint,
-    );
-    copy_row(
-        ui,
-        vm,
-        &mut out,
-        McpCopy::ClaudeCode,
-        "Claude Code",
-        &vm.claude_command,
-    );
-    copy_row(
-        ui,
-        vm,
-        &mut out,
-        McpCopy::Stdio,
-        "Command for stdio clients",
-        &vm.stdio_command,
     );
     out
 }
 
-fn copy_row(
+fn code_block(
     ui: &mut egui::Ui,
     vm: &McpVm,
     out: &mut Vec<McpIntent>,
     what: McpCopy,
-    label: &str,
+    tip: &str,
     value: &str,
 ) {
-    ui.add_space(6.0);
-    ui.label(overline(label));
-    ui.horizontal(|ui| {
-        let copied = vm.copied(what);
-        let (icon, tip) = if copied {
-            (ph::CHECK, "Copied".to_string())
-        } else {
-            (ph::COPY, format!("Copy {label}"))
-        };
-        if icon_only(ui, icon, &tip).clicked() {
-            ui.ctx().copy_text(value.to_string());
-            out.push(McpIntent::Copied(what));
-        }
-        if copied {
-            ui.ctx().request_repaint_after(Duration::from_millis(2100));
-        }
-        ui.add(egui::Label::new(RichText::new(value).monospace()).wrap());
-    });
+    egui::Frame::new()
+        .fill(canvas())
+        .corner_radius(egui::CornerRadius::same(RADIUS))
+        .inner_margin(egui::Margin::same(8))
+        .show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                let copied = vm.copied(what);
+                let (icon, tip) = if copied {
+                    (ph::CHECK, "Copied")
+                } else {
+                    (ph::COPY, tip)
+                };
+                if icon_only(ui, icon, tip).clicked() {
+                    ui.ctx().copy_text(value.to_string());
+                    out.push(McpIntent::Copied(what));
+                }
+                if copied {
+                    ui.ctx().request_repaint_after(Duration::from_millis(2100));
+                }
+                ui.add(egui::Label::new(RichText::new(value).monospace()).wrap());
+            });
+        });
 }
