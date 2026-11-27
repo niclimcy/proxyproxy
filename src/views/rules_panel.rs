@@ -234,76 +234,78 @@ fn rule_card(ui: &mut egui::Ui, r: &RuleRow, cx: &RowCtx, out: &mut Vec<RuleInte
         frame = frame.fill(tint(accent(), Tint::Subtle));
     }
     let row = frame.show(ui, |ui| {
-        ui.horizontal(|ui| {
-            let mut enabled = r.enabled;
-            let on = checkbox(ui, &mut enabled, "");
-            let who = if r.name.is_empty() {
-                &r.pattern
-            } else {
-                &r.name
-            };
-            let spoken = if cx.collection_off {
-                format!("Rule {who} (collection is off)")
-            } else {
-                format!("Rule {who}")
-            };
-            on.widget_info(|| {
-                egui::WidgetInfo::selected(egui::Role::CheckBox, true, enabled, spoken.clone())
-            });
-            if on.changed() {
-                out.push(RuleIntent::SetEnabled(r.id, enabled));
-            }
-            // a rule in an off collection reads as off through muted tokens, so its text keeps its contrast
-            let ink = |c| if cx.collection_off { fg_muted() } else { c };
-            let tone = match r.tone {
-                Tone::Warning => warning(),
-                Tone::Danger => danger(),
-                Tone::Violet => violet(),
-                Tone::Info => info(),
-                Tone::Success => success(),
-            };
-            pill(ui, r.label, ink(tone));
-            if !r.method.is_empty() {
-                let m = r.method.to_uppercase();
-                pill(ui, &m, ink(method_color(&m)));
-            }
-            let title = if r.name.is_empty() {
-                RichText::new(pac::host_of(&r.pattern).unwrap_or_else(|| r.pattern.clone()))
-                    .monospace()
-            } else {
-                RichText::new(&r.name)
-            };
-            let pattern = ui.add(
-                egui::Label::new(title.color(ink(fg())))
-                    .truncate()
-                    .sense(egui::Sense::click()),
-            );
-            if pattern
-                .on_hover_text(format!("{} — click to edit", r.pattern))
-                .clicked()
-            {
-                out.push(RuleIntent::Edit(r.id));
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.scope(|ui| {
-                    if !shown_before {
-                        ui.set_opacity(0.0);
-                    }
-                    let delete = icon_only(ui, ph::X, "Delete");
-                    if delete.clicked() {
-                        out.push(RuleIntent::Delete(r.id));
-                    }
-                    let edit = icon_only(ui, ph::PENCIL, "Edit");
-                    if edit.clicked() {
-                        out.push(RuleIntent::Edit(r.id));
-                    }
-                    let menu = overflow_menu(ui, "Rule actions", |ui| {
-                        rule_menu(ui, r.id, &cx.order, cx.collections, out);
-                    });
-                    focused = delete.has_focus() || edit.has_focus() || menu.has_focus();
+        let w = ui.available_width();
+        // the controls sit first at the right edge, so a long title can only take the space left
+        row_within(ui, w, true, |ui| {
+            ui.scope(|ui| {
+                if !shown_before {
+                    ui.set_opacity(0.0);
+                }
+                let delete = icon_only(ui, ph::X, "Delete");
+                if delete.clicked() {
+                    out.push(RuleIntent::Delete(r.id));
+                }
+                let edit = icon_only(ui, ph::PENCIL, "Edit");
+                if edit.clicked() {
+                    out.push(RuleIntent::Edit(r.id));
+                }
+                let menu = overflow_menu(ui, "Rule actions", |ui| {
+                    rule_menu(ui, r.id, &cx.order, cx.collections, out);
                 });
-                if r.hits > 0 {
-                    ui.label(muted(format!("{} hits", r.hits)));
+                focused = delete.has_focus() || edit.has_focus() || menu.has_focus();
+            });
+            if r.hits > 0 {
+                ui.label(muted(format!("{} hits", r.hits)));
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let mut enabled = r.enabled;
+                let on = checkbox(ui, &mut enabled, "");
+                let who = if r.name.is_empty() {
+                    &r.pattern
+                } else {
+                    &r.name
+                };
+                let spoken = if cx.collection_off {
+                    format!("Rule {who} (collection is off)")
+                } else {
+                    format!("Rule {who}")
+                };
+                on.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::Role::CheckBox, true, enabled, spoken.clone())
+                });
+                if on.changed() {
+                    out.push(RuleIntent::SetEnabled(r.id, enabled));
+                }
+                // a rule in an off collection reads as off through muted tokens, so its text keeps its contrast
+                let ink = |c| if cx.collection_off { fg_muted() } else { c };
+                let tone = match r.tone {
+                    Tone::Warning => warning(),
+                    Tone::Danger => danger(),
+                    Tone::Violet => violet(),
+                    Tone::Info => info(),
+                    Tone::Success => success(),
+                };
+                pill(ui, r.label, ink(tone));
+                if !r.method.is_empty() {
+                    let m = r.method.to_uppercase();
+                    pill(ui, &m, ink(method_color(&m)));
+                }
+                let title = if r.name.is_empty() {
+                    RichText::new(pac::host_of(&r.pattern).unwrap_or_else(|| r.pattern.clone()))
+                        .monospace()
+                } else {
+                    RichText::new(&r.name)
+                };
+                let pattern = ui.add(
+                    egui::Label::new(title.color(ink(fg())))
+                        .truncate()
+                        .sense(egui::Sense::click()),
+                );
+                if pattern
+                    .on_hover_text(format!("{} — click to edit", r.pattern))
+                    .clicked()
+                {
+                    out.push(RuleIntent::Edit(r.id));
                 }
             });
         });
@@ -778,7 +780,11 @@ fn form_ui(
         .show(ui, |ui| {
             field(ui, "Type", |ui| kind_picker(ui, &mut f.kind));
             field(ui, "", |ui| {
-                ui.label(muted(hint));
+                // a Grid cell has no width of its own, so an unwrapped hint set the column's floor
+                ui.allocate_ui(egui::vec2(w, 0.0), |ui| {
+                    ui.set_width(w);
+                    ui.add(egui::Label::new(muted(hint)).wrap());
+                });
             });
             field(ui, "Name", |ui| {
                 ui.add(
@@ -1067,51 +1073,202 @@ fn console_tab(ui: &mut egui::Ui, vm: &RulesVm, out: &mut Vec<RuleIntent>) {
 mod tests {
     use super::*;
     use crate::domain::config::Config;
+    use crate::domain::rule::{Action, Rule, RuleCollection};
     use crate::services::flow_store::FlowStore;
     use crate::viewmodels::rules_vm::RuleKind;
+    use crate::views::layout_test::*;
     use std::sync::{Arc, Mutex};
 
-    fn panel_width_after_frames(tab: RulesTab, kind: RuleKind) -> f32 {
-        let ctx = egui::Context::default();
-        crate::views::theme::apply_theme(&ctx);
-        let mut vm = RulesVm::new(
-            Arc::new(Mutex::new(Config::default())),
-            FlowStore::default(),
-        );
+    const KIND_ALL: [RuleKind; 9] = [
+        RuleKind::Breakpoint,
+        RuleKind::Mock,
+        RuleKind::MapLocal,
+        RuleKind::Redirect,
+        RuleKind::Block,
+        RuleKind::Throttle,
+        RuleKind::Header,
+        RuleKind::Body,
+        RuleKind::Script,
+    ];
+
+    /// Rules of every kind with long names and patterns, in and out of long-named collections.
+    fn long_config() -> Config {
+        let actions = [
+            Action::Breakpoint {
+                request: true,
+                response: true,
+            },
+            Action::Mock {
+                status: 200,
+                content_type: "application/vnd.company.resource.v2+json".into(),
+                body: WORDS.into(),
+            },
+            Action::MapLocal {
+                path: FILE.into(),
+                status: 200,
+                storage: Default::default(),
+                managed: String::new(),
+                embedded: None,
+            },
+            Action::MapRemote { target: url() },
+            Action::Block { status: 503 },
+            Action::Delay { ms: 1000, kbps: 64 },
+            Action::SetHeader {
+                response: true,
+                name: WORDS.into(),
+                value: WORDS.into(),
+                remove: false,
+            },
+            Action::ReplaceBody {
+                response: true,
+                find: WORDS.into(),
+                replace: WORDS.into(),
+                regex: false,
+            },
+            Action::Script {
+                code: String::new(),
+            },
+        ];
+        let list = |n: &str| (0..3).map(|i| format!("{i}-{n}")).collect::<Vec<_>>();
+        Config {
+            rules: actions
+                .into_iter()
+                .enumerate()
+                .map(|(i, action)| Rule {
+                    id: i as u64 + 1,
+                    enabled: true,
+                    name: if i % 2 == 0 {
+                        WORDS.into()
+                    } else {
+                        String::new()
+                    },
+                    pattern: format!("{HOST}{PATH}"),
+                    method: "DELETE".into(),
+                    action,
+                    collection: [None, Some(1), Some(2)][i % 3],
+                    hits: 12_345,
+                })
+                .collect(),
+            collections: ["First", "Second"]
+                .map(|n| RuleCollection {
+                    id: if n == "First" { 1 } else { 2 },
+                    name: format!("{n} {WORDS}"),
+                    enabled: true,
+                })
+                .to_vec(),
+            scope_only: true,
+            scope: list(&format!("{HOST}/some/long/path/*")),
+            exclude: list(HOST),
+            muted: list(WORDS),
+            bypass_tls: list(HOST),
+            proxy_only: true,
+            proxy_only_hosts: list(HOST),
+            ..Default::default()
+        }
+    }
+
+    /// A form with every field full of long text.
+    fn fill(vm: &mut RulesVm, kind: RuleKind) {
+        let f = &mut vm.form;
+        f.kind = kind;
+        f.name = WORDS.into();
+        f.pattern = format!("{HOST}{PATH}");
+        f.method = "DELETE".into();
+        f.status = "503".into();
+        f.target = url();
+        f.hname = WORDS.into();
+        f.hvalue = WORDS.into();
+        f.find = WORDS.into();
+        f.replace = WORDS.into();
+        f.ctype = "application/vnd.company.resource.v2+json; charset=utf-8".into();
+        f.body = WORDS.repeat(3);
+        f.ml.file = FILE.into();
+        f.ml.name = WORDS.into();
+        f.ml.status = Some(WORDS.into());
+    }
+
+    /// Width the panel ends up at; `drag` is the width the user dragged it to first.
+    fn panel_width(tab: RulesTab, kind: RuleKind, editing: bool, drag: Option<f32>) -> f32 {
+        panel_width_cfg(long_config(), tab, kind, editing, drag)
+    }
+
+    fn panel_width_cfg(
+        cfg: Config,
+        tab: RulesTab,
+        kind: RuleKind,
+        editing: bool,
+        drag: Option<f32>,
+    ) -> f32 {
+        let ctx = ctx();
+        let mut vm = RulesVm::new(Arc::new(Mutex::new(cfg)), FlowStore::default());
         vm.show = true;
         vm.tab = tab;
-        vm.form.kind = kind;
-        let input = || egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1600.0, 900.0),
-            )),
-            ..Default::default()
-        };
-        let mut width = 0.0;
-        for _ in 0..30 {
-            ctx.run_ui(input(), |ui| {
-                show(ui, &mut vm);
-                width = ui.ctx().content_rect().width() - ui.available_rect_before_wrap().width();
-            })
-            .textures_delta
-            .clear();
+        fill(&mut vm, kind);
+        vm.console = (0..4).map(|_| format!("[error] {WORDS}{WORDS}")).collect();
+        if editing {
+            vm.editing = Some(1);
         }
+        let mut width = 0.0;
+        frames(&ctx, egui::vec2(1600.0, 900.0), 30, |ui, i| {
+            if i == 0
+                && let Some(d) = drag
+            {
+                drag_panel(ui, "rules", egui::vec2(d, 900.0));
+            }
+            show(ui, &mut vm);
+            width = taken(ui);
+        });
         width
     }
 
     #[test]
+    fn collection_rename_and_delete_fit_the_narrowest_panel() {
+        let ctx = ctx();
+        let mut vm = RulesVm::new(Arc::new(Mutex::new(long_config())), FlowStore::default());
+        vm.show = true;
+        vm.renaming = Some(1);
+        vm.rename_input = WORDS.into();
+        vm.confirm_delete = Some(2);
+        let mut width = 0.0;
+        frames(&ctx, egui::vec2(1600.0, 900.0), 30, |ui, i| {
+            if i == 0 {
+                drag_panel(ui, "rules", egui::vec2(360.0, 900.0));
+            }
+            show(ui, &mut vm);
+            width = taken(ui);
+        });
+        assert!(
+            width <= 361.0,
+            "renaming or confirming a delete held the panel at {width}"
+        );
+    }
+
+    #[test]
     fn rule_forms_keep_the_panel_at_its_default_width() {
-        for kind in [
-            RuleKind::Block,
-            RuleKind::MapLocal,
-            RuleKind::Mock,
-            RuleKind::Header,
-        ] {
-            let w = panel_width_after_frames(RulesTab::Rules, kind);
-            assert!(w <= 441.0, "{kind:?} widened the panel to {w}");
+        for editing in [false, true] {
+            for kind in KIND_ALL {
+                let w = panel_width(RulesTab::Rules, kind, editing, None);
+                assert!(
+                    w <= 441.0,
+                    "{kind:?} (editing: {editing}) widened the panel to {w}"
+                );
+            }
         }
-        let w = panel_width_after_frames(RulesTab::Scope, RuleKind::Block);
-        assert!(w <= 441.0, "the scope tab widened the panel to {w}");
+        for tab in [RulesTab::Scope, RulesTab::Console] {
+            let w = panel_width(tab, RuleKind::Block, false, None);
+            assert!(w <= 441.0, "the {tab:?} tab widened the panel to {w}");
+        }
+    }
+
+    #[test]
+    fn every_tab_fits_the_narrowest_panel() {
+        for kind in KIND_ALL {
+            let w = panel_width(RulesTab::Rules, kind, false, Some(360.0));
+            assert!(w <= 361.0, "{kind:?} would not shrink below {w}");
+        }
+        for tab in [RulesTab::Scope, RulesTab::Console] {
+            let w = panel_width(tab, RuleKind::Block, false, Some(360.0));
+            assert!(w <= 361.0, "the {tab:?} tab would not shrink below {w}");
+        }
     }
 }
