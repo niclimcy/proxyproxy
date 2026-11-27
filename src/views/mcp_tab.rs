@@ -1,7 +1,7 @@
 use crate::viewmodels::intent::{McpCopy, McpIntent};
 use crate::viewmodels::mcp_vm::{McpClient, McpVm};
 use crate::views::theme::{
-    RADIUS, canvas, checkbox, icon_only, muted, overline, segmented, status_dot, success, warning,
+    RADIUS, canvas, checkbox, icon_button, muted, overline, segmented, status_dot, success, warning,
 };
 use eframe::egui::{self, RichText};
 use egui_phosphor::regular as ph;
@@ -84,21 +84,28 @@ fn code_block(
         .corner_radius(egui::CornerRadius::same(RADIUS))
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
-            ui.horizontal_top(|ui| {
+            // full width so the copy button sits at the same right edge for every snippet
+            ui.set_width(ui.available_width());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 let copied = vm.copied(what);
-                let (icon, tip) = if copied {
+                let (icon, label) = if copied {
                     (ph::CHECK, "Copied")
                 } else {
-                    (ph::COPY, tip)
+                    (ph::COPY, "Copy")
                 };
-                if icon_only(ui, icon, tip).clicked() {
+                if icon_button(ui, icon, label, true)
+                    .on_hover_text(tip)
+                    .clicked()
+                {
                     ui.ctx().copy_text(value.to_string());
                     out.push(McpIntent::Copied(what));
                 }
                 if copied {
                     ui.ctx().request_repaint_after(Duration::from_millis(2100));
                 }
-                ui.add(egui::Label::new(RichText::new(value).monospace()).wrap());
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                    ui.add(egui::Label::new(RichText::new(value).monospace()).wrap());
+                });
             });
         });
 }
