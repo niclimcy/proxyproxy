@@ -4,7 +4,7 @@ use crate::viewmodels::intent::SidebarIntent;
 use crate::views::app_icon::{paint_fallback_icon, paint_icon};
 use crate::views::theme::{
     FS_CAPTION, RowIcon, accent, card_panel, ico, icon_only, list_row, menu_item, menu_width,
-    muted, overline, resize_grip, resize_line,
+    muted, overline, resize_grip, resize_line, row_within,
 };
 use eframe::egui::{self, RichText, ScrollArea};
 use egui_phosphor::regular as ph;
@@ -123,12 +123,19 @@ pub fn show(ui: &mut egui::Ui, vm: &mut CaptureVm) -> Vec<SidebarIntent> {
                     if !cfg.muted.is_empty() {
                         ui.add_space(8.0);
                         ui.label(overline("MUTED"));
+                        let w = ui.available_width();
                         for m in &cfg.muted {
-                            ui.horizontal(|ui| {
-                                ui.label(muted(m));
+                            row_within(ui, w, true, |ui| {
                                 if icon_only(ui, ph::X, &format!("Unmute {m}")).clicked() {
                                     out.push(SidebarIntent::Unmute(m.clone()));
                                 }
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        ui.add(egui::Label::new(muted(m)).truncate())
+                                            .on_hover_text(m);
+                                    },
+                                );
                             });
                         }
                     }
@@ -235,4 +242,62 @@ fn app_node(
 /// Exact match, quoted so names with spaces stay one term.
 fn filter_term(field: &str, value: &str) -> String {
     format!("{field}:=\"{value}\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::config::Config;
+    use crate::services::app_icons::IconStore;
+    use crate::services::flow_store::FlowStore;
+    use crate::viewmodels::status::NoRepaint;
+    use crate::views::layout_test::*;
+    use std::sync::{Arc, Mutex};
+
+    fn loaded() -> CaptureVm {
+        let store = FlowStore::default();
+        for id in 1..=4 {
+            let mut f = flow(id);
+            f.host = format!("{id}-{HOST}");
+            store.lock().push(f);
+        }
+        let cfg = Config {
+            scope_only: true,
+            scope: vec![format!("{HOST}/some/long/path/*"), HOST.into()],
+            muted: vec![format!("muted-{HOST}"), WORDS.into()],
+            ..Default::default()
+        };
+        let icons = IconStore::new(std::env::temp_dir(), Arc::new(NoRepaint));
+        let mut vm = CaptureVm::new(store, Arc::new(Mutex::new(cfg)), icons);
+        vm.refresh_tree();
+        vm
+    }
+
+    /// Width the sidebar ends up at after the user dragged it to `drag` (or left it alone).
+    fn width(drag: Option<f32>) -> f32 {
+        let ctx = ctx();
+        let mut vm = loaded();
+        let mut w = 0.0;
+        frames(&ctx, egui::vec2(1600.0, 900.0), 30, |ui, i| {
+            if i == 0
+                && let Some(d) = drag
+            {
+                drag_panel(ui, "sidebar", egui::vec2(d, 900.0));
+            }
+            show(ui, &mut vm);
+            w = taken(ui);
+        });
+        w
+    }
+
+    #[test]
+    fn long_hosts_and_scope_keep_the_sidebar_at_the_width_set() {
+        let default = width(None);
+        assert!(default <= 231.0, "the sidebar grew to {default}");
+        let narrow = width(Some(120.0));
+        assert!(
+            narrow <= 121.0,
+            "the sidebar would not shrink below {narrow}"
+        );
+    }
 }

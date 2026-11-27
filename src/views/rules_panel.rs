@@ -8,8 +8,8 @@ use crate::viewmodels::rules_vm::{
 use crate::views::theme::{
     FS_CAPTION, HIT, Tint, accent, action_button, border, card, card_panel, checkbox,
     code_layouter, danger, fg, fg_muted, ico, icon_button, icon_only, info, menu_item, menu_width,
-    method_color, muted, overflow_menu, overline, pill, resize_grip, resize_line, segmented,
-    success, switch, tint, violet, warning,
+    method_color, muted, overflow_menu, overline, pill, resize_grip, resize_line, row_within,
+    segmented, success, switch, tint, violet, warning,
 };
 use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
@@ -44,17 +44,6 @@ fn field(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.label(label);
     add(ui);
     ui.end_row();
-}
-
-/// Lays a row out inside the value column's width. Sizing a field as "w minus a guess" let a
-/// row end up wider than the panel, and the panel grew to fit it a little more every frame.
-fn row_within(ui: &mut egui::Ui, w: f32, rtl: bool, add: impl FnOnce(&mut egui::Ui)) {
-    let layout = if rtl {
-        egui::Layout::right_to_left(egui::Align::Center)
-    } else {
-        egui::Layout::left_to_right(egui::Align::Center)
-    };
-    ui.allocate_ui_with_layout(egui::vec2(w, HIT), layout, add);
 }
 
 pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
@@ -289,7 +278,10 @@ fn rule_card(ui: &mut egui::Ui, r: &RuleRow, cx: &RowCtx, out: &mut Vec<RuleInte
                     .truncate()
                     .sense(egui::Sense::click()),
             );
-            if pattern.on_hover_text(format!("{} — click to edit", r.pattern)).clicked() {
+            if pattern
+                .on_hover_text(format!("{} — click to edit", r.pattern))
+                .clicked()
+            {
                 out.push(RuleIntent::Edit(r.id));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

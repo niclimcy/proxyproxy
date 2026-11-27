@@ -512,6 +512,17 @@ pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Resp
     response
 }
 
+/// Lays a row out inside `w`. Sizing a field as "w minus a guess" let a
+/// row end up wider than the panel, and the panel grew to fit it a little more every frame.
+pub fn row_within(ui: &mut egui::Ui, w: f32, rtl: bool, add: impl FnOnce(&mut egui::Ui)) {
+    let layout = if rtl {
+        egui::Layout::right_to_left(egui::Align::Center)
+    } else {
+        egui::Layout::left_to_right(egui::Align::Center)
+    };
+    ui.allocate_ui_with_layout(egui::vec2(w, HIT), layout, add);
+}
+
 /// Section label: small, caps, muted.
 pub fn overline(text: impl Into<String>) -> RichText {
     RichText::new(text)
