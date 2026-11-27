@@ -14,12 +14,11 @@ use hudsucker::{Proxy, rustls::crypto::aws_lc_rs};
 use sink::FlowSink;
 use std::{
     collections::HashMap,
-    net::SocketAddr,
     sync::{Arc, Mutex},
 };
 
 pub async fn run(
-    port: u16,
+    listener: std::net::TcpListener,
     sink: Arc<dyn FlowSink>,
     cfg: Shared,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,7 +39,10 @@ pub async fn run(
         .wrap_connector(connector::upstream::UpstreamConnector::new(cfg.clone()));
     let ws: WsMap = Arc::new(Mutex::new(HashMap::new()));
     let proxy = Proxy::builder()
-        .with_addr(SocketAddr::from(([127, 0, 0, 1], port)))
+        .with_listener({
+            listener.set_nonblocking(true)?;
+            tokio::net::TcpListener::from_std(listener)?
+        })
         .with_ca(ca)
         .with_http_connector(https)
         .with_websocket_connector(Connector::Rustls(tls_cfg))

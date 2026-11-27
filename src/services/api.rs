@@ -224,8 +224,8 @@ pub fn port_for(proxy_port: u16) -> u16 {
 
 // Loopback JSON API: read-only REST for captured flows, plus `POST /mcp`, which can also
 // replay requests and edit rules.
-pub fn serve(port: u16, store: FlowStore, cfg: Shared) {
-    let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) else {
+pub fn serve(listener: TcpListener, store: FlowStore, cfg: Shared) {
+    let Ok(port) = listener.local_addr().map(|a| a.port()) else {
         return;
     };
     std::thread::spawn(move || {

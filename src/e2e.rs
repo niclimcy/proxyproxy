@@ -24,20 +24,6 @@ async fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
     }
 }
 
-// Below the OS ephemeral range, so mock servers binding port 0 can't take a port a rig has picked but not yet bound.
-fn free_port_pair() -> u16 {
-    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-    loop {
-        let n = NEXT.fetch_add(2, std::sync::atomic::Ordering::Relaxed);
-        let port = 20_000 + (std::process::id() as u16 % 2_000) * 4 + n % 4_000;
-        if TcpListener::bind(("127.0.0.1", port)).is_ok()
-            && TcpListener::bind(("127.0.0.1", port + 1)).is_ok()
-        {
-            return port;
-        }
-    }
-}
-
 // ---- origins ----
 
 /// An origin answering every request with `status` and `body`.
@@ -89,13 +75,17 @@ fn mcp_config() -> Config {
     }
 }
 
-async fn rig(config: Config) -> Rig {
+fn rig(config: Config) -> Rig {
     static CA: Once = Once::new();
     // concurrent first runs would race to write the CA files
     CA.call_once(|| {
         proxy::tls::load_or_create().unwrap();
     });
-    let port = free_port_pair();
+    // bound here, before anything else can take the port, and handed over already listening
+    let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = proxy_listener.local_addr().unwrap().port();
+    let api_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let api_port = api_listener.local_addr().unwrap().port();
     let store = FlowStore::default();
     let cfg = Arc::new(Mutex::new(config));
     let (tx, rx) = std::sync::mpsc::channel();
@@ -104,7 +94,8 @@ async fn rig(config: Config) -> Rig {
     let pump_store = store.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let _ = rt.block_on(proxy::run(port, sink, proxy_cfg));
+        rt.block_on(proxy::run(proxy_listener, sink, proxy_cfg))
+            .expect("proxy stopped");
     });
     std::thread::spawn(move || {
         loop {
@@ -112,14 +103,10 @@ async fn rig(config: Config) -> Rig {
             std::thread::sleep(Duration::from_millis(5));
         }
     });
-    api::serve(api::port_for(port), store.clone(), cfg);
-    wait_for("the proxy to listen", || {
-        TcpStream::connect(("127.0.0.1", port)).is_ok()
-    })
-    .await;
+    api::serve(api_listener, store.clone(), cfg);
     let proxy_url = format!("http://127.0.0.1:{port}");
     Rig {
-        api: api::port_for(port),
+        api: api_port,
         store,
         client: reqwest::Client::builder()
             .proxy(reqwest::Proxy::http(proxy_url).unwrap())
@@ -189,7 +176,7 @@ impl Rig {
 #[tokio::test(flavor = "multi_thread")]
 async fn proxied_request_is_recorded_and_readable_through_the_rest_api() {
     let up = origin(200, "hello").await;
-    let rig = rig(Config::default()).await;
+    let rig = rig(Config::default());
     let r = rig.fetch(&url(&up, "/greet?x=1")).await;
     assert_eq!(
         (r.status().as_u16(), r.text().await.unwrap()),
@@ -227,7 +214,7 @@ async fn gzip_responses_are_recorded_decoded() {
         )
         .mount(&up)
         .await;
-    let rig = rig(Config::default()).await;
+    let rig = rig(Config::default());
     rig.fetch(&url(&up, "/z")).await;
     rig.answered(1).await;
     let id = rig.get("/flows").await[0]["id"].clone();
@@ -240,7 +227,7 @@ async fn gzip_responses_are_recorded_decoded() {
 #[tokio::test(flavor = "multi_thread")]
 async fn rule_edits_apply_to_the_next_request() {
     let up = origin(200, "real").await;
-    let rig = rig(mcp_config()).await;
+    let rig = rig(mcp_config());
     let pattern = format!("127.0.0.1:{}/api*", port(&up));
     assert_eq!(rig.fetch(&url(&up, "/api")).await.status(), 200);
 
@@ -271,7 +258,7 @@ async fn rule_edits_apply_to_the_next_request() {
 #[tokio::test(flavor = "multi_thread")]
 async fn mock_and_header_rules_rewrite_traffic() {
     let up = origin(200, "real").await;
-    let rig = rig(mcp_config()).await;
+    let rig = rig(mcp_config());
     let host = format!("127.0.0.1:{}", port(&up));
     rig.add_rule(
         &format!("{host}/mock"),
@@ -302,7 +289,7 @@ async fn mock_and_header_rules_rewrite_traffic() {
 #[tokio::test(flavor = "multi_thread")]
 async fn map_local_serves_whichever_storage_the_rule_uses_now() {
     let up = origin(200, "real").await;
-    let rig = rig(mcp_config()).await;
+    let rig = rig(mcp_config());
     let disk = std::env::temp_dir().join(format!("pxp-e2e-map-{}.txt", std::process::id()));
     std::fs::write(&disk, "from disk").unwrap();
     let pattern = format!("127.0.0.1:{}/local", port(&up));
@@ -361,7 +348,7 @@ async fn map_local_serves_whichever_storage_the_rule_uses_now() {
 #[tokio::test(flavor = "multi_thread")]
 async fn map_remote_sends_the_request_to_another_origin() {
     let (old, new) = (origin(200, "old").await, origin(200, "new").await);
-    let rig = rig(mcp_config()).await;
+    let rig = rig(mcp_config());
     rig.add_rule(
         &format!("127.0.0.1:{}/*", port(&old)),
         json!({"MapRemote": {"target": format!("http://127.0.0.1:{}", port(&new))}}),
@@ -385,8 +372,7 @@ async fn mute_and_scope_only_change_what_is_recorded() {
         scope_only: true,
         scope: vec!["muted.test".into(), "shown.test".into()],
         ..Config::default()
-    })
-    .await;
+    });
     for host in ["muted.test", "other.test", "shown.test"] {
         let r = rig.fetch(&format!("http://{host}:{}/", port(&up))).await;
         assert_eq!(r.status(), 200, "{host} must still be proxied");
@@ -414,8 +400,7 @@ async fn manual_upstream_proxy_receives_plain_http_requests() {
             ..Default::default()
         },
         ..Config::default()
-    })
-    .await;
+    });
     let r = rig.fetch("http://example.test/x").await;
     assert_eq!(r.text().await.unwrap(), "from the upstream proxy");
     let seen = last(&via).await;
@@ -464,8 +449,7 @@ async fn socks5_upstream_gets_the_destination_and_credentials() {
             ..Default::default()
         },
         ..Config::default()
-    })
-    .await;
+    });
     let r = rig.fetch("http://example.test:8443/").await;
     assert_eq!(r.text().await.unwrap(), "through socks");
     server.join().unwrap();
@@ -474,7 +458,7 @@ async fn socks5_upstream_gets_the_destination_and_credentials() {
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_tool_sends_directly_and_records_a_replayed_flow() {
     let up = origin(200, "pong").await;
-    let rig = rig(mcp_config()).await;
+    let rig = rig(mcp_config());
     let sent = rig
         .mcp("proxyproxy_replay", json!({"method": "POST", "url": url(&up, "/echo"), "headers": {"accept-encoding": "gzip, br"}, "body": "ping"}))
         .await;
@@ -495,7 +479,7 @@ async fn replay_tool_sends_directly_and_records_a_replayed_flow() {
 #[tokio::test(flavor = "multi_thread")]
 async fn har_export_from_the_api_reimports_the_captured_traffic() {
     let up = origin(200, "body").await;
-    let rig = rig(Config::default()).await;
+    let rig = rig(Config::default());
     rig.fetch(&url(&up, "/a")).await;
     rig.client
         .post(url(&up, "/b"))
@@ -531,7 +515,7 @@ async fn har_export_from_the_api_reimports_the_captured_traffic() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn rest_reads_keep_working_while_mcp_is_refused() {
-    let rig = rig(Config::default()).await;
+    let rig = rig(Config::default());
     let r = rig
         .direct
         .post(format!("http://127.0.0.1:{}/mcp", rig.api))

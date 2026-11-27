@@ -384,7 +384,9 @@ pub fn run(port: u16) -> eframe::Result {
     let cfg: Shared = Arc::new(Mutex::new(cfg));
     let proxy_cfg = cfg.clone();
     let store = FlowStore::default();
-    services::api::serve(api_port, store.clone(), cfg.clone());
+    if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", api_port)) {
+        services::api::serve(listener, store.clone(), cfg.clone());
+    }
 
     eframe::run_native(
         "proxyproxy",
@@ -412,9 +414,13 @@ pub fn run(port: u16) -> eframe::Result {
             let app = App::new(cc, port, rx, cfg, store, api_port, cfg_note);
             // the proxy only returns on failure (say, the port is taken), so that lands in the status line
             app.status.jobs.spawn(move || {
+                let stopped =
+                    |e: &dyn std::fmt::Display| format!("proxy on port {port} stopped: {e}");
+                let listener =
+                    std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| stopped(&e))?;
                 let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-                rt.block_on(proxy::run(port, sink, proxy_cfg))
-                    .map_err(|e| format!("proxy on port {port} stopped: {e}"))?;
+                rt.block_on(proxy::run(listener, sink, proxy_cfg))
+                    .map_err(|e| stopped(&e))?;
                 Ok(String::new())
             });
             Ok(Box::new(app))
