@@ -8,17 +8,10 @@ pub enum McpClient {
     ClaudeCode,
     Codex,
     GeminiCli,
-    Antigravity,
 }
 
 impl McpClient {
-    pub const ALL: [McpClient; 5] = [
-        Self::Custom,
-        Self::ClaudeCode,
-        Self::Codex,
-        Self::GeminiCli,
-        Self::Antigravity,
-    ];
+    pub const ALL: [McpClient; 4] = [Self::Custom, Self::ClaudeCode, Self::Codex, Self::GeminiCli];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -26,7 +19,6 @@ impl McpClient {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex",
             Self::GeminiCli => "Gemini CLI",
-            Self::Antigravity => "Antigravity",
         }
     }
 }
@@ -81,10 +73,6 @@ impl McpVm {
                         "Run in a terminal (stdio)",
                     ),
                     McpClient::GeminiCli => (http("gemini"), "Run in a terminal"),
-                    McpClient::Antigravity => (
-                        json.clone(),
-                        "In the agent panel: MCP servers → Manage MCP Servers → View raw config, then paste into mcp_config.json",
-                    ),
                 };
                 (c, Snippet { text, hint })
             })
@@ -156,15 +144,13 @@ mod tests {
     #[test]
     fn json_snippet_is_valid_and_carries_exe_and_port() {
         let (vm, _) = vm(Some("/Applications/Proxy Proxy.app/pp"));
-        for c in [McpClient::Custom, McpClient::Antigravity] {
-            let v: serde_json::Value = serde_json::from_str(snippet(&vm, c)).unwrap();
-            let server = &v["mcpServers"]["proxyproxy"];
-            assert_eq!(server["command"], "/Applications/Proxy Proxy.app/pp");
-            assert_eq!(
-                server["args"],
-                serde_json::json!(["mcp", "--port", "19090"])
-            );
-        }
+        let v: serde_json::Value = serde_json::from_str(snippet(&vm, McpClient::Custom)).unwrap();
+        let server = &v["mcpServers"]["proxyproxy"];
+        assert_eq!(server["command"], "/Applications/Proxy Proxy.app/pp");
+        assert_eq!(
+            server["args"],
+            serde_json::json!(["mcp", "--port", "19090"])
+        );
         let (bare, _) = self::vm(None);
         assert!(snippet(&bare, McpClient::Custom).contains("\"proxyproxy\""));
     }
