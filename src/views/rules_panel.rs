@@ -13,10 +13,46 @@ use crate::views::theme::{
 use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
 
+const FORM_COL_GAP: f32 = 10.0;
+const FORM_LABELS: [&str; 21] = [
+    "Apply to",
+    "Body",
+    "Code",
+    "Collection",
+    "File name",
+    "File path",
+    "Find",
+    "Header",
+    "Latency (ms)",
+    "Max KB/s",
+    "Method",
+    "Name",
+    "Pause on",
+    "Replace",
+    "Response body",
+    "Response from",
+    "Status",
+    "Target",
+    "Type",
+    "URL pattern",
+    "Value",
+];
+
 fn field(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.label(label);
     add(ui);
     ui.end_row();
+}
+
+/// Lays a row out inside the value column's width. Sizing a field as "w minus a guess" let a
+/// row end up wider than the panel, and the panel grew to fit it a little more every frame.
+fn row_within(ui: &mut egui::Ui, w: f32, rtl: bool, add: impl FnOnce(&mut egui::Ui)) {
+    let layout = if rtl {
+        egui::Layout::right_to_left(egui::Align::Center)
+    } else {
+        egui::Layout::left_to_right(egui::Align::Center)
+    };
+    ui.allocate_ui_with_layout(egui::vec2(w, HIT), layout, add);
 }
 
 pub fn show(ui: &mut egui::Ui, vm: &mut RulesVm) -> Vec<RuleIntent> {
@@ -595,29 +631,32 @@ fn map_local_fields(ui: &mut egui::Ui, f: &mut RuleForm, w: f32, out: &mut Vec<R
                     ui.label(RichText::new(note).color(warning()));
                 }
                 if let Some(path) = ml.stored_path() {
-                    ui.horizontal(|ui| {
-                        ui.label(muted(&path)).on_hover_text(&path);
+                    row_within(ui, w, true, |ui| {
                         if icon_only(ui, ph::FOLDER_OPEN, "Show in the file manager").clicked() {
                             out.push(RuleIntent::RevealMapFile);
                         }
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add(egui::Label::new(muted(&path)).truncate())
+                                .on_hover_text(&path);
+                        });
                     });
                 }
             });
         });
     } else {
         field(ui, "File path", |ui| {
-            ui.horizontal(|ui| {
-                let path = ui.add(
-                    TextEdit::singleline(&mut ml.file)
-                        .desired_width((w - 80.0).max(80.0))
-                        .hint_text("/path/to/response.json"),
-                );
+            row_within(ui, w, true, |ui| {
                 if icon_button(ui, ph::FOLDER_OPEN, "Browse…", true).clicked()
                     && let Some(p) = rfd::FileDialog::new().pick_file()
                 {
                     ml.file = p.display().to_string();
                     out.push(RuleIntent::LoadMapLocalFile);
                 }
+                let path = ui.add(
+                    TextEdit::singleline(&mut ml.file)
+                        .desired_width(ui.available_width())
+                        .hint_text("/path/to/response.json"),
+                );
                 if path.lost_focus() {
                     out.push(RuleIntent::LoadMapLocalFile);
                 }
@@ -695,7 +734,21 @@ fn form_ui(
     collections: &[(u64, String)],
     out: &mut Vec<RuleIntent>,
 ) {
-    let w = (ui.available_width() - 100.0).clamp(120.0, 700.0);
+    // the label column is as wide as its widest label, so measure instead of assuming
+    let label_w = FORM_LABELS
+        .iter()
+        .map(|l| {
+            ui.painter()
+                .layout_no_wrap(
+                    (*l).to_string(),
+                    egui::TextStyle::Body.resolve(ui.style()),
+                    fg(),
+                )
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let w = (ui.available_width() - label_w - FORM_COL_GAP).clamp(120.0, 700.0);
     let kind_picker = |ui: &mut egui::Ui, kind: &mut RuleKind| {
         let current = KINDS.iter().find(|(k, _)| k == kind).map_or("", |(_, l)| l);
         egui::ComboBox::from_id_salt("rule-kind")
@@ -722,7 +775,7 @@ fn form_ui(
     };
     egui::Grid::new("rule-form")
         .num_columns(2)
-        .spacing([10.0, 8.0])
+        .spacing([FORM_COL_GAP, 8.0])
         .show(ui, |ui| {
             field(ui, "Type", |ui| kind_picker(ui, &mut f.kind));
             field(ui, "", |ui| {
@@ -812,13 +865,13 @@ fn form_ui(
                         );
                     });
                     field(ui, "Value", |ui| {
-                        ui.horizontal(|ui| {
+                        row_within(ui, w, true, |ui| {
+                            checkbox(ui, &mut f.hremove, "Remove");
                             ui.add_enabled(
                                 !f.hremove,
                                 TextEdit::singleline(&mut f.hvalue)
-                                    .desired_width((w - 90.0).max(80.0)),
+                                    .desired_width(ui.available_width()),
                             );
-                            checkbox(ui, &mut f.hremove, "Remove");
                         });
                     });
                 }
@@ -839,12 +892,12 @@ fn form_ui(
                 }
                 RuleKind::Mock => {
                     field(ui, "Status", |ui| {
-                        ui.horizontal(|ui| {
+                        row_within(ui, w, false, |ui| {
                             ui.add(TextEdit::singleline(&mut f.status).desired_width(60.0));
                             ui.label("Content-Type");
                             ui.add(
                                 TextEdit::singleline(&mut f.ctype)
-                                    .desired_width((w - 150.0).max(80.0)),
+                                    .desired_width(ui.available_width()),
                             );
                         });
                     });
@@ -1006,4 +1059,54 @@ fn console_tab(ui: &mut egui::Ui, vm: &RulesVm, out: &mut Vec<RuleIntent>) {
                 ui.label(RichText::new(l).monospace().size(FS_CAPTION).color(c));
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::config::Config;
+    use crate::services::flow_store::FlowStore;
+    use crate::viewmodels::rules_vm::RuleKind;
+    use std::sync::{Arc, Mutex};
+
+    fn panel_width_after_frames(kind: RuleKind) -> f32 {
+        let ctx = egui::Context::default();
+        crate::views::theme::apply_theme(&ctx);
+        let mut vm = RulesVm::new(
+            Arc::new(Mutex::new(Config::default())),
+            FlowStore::default(),
+        );
+        vm.show = true;
+        vm.form.kind = kind;
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut width = 0.0;
+        for _ in 0..30 {
+            ctx.run_ui(input(), |ui| {
+                show(ui, &mut vm);
+                width = ui.ctx().content_rect().width() - ui.available_rect_before_wrap().width();
+            })
+            .textures_delta
+            .clear();
+        }
+        width
+    }
+
+    #[test]
+    fn rule_forms_keep_the_panel_at_its_default_width() {
+        for kind in [
+            RuleKind::Block,
+            RuleKind::MapLocal,
+            RuleKind::Mock,
+            RuleKind::Header,
+        ] {
+            let w = panel_width_after_frames(kind);
+            assert!(w <= 441.0, "{kind:?} widened the panel to {w}");
+        }
+    }
 }
