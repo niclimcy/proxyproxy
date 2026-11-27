@@ -49,10 +49,12 @@ impl SessionVm {
         }
     }
 
-    pub fn tick(&mut self) {
+    /// Returns stored Map Local files that the saved config no longer names; the caller deletes them.
+    pub fn tick(&mut self) -> Vec<String> {
+        let mut doomed = vec![];
         if self.cfg_checked.elapsed() > Duration::from_secs(2) {
             self.cfg_checked = Instant::now();
-            self.save_config_if_changed();
+            doomed = self.save_config_if_changed();
         }
         if self.last_save.elapsed() > Duration::from_secs(30)
             && self.saved_rev != self.store.lock().rev()
@@ -70,14 +72,21 @@ impl SessionVm {
             self.saved_rev = rev;
             self.last_save = Instant::now();
         }
+        doomed
     }
 
-    pub fn save_config_if_changed(&mut self) {
-        let cur = cfg_json(&self.cfg);
+    /// The doomed names are taken in the same lock as the saved snapshot, so only files that
+    /// snapshot no longer names are handed back; a failed save hands back nothing.
+    pub fn save_config_if_changed(&mut self) -> Vec<String> {
+        let mut cfg = self.cfg.lock().unwrap();
+        let cur = serde_json::to_string(&*cfg).unwrap_or_default();
         if cur != self.cfg_saved {
-            config_store::save(&config_store::path(), &self.cfg.lock().unwrap());
+            if !config_store::save(&config_store::path(), &cfg) {
+                return vec![];
+            }
             self.cfg_saved = cur;
         }
+        std::mem::take(&mut cfg.doomed_mocks)
     }
 
     pub fn save_now(&mut self) {

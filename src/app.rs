@@ -357,7 +357,8 @@ impl eframe::App for App {
             self.workspace(ui, &ctx);
         }
         self.windows(&ctx);
-        self.session.tick();
+        let gone = self.session.tick();
+        self.rules.sweep_mocks(&gone);
         ctx.request_repaint_after(Duration::from_secs(1));
     }
 }
@@ -366,6 +367,7 @@ pub fn run(port: u16) -> eframe::Result {
     let api_port = services::api::port_for(port);
     let (tx, rx) = channel();
     let (cfg, cfg_note) = services::config_store::load(&services::config_store::path());
+    services::mocks::sweep_orphans(services::mocks::dir(), &cfg, Duration::from_secs(60));
     let cfg: Shared = Arc::new(Mutex::new(cfg));
     let proxy_cfg = cfg.clone();
     let store = FlowStore::default();

@@ -1,11 +1,13 @@
 use super::intent::{Effect, ListKind, RuleIntent};
+use super::map_local::{Live, MapLocalForm};
 use super::status::Status;
 use crate::domain::config::{Config, Shared};
 use crate::domain::flow::{BpEdit, Decision, Flow, Paused, Stage};
 use crate::domain::pac;
 use crate::domain::policy::{rule_active, url_matches};
-use crate::domain::rule::{Action, Rule, RuleCollection};
+use crate::domain::rule::{Action, MapStorage, Rule, RuleCollection};
 use crate::services::flow_store::FlowStore;
+use crate::services::mocks::{self, Source};
 use bytes::Bytes;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -46,7 +48,7 @@ pub struct RuleForm {
     pub collection: Option<u64>,
     pub bp_request: bool,
     pub bp_response: bool,
-    pub file: String,
+    pub ml: MapLocalForm,
     pub status: String,
     pub target: String,
     pub ms: String,
@@ -61,11 +63,6 @@ pub struct RuleForm {
     pub ctype: String,
     pub body: String,
     pub code: String,
-    pub map_file_content: String,
-    pub map_file_loaded_path: String,
-    pub map_file_dirty: bool,
-    pub map_file_status: Option<String>,
-    pub map_file_error: Option<String>,
 }
 
 impl Default for RuleForm {
@@ -78,7 +75,7 @@ impl Default for RuleForm {
             collection: None,
             bp_request: true,
             bp_response: false,
-            file: String::new(),
+            ml: MapLocalForm::default(),
             status: "200".into(),
             target: String::new(),
             ms: "1000".into(),
@@ -93,11 +90,6 @@ impl Default for RuleForm {
             ctype: "application/json".into(),
             body: String::new(),
             code: SCRIPT_TEMPLATE.into(),
-            map_file_content: String::new(),
-            map_file_loaded_path: String::new(),
-            map_file_dirty: false,
-            map_file_status: None,
-            map_file_error: None,
         }
     }
 }
@@ -142,10 +134,30 @@ impl RuleForm {
                 s.bp_request = *request;
                 s.bp_response = *response;
             }
-            Action::MapLocal { path, status } => {
+            Action::MapLocal {
+                path,
+                status,
+                storage,
+                managed,
+                ..
+            } => {
                 s.kind = RuleKind::MapLocal;
-                s.file.clone_from(path);
                 s.status = status.to_string();
+                s.ml.file.clone_from(path);
+                s.ml.storage = *storage;
+                s.ml.managed.clone_from(managed);
+                s.ml.name = if managed.is_empty() {
+                    mocks::clean_name(path)
+                } else {
+                    mocks::display_name(managed).to_string()
+                };
+                s.ml.live = Some(Live {
+                    storage: *storage,
+                    label: match storage {
+                        MapStorage::Disk => path.clone(),
+                        MapStorage::AppData => format!("stored copy ({})", s.ml.name),
+                    },
+                });
             }
             Action::MapRemote { target } => {
                 s.kind = RuleKind::Redirect;
@@ -202,23 +214,14 @@ impl RuleForm {
         s
     }
 
-    /// The editor shows the loaded file only while the path still points at it.
-    pub fn map_file_editable(&self) -> bool {
-        !self.map_file_loaded_path.is_empty() && self.map_file_loaded_path == self.file.trim()
-    }
-
-    /// Lower-case extension of the mapped file; also the highlighter's language name.
-    pub fn map_file_ext(&self) -> String {
-        std::path::Path::new(self.file.trim())
-            .extension()
-            .map_or_default(|e| e.to_string_lossy().to_lowercase())
-    }
-
     pub fn valid(&self) -> bool {
         !self.pattern.trim().is_empty()
             && match self.kind {
                 RuleKind::Breakpoint => self.bp_request || self.bp_response,
-                RuleKind::MapLocal => !self.file.trim().is_empty(),
+                RuleKind::MapLocal => match self.ml.storage {
+                    MapStorage::Disk => !self.ml.file.trim().is_empty(),
+                    MapStorage::AppData => !self.ml.managed.is_empty(),
+                },
                 RuleKind::Redirect => !self.target.trim().is_empty(),
                 RuleKind::Header => !self.hname.trim().is_empty(),
                 RuleKind::Body => !self.find.is_empty(),
@@ -237,8 +240,11 @@ impl RuleForm {
                 response: self.bp_response,
             },
             RuleKind::MapLocal => Action::MapLocal {
-                path: self.file.trim().into(),
+                path: self.ml.file.trim().into(),
                 status,
+                storage: self.ml.storage,
+                managed: self.ml.managed.clone(),
+                embedded: None,
             },
             RuleKind::Redirect => Action::MapRemote {
                 target: self.target.trim().into(),
@@ -450,7 +456,6 @@ pub enum RulesTab {
     Console,
 }
 
-const MAP_FILE_EDIT_LIMIT: u64 = 1 << 20;
 const CONSOLE_MAX: usize = 2000;
 const CONSOLE_DROP: usize = 500;
 
@@ -650,7 +655,12 @@ impl RulesVm {
                     r.enabled = on;
                 }
             }
-            RuleIntent::Delete(id) => self.cfg.lock().unwrap().rules.retain(|r| r.id != id),
+            RuleIntent::Delete(id) => {
+                let mut cfg = self.cfg.lock().unwrap();
+                let gone = mocks::names(cfg.rules.iter().filter(|r| r.id == id));
+                cfg.rules.retain(|r| r.id != id);
+                cfg.doomed_mocks.extend(gone);
+            }
             // priority is the flat order, but the list shows groups, so a rule trades places with its neighbour in the same group
             RuleIntent::Move(id, d) => {
                 let mut cfg = self.cfg.lock().unwrap();
@@ -729,6 +739,11 @@ impl RulesVm {
             RuleIntent::DeleteCollection(id, delete_rules) => {
                 let editing_gone = {
                     let mut cfg = self.cfg.lock().unwrap();
+                    if delete_rules {
+                        let gone =
+                            mocks::names(cfg.rules.iter().filter(|r| r.collection == Some(id)));
+                        cfg.doomed_mocks.extend(gone);
+                    }
                     cfg.delete_collection(id, delete_rules);
                     self.editing
                         .is_some_and(|e| !cfg.rules.iter().any(|r| r.id == e))
@@ -824,74 +839,93 @@ impl RulesVm {
             }
             RuleIntent::LoadMapLocalFile => self.load_map_local_file(),
             RuleIntent::SaveMapLocalFile => self.save_map_local_file(),
+            RuleIntent::RevealMapFile => self.reveal_map_file(),
+            RuleIntent::SetMapStorage(to, target) => self.set_map_storage(to, target),
+            RuleIntent::ResolveMapSwitch(choice) => self.resolve_map_switch(choice),
         }
         None
-    }
-
-    fn load_map_local_file(&mut self) {
-        let path = self.form.file.trim().to_string();
-        if path.is_empty() {
-            self.form.map_file_status = None;
-            self.form.map_file_error = Some("Choose a local file first".into());
-            return;
-        }
-        // reads run on the UI thread and the editor lays out every line each frame
-        if let Ok(meta) = std::fs::metadata(&path)
-            && meta.len() > MAP_FILE_EDIT_LIMIT
-        {
-            self.form.map_file_loaded_path.clear();
-            self.form.map_file_status = None;
-            self.form.map_file_error = Some(format!(
-                "File is too large to edit here ({} KB; limit {} KB)",
-                meta.len() / 1024,
-                MAP_FILE_EDIT_LIMIT / 1024
-            ));
-            return;
-        }
-        match std::fs::read(&path) {
-            Ok(data) => {
-                if let Ok(text) = String::from_utf8(data) {
-                    self.form.map_file_content = text;
-                    self.form.map_file_loaded_path = path;
-                    self.form.map_file_dirty = false;
-                    self.form.map_file_status = Some("File loaded from disk".into());
-                    self.form.map_file_error = None;
-                } else {
-                    self.form.map_file_status = None;
-                    self.form.map_file_error = Some("This file is not valid UTF-8 text".into());
-                }
-            }
-            Err(e) => {
-                self.form.map_file_status = None;
-                self.form.map_file_error = Some(format!("Cannot read file: {e}"));
-            }
-        }
-    }
-
-    fn save_map_local_file(&mut self) {
-        if !self.form.map_file_editable() {
-            self.form.map_file_status = None;
-            self.form.map_file_error = Some("The file path changed — load the file first".into());
-            return;
-        }
-        let path = self.form.map_file_loaded_path.clone();
-        match std::fs::write(&path, &self.form.map_file_content) {
-            Ok(()) => {
-                self.form.map_file_loaded_path = path;
-                self.form.map_file_dirty = false;
-                self.form.map_file_status = Some("Saved directly to disk".into());
-                self.form.map_file_error = None;
-            }
-            Err(e) => {
-                self.form.map_file_status = None;
-                self.form.map_file_error = Some(format!("Cannot save file: {e}"));
-            }
-        }
     }
 
     fn submit(&mut self) {
         if !self.form.valid() {
             return;
+        }
+        let mut doomed = vec![];
+        if self.form.kind == RuleKind::MapLocal {
+            // every write happens here, before the rule changes: a failure leaves the rule as it was
+            let ml = &mut self.form.ml;
+            let editor = ml.editable().then(|| ml.content.clone().into_bytes());
+            let (write, stored_as) = match ml.storage {
+                MapStorage::AppData => {
+                    let wanted = mocks::clean_name(&ml.name);
+                    let renamed =
+                        ml.managed.is_empty() || wanted != mocks::display_name(&ml.managed);
+                    let target = if renamed {
+                        mocks::new_name(&wanted)
+                    } else {
+                        ml.managed.clone()
+                    };
+                    let dest = Source::Stored(target.clone());
+                    let bytes = if ml.dirty {
+                        Some(ml.content.clone().into_bytes())
+                    } else if let Some(s) = &ml.staged {
+                        Some(s.bytes.clone())
+                    } else {
+                        let old = if renamed { &ml.managed } else { &target };
+                        match Source::Stored(old.clone()).read() {
+                            Ok(b) => renamed.then_some(b),
+                            Err(_) if editor.is_some() => editor,
+                            Err(e) => {
+                                ml.fail(format!(
+                                    "The stored copy is missing and can't be rebuilt: {e}"
+                                ));
+                                return;
+                            }
+                        }
+                    };
+                    (bytes.map(|b| (dest, b)), Some(target))
+                }
+                MapStorage::Disk => {
+                    let dest = Source::Disk(ml.file.trim().into());
+                    let bytes = ml.staged.as_ref().filter(|s| s.dest == dest).map(|s| {
+                        if ml.dirty {
+                            ml.content.clone().into_bytes()
+                        } else {
+                            s.bytes.clone()
+                        }
+                    });
+                    (bytes.map(|b| (dest, b)), None)
+                }
+            };
+            if let Some((dest, bytes)) = write {
+                if let Some(s) = ml.staged.as_ref().filter(|s| s.dest == dest) {
+                    let now = match dest.read() {
+                        Ok(b) => Some(b),
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                        Err(e) => {
+                            ml.fail(format!("Cannot read {}: {e}", dest.label()));
+                            return;
+                        }
+                    };
+                    // changed since the user decided: ask again instead of overwriting
+                    if let Some(theirs) = now
+                        && s.seen.as_ref() != Some(&theirs)
+                        && theirs != bytes
+                    {
+                        ml.prompt = Some(ml.make_prompt(ml.storage, dest, bytes, theirs));
+                        return;
+                    }
+                }
+                if let Err(e) = dest.write(&bytes) {
+                    ml.fail(format!("Cannot save {}: {e}", dest.label()));
+                    return;
+                }
+            }
+            if let Some(target) = stored_as {
+                doomed.push(std::mem::replace(&mut ml.managed, target));
+            }
+            ml.staged = None;
+            ml.dirty = false;
         }
         let f = &self.form;
         let action = f.action();
@@ -908,6 +942,7 @@ impl RulesVm {
             .take()
             .and_then(|id| cfg.rules.iter_mut().find(|r| r.id == id))
         {
+            doomed.extend(r.action.managed_file().map(str::to_string));
             r.name = name;
             r.pattern = pattern;
             r.method = method;
@@ -926,6 +961,7 @@ impl RulesVm {
                 hits: 0,
             });
         }
+        cfg.doomed_mocks.extend(doomed);
         drop(cfg);
         self.form = self.blank_form();
     }
@@ -940,7 +976,18 @@ impl RulesVm {
                     .map_err(|_| e)
             });
         match parsed {
-            Ok((collections, rules)) => {
+            Ok((collections, mut rules)) => {
+                for i in 0..rules.len() {
+                    if let Err(e) = mocks::adopt(&mut rules[i].action, None) {
+                        for done in &rules[..i] {
+                            if let Some(name) = done.action.managed_file() {
+                                mocks::delete(name);
+                            }
+                        }
+                        status.set(format!("Error: {e}"));
+                        return;
+                    }
+                }
                 self.cfg.lock().unwrap().merge_rules(collections, rules);
                 status.set("Rules imported");
             }
@@ -951,10 +998,14 @@ impl RulesVm {
     // config-shaped so older builds can import it, but only the rules: the rest
     // (upstream credentials, keylog path, scope) shouldn't travel with a shared file
     pub fn rules_json(&self) -> String {
-        let cfg = self.cfg.lock().unwrap();
+        let (mut rules, collections) = {
+            let cfg = self.cfg.lock().unwrap();
+            (cfg.rules.clone(), cfg.collections.clone())
+        };
+        mocks::embed(&mut rules);
         let only_rules = Config {
-            rules: cfg.rules.clone(),
-            collections: cfg.collections.clone(),
+            rules,
+            collections,
             ..Config::default()
         };
         serde_json::to_string_pretty(&only_rules).unwrap_or_default()
@@ -1016,13 +1067,13 @@ mod tests {
         let b = dir.join(format!("pxp-map-b-{}.json", std::process::id()));
         std::fs::write(&a, "a").unwrap();
         std::fs::write(&b, "b").unwrap();
-        vm.form.file = a.display().to_string();
+        vm.form.ml.file = a.display().to_string();
         vm.handle(RuleIntent::LoadMapLocalFile);
-        assert_eq!(vm.form.map_file_ext(), "json");
-        vm.form.file = b.display().to_string();
+        assert_eq!(vm.form.ml.ext(), "json");
+        vm.form.ml.file = b.display().to_string();
         vm.handle(RuleIntent::SaveMapLocalFile);
         assert_eq!(std::fs::read_to_string(&b).unwrap(), "b");
-        assert!(vm.form.map_file_error.is_some());
+        assert!(vm.form.ml.error.is_some());
         std::fs::remove_file(a).ok();
         std::fs::remove_file(b).ok();
     }
@@ -1031,17 +1082,11 @@ mod tests {
     fn map_local_refuses_files_too_large_to_edit() {
         let mut vm = vm();
         let p = std::env::temp_dir().join(format!("pxp-map-big-{}.bin", std::process::id()));
-        std::fs::write(&p, vec![b'x'; MAP_FILE_EDIT_LIMIT as usize + 1]).unwrap();
-        vm.form.file = p.display().to_string();
+        std::fs::write(&p, vec![b'x'; (1 << 20) + 1]).unwrap();
+        vm.form.ml.file = p.display().to_string();
         vm.handle(RuleIntent::LoadMapLocalFile);
-        assert!(!vm.form.map_file_editable());
-        assert!(
-            vm.form
-                .map_file_error
-                .as_deref()
-                .unwrap()
-                .contains("too large")
-        );
+        assert!(!vm.form.ml.editable());
+        assert!(vm.form.ml.limit.as_deref().unwrap().contains("over 1 MB"));
         std::fs::remove_file(p).ok();
     }
 
@@ -1050,20 +1095,17 @@ mod tests {
         let mut vm = vm();
         let path = std::env::temp_dir().join(format!("pxp-map-edit-{}.txt", std::process::id()));
         std::fs::write(&path, "before").unwrap();
-        vm.form.file = path.display().to_string();
+        vm.form.ml.file = path.display().to_string();
         vm.handle(RuleIntent::LoadMapLocalFile);
-        assert_eq!(vm.form.map_file_content, "before");
-        assert!(!vm.form.map_file_dirty);
+        assert_eq!(vm.form.ml.content, "before");
+        assert!(!vm.form.ml.dirty);
 
-        vm.form.map_file_content = "after".into();
-        vm.form.map_file_dirty = true;
+        vm.form.ml.content = "after".into();
+        vm.form.ml.dirty = true;
         vm.handle(RuleIntent::SaveMapLocalFile);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
-        assert_eq!(
-            vm.form.map_file_status.as_deref(),
-            Some("Saved directly to disk")
-        );
-        assert!(!vm.form.map_file_dirty);
+        assert_eq!(vm.form.ml.status.as_deref(), Some("Saved directly to disk"));
+        assert!(!vm.form.ml.dirty);
         std::fs::remove_file(path).ok();
     }
 
@@ -1589,6 +1631,16 @@ mod tests {
             Action::MapLocal {
                 path: "/x".into(),
                 status: 201,
+                storage: MapStorage::Disk,
+                managed: String::new(),
+                embedded: None,
+            },
+            Action::MapLocal {
+                path: "/back.json".into(),
+                status: 200,
+                storage: MapStorage::AppData,
+                managed: "0123456789abcdef-r.json".into(),
+                embedded: None,
             },
             Action::MapRemote {
                 target: "http://l:3000".into(),

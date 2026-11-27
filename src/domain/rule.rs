@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+/// Where a Map Local rule's content lives.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MapStorage {
+    /// `path` is the user's own file.
+    #[default]
+    Disk,
+    /// proxyproxy serves its own copy, `managed`, from its data folder.
+    AppData,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Breakpoint {
@@ -7,8 +17,18 @@ pub enum Action {
         response: bool,
     },
     MapLocal {
+        /// The user's file in `Disk` mode; in `AppData` mode the file to go back to, if any.
         path: String,
         status: u16,
+        #[serde(default)]
+        storage: MapStorage,
+        /// File name under the data folder's `mocks/`. Kept while the rule is on `Disk`, so
+        /// switching back finds the copy again. Never shared between rules.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        managed: String,
+        /// Base64 of the managed file, only inside exported rules.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        embedded: Option<String>,
     },
     MapRemote {
         target: String,
@@ -57,6 +77,14 @@ impl Action {
         }
     }
 
+    /// The managed file a Map Local rule owns, if any.
+    pub fn managed_file(&self) -> Option<&str> {
+        match self {
+            Action::MapLocal { managed, .. } if !managed.is_empty() => Some(managed),
+            _ => None,
+        }
+    }
+
     pub fn describe(&self) -> String {
         match self {
             Action::Breakpoint { request, response } => format!(
@@ -67,7 +95,15 @@ impl Action {
                     _ => "response",
                 }
             ),
-            Action::MapLocal { path, status } => format!("Serve {path} with status {status}"),
+            Action::MapLocal {
+                path,
+                status,
+                storage: MapStorage::Disk,
+                ..
+            } => format!("Serve {path} with status {status}"),
+            Action::MapLocal {
+                status, managed, ..
+            } => format!("Serve stored file {managed} with status {status}"),
             Action::MapRemote { target } => format!("Redirect to {target}"),
             Action::Block { status } => format!("Reply {status} without contacting the server"),
             Action::Delay { ms, kbps } => {

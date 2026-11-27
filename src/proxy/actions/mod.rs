@@ -9,7 +9,8 @@ mod script;
 mod set_header;
 
 use super::sink::FlowSink;
-use crate::domain::rule::Action;
+use crate::domain::rule::{Action, MapStorage};
+use crate::services::mocks;
 use bytes::Bytes;
 use hudsucker::{
     Body,
@@ -61,7 +62,21 @@ pub fn resolve(a: &Action) -> Rule {
         Action::Breakpoint { request, response } => {
             Arc::new(breakpoint::Breakpoint { request, response })
         }
-        Action::MapLocal { path, status } => Arc::new(map_local::MapLocal { path, status }),
+        Action::MapLocal {
+            path,
+            status,
+            storage,
+            managed,
+            ..
+        } => Arc::new(map_local::MapLocal {
+            path: match storage {
+                MapStorage::Disk => path,
+                MapStorage::AppData => {
+                    mocks::path(&managed).map_or_else(String::new, |p| p.display().to_string())
+                }
+            },
+            status,
+        }),
         Action::MapRemote { target } => Arc::new(map_remote::MapRemote { target }),
         Action::Block { status } => Arc::new(block::Block { status }),
         Action::Delay { ms, kbps } => Arc::new(delay::Delay { ms, kbps }),
@@ -203,6 +218,9 @@ mod tests {
                 Action::MapLocal {
                     path: "/x".into(),
                     status: 200,
+                    storage: MapStorage::Disk,
+                    managed: String::new(),
+                    embedded: None,
                 },
                 "Mock",
             ),
@@ -250,6 +268,38 @@ mod tests {
         for (a, tag) in cases {
             assert_eq!(resolve(&a).tag(), tag, "{a:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn map_local_serves_the_file_of_the_active_storage_mode() {
+        use http_body_util::BodyExt;
+        let disk = std::env::temp_dir().join(format!("pxp-act-disk-{}.txt", std::process::id()));
+        std::fs::write(&disk, "disk").unwrap();
+        let managed = mocks::new_name("m.json");
+        mocks::write(&managed, b"stored").unwrap();
+        let action = |storage| Action::MapLocal {
+            path: disk.display().to_string(),
+            status: 200,
+            storage,
+            managed: managed.clone(),
+            embedded: None,
+        };
+        let served = |storage| async move {
+            let r = resolve(&action(storage)).short_circuit().unwrap();
+            let ct = r.headers()["content-type"].to_str().unwrap().to_string();
+            let body = r.into_body().collect().await.unwrap().to_bytes();
+            (ct, String::from_utf8(body.to_vec()).unwrap())
+        };
+        assert_eq!(
+            served(MapStorage::Disk).await,
+            ("text/plain; charset=utf-8".to_string(), "disk".to_string())
+        );
+        assert_eq!(
+            served(MapStorage::AppData).await,
+            ("application/json".to_string(), "stored".to_string())
+        );
+        mocks::delete(&managed);
+        std::fs::remove_file(disk).ok();
     }
 
     #[test]

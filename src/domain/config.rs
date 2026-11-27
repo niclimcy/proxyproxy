@@ -52,6 +52,10 @@ pub struct Config {
     pub mcp_enabled: bool,
     #[serde(skip)]
     pub capture_paused: bool,
+    /// Stored Map Local files dropped by an edit. They are deleted only after the config that
+    /// no longer names them is saved, so a crash never leaves a rule pointing at nothing.
+    #[serde(skip)]
+    pub doomed_mocks: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

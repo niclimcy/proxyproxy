@@ -32,15 +32,14 @@ pub fn load(path: &Path) -> (Config, Option<String>) {
     }
 }
 
-pub fn save(path: &Path, cfg: &Config) {
+/// `true` once the new file is in place.
+pub fn save(path: &Path, cfg: &Config) -> bool {
     let Ok(s) = serde_json::to_string_pretty(cfg) else {
-        return;
+        return false;
     };
     // write then rename, so a crash mid-write never leaves a truncated config
     let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, s).is_ok() {
-        let _ = std::fs::rename(&tmp, path);
-    }
+    std::fs::write(&tmp, s).is_ok() && std::fs::rename(&tmp, path).is_ok()
 }
 
 #[cfg(test)]

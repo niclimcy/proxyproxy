@@ -31,7 +31,7 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 
 - Capture HTTP/1.1, HTTP/2 and WebSocket frames, with the client app shown per request (via `lsof`). Sessions autosave and can be saved or opened as `.pxp`.
 - Search with queries like `host:api.* status:>=400 method:POST body:"userId"`. Filter chips and saved queries are included.
-- Rules: breakpoints, map local, redirect, block, throttle, header and body rewrite, mock responses, and JavaScript (`onRequest` / `onResponse`).
+- Rules: breakpoints, map local (serve your own file, or a copy proxyproxy keeps in its data folder; switching is staged until you save the rule, never loses content and asks before overwriting a file that differs), redirect, block, throttle, header and body rewrite, mock responses, and JavaScript (`onRequest` / `onResponse`).
 - Edit and resend requests, diff two requests, copy as cURL, fetch, Python, HTTPie or raw HTTP.
 - Body views: pretty, tree, raw, hex, form, decoded protobuf.
   - Protobuf: load `FileDescriptorSet` files in the Schemas tab of Settings (⌘,). Bodies, including gRPC framing, are decoded with field names.
@@ -40,7 +40,7 @@ The CA and config are in your user data directory under `proxyproxy/` (`ca.pem`,
 - Upstream proxy: a manual HTTP or SOCKS5 proxy, or a PAC file.
 - Custom CA: import your own certificate and key, then restart.
 - TLS key log in NSS format for Wireshark. `proxyproxy run` also honours `SSLKEYLOGFILE`.
-- Rule collections: group rules (say "Checkout happy path" or "Server errors"), switch a whole group on or off with one click, or solo one to change scenarios. Import and export keep the groups; older rule files still import.
+- Rule collections: group rules (say "Checkout happy path" or "Server errors"), switch a whole group on or off with one click, or solo one to change scenarios. Import and export keep the groups; older rule files still import. Exported rules embed the content of stored Map Local files, so a rules file is self-contained.
 - Export HAR, CSV and rules JSON. Import HAR and Charles JSON sessions (`.chlsj`).
 - REST API: `http://127.0.0.1:<port+1>/flows?q=&limit=`, `/flows/{id}`, `/har`.
 - MCP (off by default; turn it on in Settings → MCP, otherwise `POST /mcp` answers 403). Any program on this computer can connect while it is on, and captured flows may contain secrets such as tokens and passwords. HTTP JSON-RPC at `http://127.0.0.1:<port+1>/mcp` (`Content-Type: application/json`; requests from web pages are refused), or stdio with `proxyproxy mcp --port 9090`. Settings → MCP → Connect a client shows a ready-to-copy setup per client: a pasteable `mcp.json` (Custom, also used for Antigravity's raw MCP config) or the add command for Claude Code, Codex and Gemini CLI.

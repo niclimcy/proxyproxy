@@ -300,6 +300,65 @@ async fn mock_and_header_rules_rewrite_traffic() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn map_local_serves_whichever_storage_the_rule_uses_now() {
+    let up = origin(200, "real").await;
+    let rig = rig(mcp_config()).await;
+    let disk = std::env::temp_dir().join(format!("pxp-e2e-map-{}.txt", std::process::id()));
+    std::fs::write(&disk, "from disk").unwrap();
+    let pattern = format!("127.0.0.1:{}/local", port(&up));
+
+    let stored = rig
+        .mcp(
+            "proxyproxy_add_rule",
+            json!({
+                "pattern": pattern,
+                "content": "{\"stored\":true}",
+                "action": {"MapLocal": {"path": "r.json", "status": 200, "storage": "AppData"}}
+            }),
+        )
+        .await;
+    let id = stored["id"].as_u64().unwrap();
+    let managed = stored["action"]["MapLocal"]["managed"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = rig.fetch(&url(&up, "/local")).await;
+    assert_eq!(r.headers()["content-type"], "application/json");
+    assert_eq!(r.text().await.unwrap(), "{\"stored\":true}");
+
+    // same rule, now on disk: the stored copy is kept but no longer served
+    rig.mcp(
+        "proxyproxy_add_rule",
+        json!({
+            "id": id,
+            "pattern": pattern,
+            "action": {"MapLocal": {"path": disk.display().to_string(), "status": 200}}
+        }),
+    )
+    .await;
+    assert_eq!(
+        rig.fetch(&url(&up, "/local")).await.text().await.unwrap(),
+        "from disk"
+    );
+    assert!(
+        crate::services::mocks::Source::Stored(managed.clone())
+            .read()
+            .is_ok()
+    );
+
+    // the file goes only once the config without the rule is saved, which the UI does
+    rig.mcp("proxyproxy_delete_rule", json!({"id": id})).await;
+    assert_eq!(rig.mcp("proxyproxy_list_rules", json!({})).await, json!([]));
+    assert!(
+        crate::services::mocks::Source::Stored(managed)
+            .read()
+            .is_ok()
+    );
+    assert_eq!(hits(&up).await, 0);
+    std::fs::remove_file(disk).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn map_remote_sends_the_request_to_another_origin() {
     let (old, new) = (origin(200, "old").await, origin(200, "new").await);
     let rig = rig(mcp_config()).await;

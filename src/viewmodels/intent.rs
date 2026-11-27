@@ -2,6 +2,7 @@ use super::mcp_vm::McpClient;
 use super::rules_vm::RuleKind;
 use crate::domain::config::OnboardingProfile;
 use crate::domain::keymap::{Binding, RowAction};
+use crate::domain::rule::MapStorage;
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -156,6 +157,16 @@ pub enum ListKind {
     ProxyOnly,
 }
 
+/// How to settle a Map Local storage switch that found different content on the other side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapSwitchChoice {
+    /// Overwrite the other side with what is being carried over.
+    Replace,
+    /// Keep the other side's content and show it instead.
+    Adopt,
+    Cancel,
+}
+
 #[derive(Clone)]
 pub enum RuleIntent {
     SetEnabled(u64, bool),
@@ -185,6 +196,10 @@ pub enum RuleIntent {
     Resolve(bool),
     LoadMapLocalFile,
     SaveMapLocalFile,
+    /// The path is the Save As target the view asked for when switching to disk with none remembered.
+    SetMapStorage(MapStorage, Option<PathBuf>),
+    ResolveMapSwitch(MapSwitchChoice),
+    RevealMapFile,
 }
 
 pub enum NetworkIntent {

@@ -1,7 +1,9 @@
 use crate::domain::config::Shared;
-use crate::domain::rule::{Action, Rule};
+use crate::domain::rule::{Action, MapStorage, Rule};
 use crate::services::flow_store::FlowStore;
+use crate::services::mocks;
 use crate::services::replay;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 
@@ -154,7 +156,7 @@ fn tools() -> Vec<Value> {
         ),
         tool(
             "proxyproxy_add_rule",
-            "Add or replace a proxy rule",
+            "Add or replace a proxy rule. Map Local: action {\"MapLocal\": {path, status, storage}}; storage \"AppData\" keeps content in proxyproxy (path only names the file, e.g. response.json; pass content for text). Changing an existing disk rule to AppData without content copies the disk file's bytes; a file proxyproxy already stores for the rule is kept",
             &json!({
                 "type": "object",
                 "properties": {
@@ -164,7 +166,8 @@ fn tools() -> Vec<Value> {
                     "method": {"type": "string"},
                     "enabled": {"type": "boolean"},
                     "collection": {"type": ["integer", "null"], "description": "Collection id from proxyproxy_list_collections; null for Ungrouped. Omitted on an existing rule keeps its collection"},
-                    "action": {"type": "object"}
+                    "action": {"type": "object", "description": "Map Local takes path, status and optionally storage: \"Disk\" (default; path is your file) or \"AppData\" (proxyproxy keeps its own copy)"},
+                    "content": {"type": "string", "description": "Text content for a Map Local rule with AppData storage; an existing rule keeps its stored content when omitted"}
                 },
                 "required": ["pattern", "action"]
             }),
@@ -306,8 +309,10 @@ fn call_tool(
                 .and_then(Value::as_u64)
                 .ok_or_else(|| "id is required".to_string())?;
             let mut cfg = cfg.lock().unwrap();
+            let gone = mocks::names(cfg.rules.iter().filter(|rule| rule.id == id));
             let old_len = cfg.rules.len();
             cfg.rules.retain(|rule| rule.id != id);
+            cfg.doomed_mocks.extend(gone);
             Ok(json!({"deleted": cfg.rules.len() != old_len}))
         }
         "proxyproxy_export_har" => Ok(crate::services::api::har_json(store)),
@@ -368,7 +373,7 @@ fn replay_tool(store: &FlowStore, arguments: &Value) -> Result<Value, String> {
     Ok(crate::services::api::detail(&flow))
 }
 
-fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
+fn add_rule(shared: &Shared, arguments: &Value) -> Result<Value, String> {
     let pattern = arguments
         .get("pattern")
         .and_then(Value::as_str)
@@ -379,29 +384,58 @@ fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
     let action_value = arguments
         .get("action")
         .ok_or_else(|| "action is required".to_string())?;
-    let action: Action = serde_json::from_value(action_value.clone())
+    let mut action: Action = serde_json::from_value(action_value.clone())
         .map_err(|error| format!("invalid action: {error}"))?;
-    let mut cfg = cfg.lock().unwrap();
-    let id = arguments
-        .get("id")
-        .and_then(Value::as_u64)
-        .unwrap_or_else(|| cfg.next_rule_id());
-    let collection = match arguments.get("collection") {
-        Some(Value::Number(n)) => {
-            let c = n.as_u64().ok_or_else(|| "invalid collection".to_string())?;
-            if !cfg.collection_exists(c) {
-                return Err(format!("no such collection: {c}"));
+    if let (Action::MapLocal { embedded, .. }, Some(text)) = (
+        &mut action,
+        arguments.get("content").and_then(Value::as_str),
+    ) {
+        *embedded = Some(STANDARD.encode(text));
+    }
+    let wanted_id = arguments.get("id").and_then(Value::as_u64);
+    let (previous, collection) = {
+        let cfg = shared.lock().unwrap();
+        let existing = wanted_id.and_then(|id| cfg.rules.iter().find(|r| r.id == id));
+        let collection = match arguments.get("collection") {
+            Some(Value::Number(n)) => {
+                let c = n.as_u64().ok_or_else(|| "invalid collection".to_string())?;
+                if !cfg.collection_exists(c) {
+                    return Err(format!("no such collection: {c}"));
+                }
+                Some(c)
             }
-            Some(c)
-        }
-        Some(Value::Null) => None,
-        Some(_) => return Err("collection must be an integer or null".into()),
-        None => cfg
-            .rules
-            .iter()
-            .find(|r| r.id == id)
-            .and_then(|r| r.collection),
+            Some(Value::Null) => None,
+            Some(_) => return Err("collection must be an integer or null".into()),
+            None => existing.and_then(|r| r.collection),
+        };
+        (existing.map(|r| r.action.clone()), collection)
     };
+    let keep = previous
+        .as_ref()
+        .and_then(Action::managed_file)
+        .map(str::to_string);
+    // moving a rule from a disk file to stored without new content copies the file, like the UI
+    if let (
+        Action::MapLocal {
+            storage: MapStorage::AppData,
+            embedded: embedded @ None,
+            ..
+        },
+        Some(Action::MapLocal {
+            storage: MapStorage::Disk,
+            path,
+            ..
+        }),
+        None,
+    ) = (&mut action, &previous, &keep)
+    {
+        let bytes = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+        *embedded = Some(STANDARD.encode(bytes));
+    }
+    // file work happens before the config is locked again
+    mocks::adopt(&mut action, keep.as_deref())?;
+    let mut cfg = shared.lock().unwrap();
+    let id = wanted_id.unwrap_or_else(|| cfg.next_rule_id());
     let rule = Rule {
         id,
         enabled: arguments
@@ -419,10 +453,13 @@ fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string(),
+        collection: collection.filter(|c| cfg.collection_exists(*c)),
         action,
-        collection,
         hits: 0,
     };
+    if let Some(old) = keep.filter(|old| rule.action.managed_file() != Some(old.as_str())) {
+        cfg.doomed_mocks.push(old);
+    }
     if let Some(existing) = cfg.rules.iter_mut().find(|existing| existing.id == id) {
         *existing = rule.clone();
     } else {
@@ -678,6 +715,42 @@ mod tests {
         )
         .unwrap();
         response["result"].clone()
+    }
+
+    #[test]
+    fn moving_a_disk_rule_to_stored_copies_the_file_and_deleting_queues_the_copy() {
+        let (store, cfg) = setup();
+        let disk = std::env::temp_dir().join(format!("pxp-mcp-disk-{}.json", std::process::id()));
+        std::fs::write(&disk, [0u8, 159, 146, 150]).unwrap();
+        let disk_action = json!({"MapLocal": {"path": disk.display().to_string(), "status": 200}});
+        let added = call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"pattern": "a.com", "action": disk_action}),
+        );
+        let id = added["structuredContent"]["id"].as_u64().unwrap();
+
+        let moved = call(
+            &store,
+            &cfg,
+            "proxyproxy_add_rule",
+            &json!({"id": id, "pattern": "a.com", "action": {"MapLocal": {
+                "path": "ignored.json", "status": 200, "storage": "AppData"}}}),
+        );
+        let name = moved["structuredContent"]["action"]["MapLocal"]["managed"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            mocks::Source::Stored(name.clone()).read().unwrap(),
+            [0u8, 159, 146, 150]
+        );
+
+        call(&store, &cfg, "proxyproxy_delete_rule", &json!({"id": id}));
+        assert_eq!(cfg.lock().unwrap().doomed_mocks, vec![name.clone()]);
+        mocks::delete(&name);
+        std::fs::remove_file(disk).ok();
     }
 
     #[test]

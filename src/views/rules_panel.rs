@@ -1,4 +1,6 @@
-use crate::viewmodels::intent::{ListKind, RuleIntent};
+use crate::domain::rule::MapStorage;
+use crate::services::mocks;
+use crate::viewmodels::intent::{ListKind, MapSwitchChoice, RuleIntent};
 use crate::viewmodels::rules_vm::{
     KINDS, RuleForm, RuleGroup, RuleKind, RuleRow, RulesTab, RulesVm, Tone,
 };
@@ -158,6 +160,9 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
             .clicked()
         {
             out.push(RuleIntent::Submit);
+        }
+        if vm.form.kind == RuleKind::MapLocal && vm.form.ml.pending() {
+            ui.label(RichText::new("Unsaved").color(warning()));
         }
         if !vm.form.pattern.trim().is_empty() {
             ui.label(muted(format!(
@@ -496,6 +501,189 @@ fn delete_confirm(
     });
 }
 
+fn map_local_fields(ui: &mut egui::Ui, f: &mut RuleForm, w: f32, out: &mut Vec<RuleIntent>) {
+    let ml = &mut f.ml;
+    let stored = ml.storage == MapStorage::AppData;
+    field(ui, "Response from", |ui| {
+        ui.vertical(|ui| {
+            let mut choice = ml.storage;
+            segmented(
+                ui,
+                &mut choice,
+                &[
+                    (MapStorage::Disk, "File on disk"),
+                    (MapStorage::AppData, "In proxyproxy"),
+                ],
+            );
+            ui.label(muted(if stored {
+                "A copy kept with this rule in proxyproxy's data folder. Switch to File on disk to export it."
+            } else {
+                "Serves and edits your file directly"
+            }));
+            if let Some(live) = &ml.live {
+                ui.label(muted(format!("Serving now: {}", live.label)));
+                if live.storage != ml.storage {
+                    ui.label(muted(format!(
+                        "Will switch to {} when you save the rule.",
+                        if stored { "the stored copy" } else { "the file on disk" }
+                    )));
+                }
+            } else if ml.pending() {
+                ui.label(muted("Applies when you add the rule."));
+            }
+            if choice != ml.storage {
+                // nothing to switch back to yet: ask where the stored content should go
+                let asked = choice == MapStorage::Disk && ml.file.trim().is_empty();
+                let target = asked
+                    .then(|| {
+                        rfd::FileDialog::new()
+                            .set_file_name(mocks::clean_name(&ml.name))
+                            .save_file()
+                    })
+                    .flatten();
+                if asked && target.is_none() {
+                    out.push(RuleIntent::ResolveMapSwitch(MapSwitchChoice::Cancel));
+                } else {
+                    out.push(RuleIntent::SetMapStorage(choice, target));
+                }
+            }
+            if let Some(p) = &ml.prompt {
+                ui.label(
+                    RichText::new(ico(
+                        ph::WARNING,
+                        if p.to == MapStorage::Disk {
+                            "The file already holds different content"
+                        } else {
+                            "A different stored copy already exists"
+                        },
+                    ))
+                    .color(warning()),
+                );
+                ui.label(muted(&p.summary));
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .add(action_button(ico(ph::WARNING, &p.replace), danger()))
+                        .clicked()
+                    {
+                        out.push(RuleIntent::ResolveMapSwitch(MapSwitchChoice::Replace));
+                    }
+                    if icon_button(ui, ph::CHECK, &p.keep, true).clicked() {
+                        out.push(RuleIntent::ResolveMapSwitch(MapSwitchChoice::Adopt));
+                    }
+                    if icon_button(ui, ph::X, "Cancel switch", true).clicked() {
+                        out.push(RuleIntent::ResolveMapSwitch(MapSwitchChoice::Cancel));
+                    }
+                });
+            }
+        });
+    });
+    if stored {
+        field(ui, "File name", |ui| {
+            ui.vertical(|ui| {
+                ui.add(
+                    TextEdit::singleline(&mut ml.name)
+                        .desired_width(w)
+                        .hint_text("response.json"),
+                );
+                ui.label(muted(format!("Served as {}", ml.served_as())));
+                if let Some(note) = ml.name_note() {
+                    ui.label(RichText::new(note).color(warning()));
+                }
+                if let Some(path) = ml.stored_path() {
+                    ui.horizontal(|ui| {
+                        ui.label(muted(&path)).on_hover_text(&path);
+                        if icon_only(ui, ph::FOLDER_OPEN, "Show in the file manager").clicked() {
+                            out.push(RuleIntent::RevealMapFile);
+                        }
+                    });
+                }
+            });
+        });
+    } else {
+        field(ui, "File path", |ui| {
+            ui.horizontal(|ui| {
+                let path = ui.add(
+                    TextEdit::singleline(&mut ml.file)
+                        .desired_width((w - 80.0).max(80.0))
+                        .hint_text("/path/to/response.json"),
+                );
+                if icon_button(ui, ph::FOLDER_OPEN, "Browse…", true).clicked()
+                    && let Some(p) = rfd::FileDialog::new().pick_file()
+                {
+                    ml.file = p.display().to_string();
+                    out.push(RuleIntent::LoadMapLocalFile);
+                }
+                if path.lost_focus() {
+                    out.push(RuleIntent::LoadMapLocalFile);
+                }
+            });
+        });
+    }
+    field(ui, "Status", |ui| {
+        ui.add(TextEdit::singleline(&mut f.status).desired_width(60.0));
+    });
+    field(ui, "Response body", |ui| {
+        ui.vertical(|ui| {
+            if !stored {
+                ui.horizontal(|ui| {
+                    if icon_button(ui, ph::FOLDER_OPEN, "Load file", true)
+                        .on_hover_text("Read the selected file from disk")
+                        .clicked()
+                    {
+                        out.push(RuleIntent::LoadMapLocalFile);
+                    }
+                    if icon_button(ui, ph::FLOPPY_DISK, "Save to disk", ml.editable())
+                        .on_hover_text(
+                            "Writes your file immediately, without waiting for Save rule",
+                        )
+                        .clicked()
+                    {
+                        out.push(RuleIntent::SaveMapLocalFile);
+                    }
+                });
+            }
+            if let Some(error) = &ml.error {
+                ui.label(RichText::new(ico(ph::WARNING, error)).color(danger()));
+            } else if let Some(status) = &ml.status {
+                ui.label(RichText::new(status).color(success()));
+            }
+            if let Some(limit) = &ml.limit {
+                ui.label(muted(limit));
+            }
+            if ml.editable() {
+                let ext = ml.ext();
+                ui.label(muted(if ext.is_empty() {
+                    "Text file".to_string()
+                } else {
+                    format!("{} file", ext.to_uppercase())
+                }));
+                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    code_layouter(ui, text, wrap_width, &ext)
+                };
+                let editor = TextEdit::multiline(&mut ml.content)
+                    .code_editor()
+                    .desired_rows(10)
+                    .desired_width(w)
+                    .layouter(&mut layouter);
+                if ui.add(editor).changed() {
+                    ml.dirty = true;
+                    ml.status = None;
+                    ml.error = None;
+                }
+                if ml.dirty {
+                    ui.label(muted(if stored {
+                        "Edited — saved with the rule"
+                    } else {
+                        "Unsaved changes — Save to disk will update the file."
+                    }));
+                }
+            } else if ml.limit.is_none() && !stored && !ml.file.trim().is_empty() {
+                ui.label(muted("Load file to edit and save its contents."));
+            }
+        });
+    });
+}
+
 fn form_ui(
     ui: &mut egui::Ui,
     f: &mut RuleForm,
@@ -580,93 +768,7 @@ fn form_ui(
                         checkbox(ui, &mut f.bp_response, "Response");
                     });
                 }),
-                RuleKind::MapLocal => {
-                    field(ui, "Local file", |ui| {
-                        ui.horizontal(|ui| {
-                            let path = ui.add(
-                                TextEdit::singleline(&mut f.file)
-                                    .desired_width((w - 80.0).max(80.0))
-                                    .hint_text("/path/to/response.json"),
-                            );
-                            if icon_button(ui, ph::FOLDER_OPEN, "Browse…", true).clicked()
-                                && let Some(p) = rfd::FileDialog::new().pick_file()
-                            {
-                                f.file = p.display().to_string();
-                                out.push(RuleIntent::LoadMapLocalFile);
-                            }
-                            if path.lost_focus() {
-                                out.push(RuleIntent::LoadMapLocalFile);
-                            }
-                        });
-                    });
-                    field(ui, "Status", |ui| {
-                        ui.add(TextEdit::singleline(&mut f.status).desired_width(60.0));
-                    });
-                    field(ui, "File contents", |ui| {
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                if icon_button(ui, ph::FOLDER_OPEN, "Load file", true)
-                                    .on_hover_text("Read the selected file from disk")
-                                    .clicked()
-                                {
-                                    out.push(RuleIntent::LoadMapLocalFile);
-                                }
-                                if icon_button(
-                                    ui,
-                                    ph::FLOPPY_DISK,
-                                    "Save to disk",
-                                    f.map_file_editable(),
-                                )
-                                .on_hover_text(
-                                    "Write this editor's contents to the selected file on disk",
-                                )
-                                .clicked()
-                                {
-                                    out.push(RuleIntent::SaveMapLocalFile);
-                                }
-                            });
-                            ui.label(muted(
-                                "Save to disk writes directly to the selected local file.",
-                            ));
-                            if let Some(error) = &f.map_file_error {
-                                ui.label(RichText::new(error).color(danger()));
-                            } else if let Some(status) = &f.map_file_status {
-                                ui.label(RichText::new(status).color(success()));
-                            }
-                            if f.map_file_editable() {
-                                let ext = f.map_file_ext();
-                                ui.label(muted(if ext.is_empty() {
-                                    "Text file".to_string()
-                                } else {
-                                    format!("{} file", ext.to_uppercase())
-                                }));
-                                let mut layouter =
-                                    |ui: &egui::Ui,
-                                     text: &dyn egui::TextBuffer,
-                                     wrap_width: f32| {
-                                        code_layouter(ui, text, wrap_width, &ext)
-                                    };
-                                let editor = TextEdit::multiline(&mut f.map_file_content)
-                                    .code_editor()
-                                    .desired_rows(10)
-                                    .desired_width(w)
-                                    .layouter(&mut layouter);
-                                if ui.add(editor).changed() {
-                                    f.map_file_dirty = true;
-                                    f.map_file_status = None;
-                                    f.map_file_error = None;
-                                }
-                                if f.map_file_dirty {
-                                    ui.label(muted(
-                                        "Unsaved changes — Save to disk will update the file.",
-                                    ));
-                                }
-                            } else if !f.file.trim().is_empty() {
-                                ui.label(muted("Load file to edit and save its contents."));
-                            }
-                        });
-                    });
-                }
+                RuleKind::MapLocal => map_local_fields(ui, f, w, out),
                 RuleKind::Redirect => field(ui, "Target", |ui| {
                     ui.add(
                         TextEdit::singleline(&mut f.target)
