@@ -101,9 +101,7 @@ impl Action {
                 storage: MapStorage::Disk,
                 ..
             } => format!("Serve {path} with status {status}"),
-            Action::MapLocal {
-                status, managed, ..
-            } => format!("Serve stored file {managed} with status {status}"),
+            Action::MapLocal { status, .. } => format!("Reply with status {status}"),
             Action::MapRemote { target } => format!("Redirect to {target}"),
             Action::Block { status } => format!("Reply {status} without contacting the server"),
             Action::Delay { ms, kbps } => {

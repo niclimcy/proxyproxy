@@ -1,3 +1,4 @@
+use crate::domain::pac;
 use crate::domain::rule::MapStorage;
 use crate::services::mocks;
 use crate::viewmodels::intent::{ListKind, MapSwitchChoice, RuleIntent};
@@ -143,7 +144,7 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
                     if vm.collapsed.contains(&g.id) {
                         continue;
                     }
-                    left = xs.1 - ui.max_rect().left();
+                    left = xs.0 - ui.max_rect().left() + GUIDE_GAP;
                     guide_x = (!g.rows.is_empty()).then_some(xs.0);
                 }
                 let body = ui.horizontal_top(|ui| {
@@ -215,6 +216,9 @@ fn rules_tab(ui: &mut egui::Ui, vm: &mut RulesVm, out: &mut Vec<RuleIntent>) {
     });
 }
 
+/// Space between the collection's guide line and the rules beside it.
+const GUIDE_GAP: f32 = 8.0;
+
 const EMPTY: &str = "No rules yet. Right-click a request → Mock response.";
 
 struct Order {
@@ -274,12 +278,18 @@ fn rule_card(ui: &mut egui::Ui, r: &RuleRow, cx: &RowCtx, out: &mut Vec<RuleInte
                 let m = r.method.to_uppercase();
                 pill(ui, &m, ink(method_color(&m)));
             }
+            let title = if r.name.is_empty() {
+                RichText::new(pac::host_of(&r.pattern).unwrap_or_else(|| r.pattern.clone()))
+                    .monospace()
+            } else {
+                RichText::new(&r.name)
+            };
             let pattern = ui.add(
-                egui::Label::new(RichText::new(&r.pattern).monospace().color(ink(fg())))
+                egui::Label::new(title.color(ink(fg())))
                     .truncate()
                     .sense(egui::Sense::click()),
             );
-            if pattern.on_hover_text("Edit").clicked() {
+            if pattern.on_hover_text(format!("{} — click to edit", r.pattern)).clicked() {
                 out.push(RuleIntent::Edit(r.id));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -306,11 +316,7 @@ fn rule_card(ui: &mut egui::Ui, r: &RuleRow, cx: &RowCtx, out: &mut Vec<RuleInte
             });
         });
         if let Some(d) = &r.description {
-            ui.label(muted(if r.name.is_empty() {
-                d.clone()
-            } else {
-                format!("{} — {d}", r.name)
-            }));
+            ui.label(muted(d));
         }
     });
     let rect = row.response.rect;
