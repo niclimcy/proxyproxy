@@ -371,9 +371,6 @@ jobs:
           PREV: ${{ steps.range.outputs.prev }}
         run: |
           {
-            if [ -n "$PREV" ]; then
-              echo "Changes since [$PREV](https://github.com/${{ github.repository }}/releases/tag/$PREV)."
-            fi
             cat CHANGES.md
             if [ -n "$PREV" ]; then
               echo
