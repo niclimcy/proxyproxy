@@ -5,6 +5,9 @@ use crate::services::replay;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 
+pub const DISABLED_MESSAGE: &str = "proxyproxy's MCP server is turned off. Ask the user to open proxyproxy → Settings → MCP and enable it, then retry.";
+pub const DISABLED_CODE: i32 = -32001;
+
 pub fn handle(store: &FlowStore, cfg: &Shared, request: &Value) -> Option<Value> {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     if request.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
@@ -72,7 +75,7 @@ pub fn handle(store: &FlowStore, cfg: &Shared, request: &Value) -> Option<Value>
     Some(json!({"jsonrpc": "2.0", "id": id, "result": result}))
 }
 
-fn error_response(id: &Value, code: i32, message: &str) -> Value {
+pub(crate) fn error_response(id: &Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
@@ -348,6 +351,31 @@ fn add_rule(cfg: &Shared, arguments: &Value) -> Result<Value, String> {
     Ok(serde_json::to_value(rule).unwrap_or(Value::Null))
 }
 
+// What the stdio bridge does with the API's answer.
+#[derive(Debug, PartialEq)]
+enum Bridged {
+    Print(String),
+    Nothing,
+    // a refusal for a request that had an id
+    Failed(String),
+}
+
+// Refusals that aren't JSON-RPC (bad host, 413...) are wrapped so the client sees an
+// error for its request rather than a stalled call.
+fn bridge_reply(id: &Value, status: u16, body: &str) -> Bridged {
+    let parsed = serde_json::from_str::<Value>(body).ok();
+    if parsed.as_ref().is_some_and(|v| v.get("jsonrpc").is_some()) {
+        return Bridged::Print(body.trim().to_string());
+    }
+    if status < 400 {
+        return Bridged::Nothing;
+    }
+    let message = parsed
+        .and_then(|v| v.get("error").and_then(Value::as_str).map(String::from))
+        .unwrap_or_else(|| format!("proxyproxy returned HTTP {status}"));
+    Bridged::Failed(error_response(id, -32000, &message).to_string())
+}
+
 // Bridges stdio MCP clients to the running app's HTTP endpoint, so both share one capture.
 pub fn serve_stdio(port: u16) -> Result<(), String> {
     let client = reqwest::blocking::Client::new();
@@ -356,24 +384,48 @@ pub fn serve_stdio(port: u16) -> Result<(), String> {
     let mut stdout = std::io::stdout().lock();
     for line in stdin.lock().lines() {
         let line = line.map_err(|error| error.to_string())?;
-        if line.trim().is_empty() {
+        let line = line.trim();
+        if line.is_empty() {
             continue;
         }
-        let response = match serde_json::from_str::<Value>(&line) {
-            Ok(request) => client
-                .post(&url)
-                .header("content-type", "application/json")
-                .body(request.to_string())
-                .send()
-                .and_then(reqwest::blocking::Response::text)
-                .map_err(|error| format!("cannot reach proxyproxy on port {port}: {error}"))?,
-            Err(_) => error_response(&Value::Null, -32700, "Parse error").to_string(),
+        let reply = match serde_json::from_str::<Value>(line) {
+            Ok(request) => {
+                let id = request.get("id");
+                let answered = client
+                    .post(&url)
+                    .header("content-type", "application/json")
+                    .body(line.to_string())
+                    .send()
+                    .and_then(|r| Ok((r.status().as_u16(), r.text()?)));
+                let reply = match answered {
+                    Ok((status, body)) => bridge_reply(id.unwrap_or(&Value::Null), status, &body),
+                    Err(error) => Bridged::Failed(
+                        error_response(
+                            id.unwrap_or(&Value::Null),
+                            -32000,
+                            &format!("cannot reach proxyproxy on port {port}: {error}"),
+                        )
+                        .to_string(),
+                    ),
+                };
+                match reply {
+                    // a notification has no id to answer, so its failure goes to stderr
+                    Bridged::Failed(text) if id.is_none() => {
+                        eprintln!("proxyproxy mcp: {text}");
+                        Bridged::Nothing
+                    }
+                    Bridged::Failed(text) => Bridged::Print(text),
+                    other => other,
+                }
+            }
+            Err(_) => {
+                Bridged::Print(error_response(&Value::Null, -32700, "Parse error").to_string())
+            }
         };
-        if response.trim().is_empty() {
-            continue;
+        if let Bridged::Print(text) = reply {
+            writeln!(stdout, "{text}").map_err(|error| error.to_string())?;
+            stdout.flush().map_err(|error| error.to_string())?;
         }
-        writeln!(stdout, "{response}").map_err(|error| error.to_string())?;
-        stdout.flush().map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -389,6 +441,29 @@ mod tests {
             FlowStore::default(),
             Arc::new(Mutex::new(Config::default())),
         )
+    }
+
+    #[test]
+    fn bridge_relays_the_disabled_error_and_wraps_other_refusals() {
+        let disabled = error_response(&json!(3), DISABLED_CODE, DISABLED_MESSAGE).to_string();
+        assert_eq!(
+            bridge_reply(&json!(3), 403, &disabled),
+            Bridged::Print(disabled)
+        );
+        assert_eq!(bridge_reply(&json!(3), 202, ""), Bridged::Nothing);
+        let Bridged::Failed(wrapped) =
+            bridge_reply(&json!(4), 403, r#"{"error":"forbidden host"}"#)
+        else {
+            panic!("expected a failure");
+        };
+        let v: Value = serde_json::from_str(&wrapped).unwrap();
+        assert_eq!(
+            (v["id"].clone(), v["error"]["message"].clone()),
+            (json!(4), json!("forbidden host"))
+        );
+        assert!(
+            matches!(bridge_reply(&json!(5), 500, "oops"), Bridged::Failed(t) if t.contains("HTTP 500"))
+        );
     }
 
     #[test]

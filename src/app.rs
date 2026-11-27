@@ -10,6 +10,7 @@ use crate::viewmodels::{
     devices_vm::DevicesVm,
     intent::{Effect, SessionIntent, ToolbarIntent},
     keymap_vm::KeymapVm,
+    mcp_vm::McpVm,
     network_vm::NetworkVm,
     onboarding_vm::OnboardingVm,
     replay_vm::ReplayVm,
@@ -79,6 +80,7 @@ struct App {
     rules: RulesVm,
     replay: ReplayVm,
     network: NetworkVm,
+    mcp: McpVm,
     schemas: SchemasVm,
     session: SessionVm,
     status: Status,
@@ -126,6 +128,15 @@ impl App {
             rules: RulesVm::new(cfg.clone(), store.clone()),
             replay: ReplayVm::new(store.clone(), repaint.clone()),
             network: NetworkVm::new(cfg.clone()),
+            mcp: McpVm::new(
+                cfg.clone(),
+                port,
+                api_port,
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.to_str().map(String::from))
+                    .as_deref(),
+            ),
             schemas: SchemasVm::new(cfg.clone()),
             keymap: KeymapVm::new(cfg.clone()),
             session,
@@ -232,12 +243,13 @@ impl App {
         }
         self.replay.prune_closed();
         views::about_window::show(ctx, &mut self.about);
-        let (net, schemas, keys) = views::settings_window::show(
+        let (net, schemas, keys, mcp) = views::settings_window::show(
             ctx,
             &mut self.settings,
             &self.network,
             &self.schemas,
             &self.keymap,
+            &self.mcp,
         );
         for i in keys {
             self.keymap.handle(i);
@@ -247,6 +259,9 @@ impl App {
         }
         for i in schemas {
             self.schemas.handle(i);
+        }
+        for i in mcp {
+            self.mcp.handle(i);
         }
     }
 }

@@ -1,10 +1,11 @@
-use crate::viewmodels::intent::{KeymapIntent, NetworkIntent, SchemasIntent};
+use crate::viewmodels::intent::{KeymapIntent, McpIntent, NetworkIntent, SchemasIntent};
 use crate::viewmodels::keymap_vm::KeymapVm;
+use crate::viewmodels::mcp_vm::McpVm;
 use crate::viewmodels::network_vm::NetworkVm;
 use crate::viewmodels::schemas_vm::SchemasVm;
 use crate::viewmodels::settings_vm::{SettingsTab, SettingsVm};
 use crate::views::theme::{bar_frame, pane, segmented, window_frame};
-use crate::views::{network_tab, schemas_tab, shortcuts_tab};
+use crate::views::{mcp_tab, network_tab, schemas_tab, shortcuts_tab};
 use eframe::egui::{self, ScrollArea};
 
 pub fn show(
@@ -13,10 +14,16 @@ pub fn show(
     network: &NetworkVm,
     schemas: &SchemasVm,
     keymap: &KeymapVm,
-) -> (Vec<NetworkIntent>, Vec<SchemasIntent>, Vec<KeymapIntent>) {
-    let (mut net, mut sch, mut keys) = (vec![], vec![], vec![]);
+    mcp_vm: &McpVm,
+) -> (
+    Vec<NetworkIntent>,
+    Vec<SchemasIntent>,
+    Vec<KeymapIntent>,
+    Vec<McpIntent>,
+) {
+    let (mut net, mut sch, mut keys, mut mcp) = (vec![], vec![], vec![], vec![]);
     if !vm.show {
-        return (net, sch, keys);
+        return (net, sch, keys, mcp);
     }
     let builder = egui::ViewportBuilder::default()
         .with_title("Settings")
@@ -47,6 +54,7 @@ pub fn show(
                                 (SettingsTab::Network, "Network"),
                                 (SettingsTab::Schemas, "Schemas"),
                                 (SettingsTab::Shortcuts, "Shortcuts"),
+                                (SettingsTab::Mcp, "MCP"),
                             ],
                         );
                     });
@@ -56,6 +64,7 @@ pub fn show(
                             .auto_shrink([false, false])
                             .show(ui, |ui| match vm.tab {
                                 SettingsTab::Network => net = network_tab::show(ui, network),
+                                SettingsTab::Mcp => mcp = mcp_tab::show(ui, mcp_vm),
                                 SettingsTab::Schemas => sch = schemas_tab::show(ui, schemas),
                                 SettingsTab::Shortcuts => keys = shortcuts_tab::show(ui, keymap),
                             });
@@ -63,5 +72,5 @@ pub fn show(
                 });
         },
     );
-    (net, sch, keys)
+    (net, sch, keys, mcp)
 }

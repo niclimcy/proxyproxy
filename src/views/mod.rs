@@ -4,6 +4,7 @@ pub mod body;
 pub mod breakpoint_window;
 pub mod detail;
 pub mod icon;
+pub mod mcp_tab;
 pub mod network_tab;
 pub mod onboarding_window;
 pub mod replay_window;

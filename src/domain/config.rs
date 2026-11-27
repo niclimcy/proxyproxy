@@ -42,6 +42,9 @@ pub struct Config {
     /// Changed row shortcuts; `None` turns one off. Actions not listed keep their default.
     #[serde(default)]
     pub shortcuts: Vec<(RowAction, Option<Binding>)>,
+    /// Off until the user opts in: MCP can read every captured flow and edit rules.
+    #[serde(default)]
+    pub mcp_enabled: bool,
     #[serde(skip)]
     pub capture_paused: bool,
 }
@@ -106,5 +109,12 @@ mod tests {
         assert!(cfg.onboarding_completed);
         assert!(!Config::default().onboarding_completed);
         assert_eq!(cfg.onboarding_profile, OnboardingProfile::Experienced);
+    }
+
+    #[test]
+    fn mcp_is_off_by_default_and_for_configs_without_the_field() {
+        assert!(!Config::default().mcp_enabled);
+        let cfg: Config = serde_json::from_str(r#"{"rules":[]}"#).unwrap();
+        assert!(!cfg.mcp_enabled);
     }
 }

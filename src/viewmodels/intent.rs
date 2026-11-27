@@ -182,6 +182,19 @@ pub enum NetworkIntent {
     SetPac(String),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum McpCopy {
+    Endpoint,
+    ClaudeCode,
+    Stdio,
+}
+
+#[derive(Clone, Copy)]
+pub enum McpIntent {
+    SetEnabled(bool),
+    Copied(McpCopy),
+}
+
 pub enum SchemasIntent {
     AddFiles(Vec<String>),
     Remove(usize),

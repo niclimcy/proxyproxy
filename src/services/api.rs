@@ -1,6 +1,7 @@
 use crate::domain::config::Shared;
 use crate::domain::flow::Flow;
 use crate::services::flow_store::FlowStore;
+use crate::services::mcp;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -173,8 +174,17 @@ fn route(store: &FlowStore, cfg: &Shared, req: &Request) -> (u16, String) {
             let (code, body) = handle(store, &req.target);
             (code, serde_json::to_string_pretty(&body).unwrap_or_default())
         }
+        "POST" if path == "/mcp" && !cfg.lock().unwrap().mcp_enabled => {
+            // answered as JSON-RPC (with the caller's id when readable) so MCP clients show the message
+            let id = serde_json::from_slice::<Value>(&req.body)
+                .ok()
+                .and_then(|v| v.get("id").cloned())
+                .unwrap_or(Value::Null);
+            let error = mcp::error_response(&id, mcp::DISABLED_CODE, mcp::DISABLED_MESSAGE);
+            (403, error.to_string())
+        }
         "POST" if path == "/mcp" => match serde_json::from_slice::<Value>(&req.body) {
-            Ok(request) => match crate::services::mcp::handle(store, cfg, &request) {
+            Ok(request) => match mcp::handle(store, cfg, &request) {
                 Some(response) => (200, response.to_string()),
                 None => (202, String::new()),
             },
@@ -240,6 +250,7 @@ pub fn serve(port: u16, store: FlowStore, cfg: Shared) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn req(raw: &str) -> Result<Request, (u16, &'static str)> {
         read_request(&mut std::io::Cursor::new(raw.as_bytes().to_vec()))
@@ -291,6 +302,39 @@ mod tests {
         assert_eq!(reject(&text, 9091).unwrap().0, 415);
         let local = req(&format!("{MCP}Origin: http://localhost:9091\r\n\r\n{{}}")).unwrap();
         assert_eq!(reject(&local, 9091), None);
+    }
+
+    fn post_mcp(cfg: &Shared, body: &str) -> (u16, Value) {
+        let r = Request {
+            method: "POST".into(),
+            target: "/mcp".into(),
+            headers: vec![],
+            body: body.as_bytes().to_vec(),
+        };
+        let (code, text) = route(&FlowStore::default(), cfg, &r);
+        (code, serde_json::from_str(&text).unwrap_or(Value::Null))
+    }
+
+    #[test]
+    fn mcp_is_refused_with_a_json_rpc_error_until_enabled() {
+        let cfg: Shared = Arc::default();
+        let ping = r#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#;
+        let (code, v) = post_mcp(&cfg, ping);
+        assert_eq!(
+            (code, v["id"].clone(), v["error"]["code"].clone()),
+            (403, json!(7), json!(mcp::DISABLED_CODE))
+        );
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Settings → MCP")
+        );
+        assert_eq!(post_mcp(&cfg, "not json").1["id"], Value::Null);
+
+        cfg.lock().unwrap().mcp_enabled = true;
+        let (code, v) = post_mcp(&cfg, ping);
+        assert_eq!((code, v["result"].clone()), (200, json!({})));
     }
 
     #[test]

@@ -81,6 +81,14 @@ struct Rig {
     direct: reqwest::Client,
 }
 
+/// MCP is off by default; scenarios that edit rules or replay through it opt in.
+fn mcp_config() -> Config {
+    Config {
+        mcp_enabled: true,
+        ..Config::default()
+    }
+}
+
 async fn rig(config: Config) -> Rig {
     static CA: Once = Once::new();
     // concurrent first runs would race to write the CA files
@@ -232,7 +240,7 @@ async fn gzip_responses_are_recorded_decoded() {
 #[tokio::test(flavor = "multi_thread")]
 async fn rule_edits_apply_to_the_next_request() {
     let up = origin(200, "real").await;
-    let rig = rig(Config::default()).await;
+    let rig = rig(mcp_config()).await;
     let pattern = format!("127.0.0.1:{}/api*", port(&up));
     assert_eq!(rig.fetch(&url(&up, "/api")).await.status(), 200);
 
@@ -263,7 +271,7 @@ async fn rule_edits_apply_to_the_next_request() {
 #[tokio::test(flavor = "multi_thread")]
 async fn mock_and_header_rules_rewrite_traffic() {
     let up = origin(200, "real").await;
-    let rig = rig(Config::default()).await;
+    let rig = rig(mcp_config()).await;
     let host = format!("127.0.0.1:{}", port(&up));
     rig.add_rule(
         &format!("{host}/mock"),
@@ -294,7 +302,7 @@ async fn mock_and_header_rules_rewrite_traffic() {
 #[tokio::test(flavor = "multi_thread")]
 async fn map_remote_sends_the_request_to_another_origin() {
     let (old, new) = (origin(200, "old").await, origin(200, "new").await);
-    let rig = rig(Config::default()).await;
+    let rig = rig(mcp_config()).await;
     rig.add_rule(
         &format!("127.0.0.1:{}/*", port(&old)),
         json!({"MapRemote": {"target": format!("http://127.0.0.1:{}", port(&new))}}),
@@ -407,7 +415,7 @@ async fn socks5_upstream_gets_the_destination_and_credentials() {
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_tool_sends_directly_and_records_a_replayed_flow() {
     let up = origin(200, "pong").await;
-    let rig = rig(Config::default()).await;
+    let rig = rig(mcp_config()).await;
     let sent = rig
         .mcp("proxyproxy_replay", json!({"method": "POST", "url": url(&up, "/echo"), "headers": {"accept-encoding": "gzip, br"}, "body": "ping"}))
         .await;
@@ -460,4 +468,19 @@ async fn har_export_from_the_api_reimports_the_captured_traffic() {
             .body,
         &b"sent"[..]
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rest_reads_keep_working_while_mcp_is_refused() {
+    let rig = rig(Config::default()).await;
+    let r = rig
+        .direct
+        .post(format!("http://127.0.0.1:{}/mcp", rig.api))
+        .header("content-type", "application/json")
+        .body(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    assert_eq!(rig.get("/flows").await, json!([]));
 }

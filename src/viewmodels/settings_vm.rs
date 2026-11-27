@@ -3,6 +3,7 @@ pub enum SettingsTab {
     Network,
     Schemas,
     Shortcuts,
+    Mcp,
 }
 
 pub struct SettingsVm {

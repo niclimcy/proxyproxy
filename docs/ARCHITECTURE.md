@@ -86,7 +86,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `android_icons.rs`, `android_pkg.rs`, `zip_read.rs` | package id to label and icon via adb: command runner, APK zip reader, binary `AndroidManifest.xml` and `resources.arsc` parsers |
 | `client_proc.rs` | client process (name, pid) and executable path per OS |
 | `os_parse.rs` | parsers for `lsof`, `/proc/net/tcp`, `netstat`, `tasklist`, `gsettings`, `reg`, `.desktop` and `.icns` |
-| `api.rs` | loopback API on port + 1: read-only REST, plus `POST /mcp`; rejects non-loopback `Host`, foreign `Origin` and non-JSON posts |
+| `api.rs` | loopback API on port + 1: read-only REST, plus `POST /mcp`, which answers 403 with a JSON-RPC error unless `Config::mcp_enabled` is set; rejects non-loopback `Host`, foreign `Origin` and non-JSON posts |
 | `mcp.rs` | MCP JSON-RPC resources/tools over HTTP and stdio |
 
 ### `proxy/`
@@ -111,7 +111,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `detail_vm.rs` | tabs, view modes, diff base and cache |
 | `rules_vm.rs` | rule form, breakpoints, console, scope lists, `RuleKind` |
 | `replay_vm.rs` | replay and compose drafts |
-| `network_vm.rs`, `schemas_vm.rs`, `keymap_vm.rs` | the Network, Schemas and Shortcuts tabs of Settings (Shortcuts: record, change, turn off and reset row shortcuts) |
+| `network_vm.rs`, `mcp_vm.rs`, `schemas_vm.rs`, `keymap_vm.rs` | the Network, MCP (toggle plus endpoint and stdio command), Schemas and Shortcuts tabs of Settings (Shortcuts: record, change, turn off and reset row shortcuts) |
 | `settings_vm.rs` | Settings window visibility and tab |
 | `about_vm.rs` | About window visibility |
 | `session_vm.rs` | autosave, session and rules files |
@@ -121,7 +121,7 @@ Keep lock guards short. Don't hold the store lock across an `.await`, and don't 
 | `intent.rs` | intent and effect enums |
 
 ### `views/`
-One file per screen area: `toolbar`, `sidebar`, `table` (its row menu is one function, opened by right-click at the pointer or by Shift+F10 / the Menu key anchored to the selected row), `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab`, `schemas_tab` and `shortcuts_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts` (reads keys into `ShortcutIntent`s using the live keymap from `Config`; `hint` labels the row menu), `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
+One file per screen area: `toolbar`, `sidebar`, `table` (its row menu is one function, opened by right-click at the pointer or by Shift+F10 / the Menu key anchored to the selected row), `detail`, `rules_panel`, `breakpoint_window`, `replay_window`, `settings_window` (with `network_tab`, `mcp_tab`, `schemas_tab` and `shortcuts_tab`), `about_window`, `onboarding_window` (first-run setup guide), `shortcuts` (reads keys into `ShortcutIntent`s using the live keymap from `Config`; `hint` labels the row menu), `body`. Also `theme` and `icon`. `app_icon` turns icon PNG bytes from the viewmodel's `IconStore` into cached egui textures and draws the letter avatar fallback.
 
 ## Extending
 
