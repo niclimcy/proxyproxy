@@ -165,3 +165,92 @@ fn response_pane(ui: &mut egui::Ui, d: &mut ReplayDraft) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::flow::Message;
+    use crate::services::decoders::PRETTY;
+    use crate::services::replay::Sent;
+    use crate::views::layout_test::*;
+
+    fn sent() -> Sent {
+        Sent {
+            status: 200,
+            response: flow(1).response.unwrap(),
+            ms: 120,
+        }
+    }
+
+    fn draft(result: Option<Result<Sent, String>>, sending: bool, tab: DraftTab) -> ReplayDraft {
+        let prev = flow(1).response;
+        ReplayDraft {
+            id: 1,
+            method: "OPTIONS".into(),
+            url: url(),
+            headers: format!("X-Long-Header: {WORDS}{WORDS}\nAuthorization: Bearer {WORDS}"),
+            body: format!("{WORDS}{WORDS}"),
+            result,
+            sending,
+            open: true,
+            mode: PRETTY,
+            prev: prev.or(Some(Message::default())),
+            show_diff: false,
+            source: Some(1),
+            tab,
+        }
+    }
+
+    #[test]
+    fn the_replay_window_fits_its_minimum_size() {
+        let ctx = ctx();
+        // 560 px less the window frame; the two panes split it
+        let (full, half) = (560.0 - 6.0, (560.0 - 6.0) / 2.0);
+        let mut leaks = vec![];
+        let mut check = |what: &str, width: f32, used: f32| {
+            if used > width + 1.0 {
+                leaks.push(format!("{what} needs {used} px of {width}"));
+            }
+        };
+        check(
+            "the request bar",
+            full,
+            used_width(&ctx, full, |ui| {
+                request_bar(ui, &mut draft(None, false, DraftTab::Headers));
+            }),
+        );
+        for tab in [DraftTab::Headers, DraftTab::Body] {
+            check(
+                &format!("the request pane ({tab:?})"),
+                half,
+                used_width(&ctx, half, |ui| {
+                    pane(ui, |ui| request_pane(ui, &mut draft(None, false, tab)));
+                }),
+            );
+        }
+        let results: Vec<(&str, Option<Result<Sent, String>>, bool, bool)> = vec![
+            ("nothing sent", None, false, false),
+            ("sending", None, true, false),
+            (
+                "an error",
+                Some(Err(format!("connect failed: {WORDS}{WORDS}"))),
+                false,
+                false,
+            ),
+            ("a response", Some(Ok(sent())), false, false),
+            ("a diff", Some(Ok(sent())), false, true),
+        ];
+        for (what, result, sending, diff) in results {
+            let mut d = draft(result, sending, DraftTab::Headers);
+            d.show_diff = diff;
+            check(
+                &format!("the response pane ({what})"),
+                half,
+                used_width(&ctx, half, |ui| {
+                    pane(ui, |ui| response_pane(ui, &mut d));
+                }),
+            );
+        }
+        assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+    }
+}
