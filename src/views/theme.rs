@@ -1017,13 +1017,17 @@ pub fn bar_frame() -> Frame {
         .inner_margin(Margin::symmetric(0, 4))
 }
 
+/// Truncates in the space left, so user text such as a tag can't hold its row wider.
 pub fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
     Frame::new()
         .fill(tint(color, Tint::Normal))
         .corner_radius(CornerRadius::same(RADIUS_PILL))
         .inner_margin(Margin::symmetric(8, 2))
         .show(ui, |ui| {
-            ui.label(RichText::new(text).color(color).size(FS_CAPTION).strong());
+            ui.add(
+                egui::Label::new(RichText::new(text).color(color).size(FS_CAPTION).strong())
+                    .truncate(),
+            );
         });
 }
 

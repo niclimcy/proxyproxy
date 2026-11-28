@@ -3,10 +3,12 @@ use crate::services::decode::{self, Ctx};
 use crate::services::decoders::{self, ModeId, Rendered};
 use crate::views::theme::{
     FS_CAPTION, Tint, accent, danger, fg_muted, fmt_size, icon_button, icon_only, muted, overline,
-    pal, segmented, success, tint, violet, warning,
+    pal, row_within, segmented, success, tint, violet, warning,
 };
 use eframe::egui::{self, RichText, ScrollArea, TextEdit};
 use serde_json::Value;
+
+const TYPE_PICKER_W: f32 = 260.0;
 
 fn forced_key(id: &str) -> egui::Id {
     egui::Id::NULL.with(("schema-type", id))
@@ -166,16 +168,17 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
         *mode = decoders::default_for(&avail);
     }
     let items: Vec<(ModeId, &str)> = avail.iter().map(|d| (d.id(), d.label())).collect();
-    ui.horizontal(|ui| {
-        segmented(ui, mode, &items);
-        ui.label(muted(format!(
-            "{} · {}",
-            fmt_size(m.body.len()),
-            m.content_type()
-        )));
+    let w = ui.available_width();
+    row_within(ui, w, true, |ui| {
         if icon_only(ui, egui_phosphor::regular::COPY, "Copy body").clicked() {
             ui.ctx().copy_text(decode::pretty_text(m));
         }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            segmented(ui, mode, &items);
+            let info = format!("{} · {}", fmt_size(m.body.len()), m.content_type());
+            ui.add(egui::Label::new(muted(&info)).truncate())
+                .on_hover_text(info);
+        });
     });
     ui.add_space(4.0);
     let Some(d) = decoders::find(mode) else {
@@ -183,16 +186,19 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
     };
     let rendered = d.render(m, c, forced.as_deref());
     if d.type_picker(m) {
-        ui.horizontal(|ui| {
-            if let Rendered::Text {
-                caption: Some(cap), ..
-            } = &rendered
-            {
-                ui.label(muted(cap.clone()));
-            } else {
-                ui.label(muted("Schema type"));
-            }
-            type_picker(ui, id, forced.as_deref());
+        let w = ui.available_width();
+        row_within(ui, w, true, |ui| {
+            type_picker(ui, id, forced.as_deref(), (w * 0.6).min(TYPE_PICKER_W));
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let caption = match &rendered {
+                    Rendered::Text {
+                        caption: Some(cap), ..
+                    } => cap.as_str(),
+                    _ => "Schema type",
+                };
+                ui.add(egui::Label::new(muted(caption)).truncate())
+                    .on_hover_text(caption);
+            });
         });
     }
     match rendered {
@@ -200,7 +206,7 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
         Rendered::Hex => hex_view(ui, id, &m.body),
         Rendered::Tree(v) => {
             let mut expand = None;
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if icon_button(
                     ui,
                     egui_phosphor::regular::ARROWS_OUT_SIMPLE,
@@ -257,11 +263,11 @@ pub fn body_view_ctx(ui: &mut egui::Ui, id: &str, m: &Message, mode: &mut ModeId
     }
 }
 
-fn type_picker(ui: &mut egui::Ui, id: &str, cur: Option<&str>) {
+fn type_picker(ui: &mut egui::Ui, id: &str, cur: Option<&str>, width: f32) {
     let mut sel = cur.map(String::from);
     egui::ComboBox::from_id_salt(format!("{id}-ty"))
         .selected_text(cur.unwrap_or("auto"))
-        .width(260.0)
+        .width(width)
         .show_ui(ui, |ui| {
             ui.selectable_value(&mut sel, None, "auto");
             for t in crate::services::schemas::message_types()
@@ -281,14 +287,16 @@ fn type_picker(ui: &mut egui::Ui, id: &str, cur: Option<&str>) {
     }
 }
 
-/// Key/value rows: fixed key column, value fills the rest and wraps. Click a value to copy.
+/// Key/value rows: key column of up to 150 px, value fills the rest and wraps. Click a value to copy.
 pub fn kv_table<'a>(ui: &mut egui::Ui, rows: impl IntoIterator<Item = (&'a str, &'a str)>) {
     const KEY_W: f32 = 150.0;
+    // a narrow column (the details split in two) keeps room for the value
+    let key_w = KEY_W.min(ui.available_width() * 0.4);
     ui.horizontal(|ui| {
         // rows are inset by their frame margin, so the header matches it
         ui.add_space(4.0);
-        ui.allocate_ui(egui::vec2(KEY_W - 8.0, 18.0), |ui| {
-            ui.set_width(KEY_W - 8.0);
+        ui.allocate_ui(egui::vec2(key_w - 8.0, 18.0), |ui| {
+            ui.set_width(key_w - 8.0);
             ui.label(overline("KEY"));
         });
         ui.label(overline("VALUE"));
@@ -305,8 +313,8 @@ pub fn kv_table<'a>(ui: &mut egui::Ui, rows: impl IntoIterator<Item = (&'a str, 
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal_top(|ui| {
-                    ui.allocate_ui(egui::vec2(KEY_W - 8.0, 0.0), |ui| {
-                        ui.set_width(KEY_W - 8.0);
+                    ui.allocate_ui(egui::vec2(key_w - 8.0, 0.0), |ui| {
+                        ui.set_width(key_w - 8.0);
                         ui.add(egui::Label::new(RichText::new(k).strong().color(accent())).wrap());
                     });
                     if ui

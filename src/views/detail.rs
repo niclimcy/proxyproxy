@@ -10,7 +10,8 @@ use crate::views::body;
 use crate::views::theme::{
     RADIUS, badge, canvas, card_panel, checkbox, clipped_card, cmd, danger, fg_muted, fmt_size,
     icon_button, icon_only, menu_item, menu_width, method_color, muted, overline, pill,
-    resize_grip, resize_line, segmented, status_color, success, toolbar_menu, violet, warning,
+    resize_grip, resize_line, row_within, segmented, status_color, success, toolbar_menu, violet,
+    warning,
 };
 use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, TextEdit};
 use egui_phosphor::regular as ph;
@@ -20,6 +21,21 @@ const SNAP_WITHIN: f32 = 80.0;
 
 /// Table height left visible when the details are fully open.
 const TABLE_PEEK: f32 = 112.0;
+
+const OVERVIEW_KEYS: [&str; 8] = [
+    "URL",
+    "Client",
+    "Protocol",
+    "Request size",
+    "Response size",
+    "Content-Type",
+    "Cache-Control",
+    "Duration",
+];
+const OVERVIEW_GAP: f32 = 20.0;
+
+// four tabs and the three labelled actions side by side
+const TABS_ROW_LABELLED: f32 = 720.0;
 
 fn msg_view(
     ui: &mut egui::Ui,
@@ -123,111 +139,8 @@ pub fn show(
         .frame(Frame::NONE)
         .show_collapsible(ui, &mut expanded, |ui| {
             clipped_card(ui, |ui| {
-                resize_line(ui, false);
-                let Some(f) = selected_flow else {
-                    return;
-                };
-                let url = f.url();
-                Frame::new()
-                    .fill(canvas())
-                    .corner_radius(CornerRadius::same(RADIUS))
-                    .inner_margin(Margin::symmetric(8, 4))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let name = f.app_label();
-                            app_label_hover(
-                                app_icon(ui, icons, &name, f.app_id.as_ref()),
-                                &name,
-                                f.app_id.as_ref(),
-                            );
-                            badge(
-                                ui,
-                                if f.is_ws { "WS" } else { &f.method },
-                                if f.is_ws {
-                                    violet()
-                                } else {
-                                    method_color(&f.method)
-                                },
-                                false,
-                            );
-                            if let Some(s) = f.status {
-                                badge(ui, &s.to_string(), status_color(s), false);
-                            }
-                            if !f.tag.is_empty() {
-                                pill(ui, &f.tag, violet());
-                            }
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if icon_only(ui, ph::X, "Close details (Esc)").clicked() {
-                                        close_clicked = true;
-                                    }
-                                    if icon_only(ui, ph::COPY, "Copy URL").clicked() {
-                                        ctx.copy_text(url.clone());
-                                    }
-                                    // URL reads on from the badges; the copy button stays at the edge
-                                    ui.with_layout(
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            ui.add(
-                                                egui::Label::new(RichText::new(&url).monospace())
-                                                    .truncate(),
-                                            )
-                                            .on_hover_text(&url);
-                                        },
-                                    );
-                                },
-                            );
-                        });
-                    });
-                ui.horizontal(|ui| {
-                    let mut tabs = vec![
-                        (DTab::Split, "Request / Response"),
-                        (DTab::Overview, "Overview"),
-                        (DTab::Diff, "Diff"),
-                    ];
-                    if f.is_ws {
-                        tabs.push((DTab::Messages, "Messages"));
-                    }
-                    segmented(ui, &mut vm.tab, &tabs);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        toolbar_menu(ui, ph::COPY, "Copy as", false, |ui| {
-                            menu_width(ui, &["Python requests"]);
-                            for (l, s) in [
-                                ("URL", f.url()),
-                                ("cURL", ex::curl(f)),
-                                ("fetch", ex::fetch(f)),
-                                ("Python requests", ex::python(f)),
-                                ("HTTPie", ex::httpie(f)),
-                                ("Raw HTTP", ex::raw_http(f)),
-                            ] {
-                                if menu_item(ui, l, None).clicked() {
-                                    ctx.copy_text(s);
-                                    ui.close();
-                                }
-                            }
-                        });
-                        if icon_button(ui, ph::PLAY, "Replay / edit", true).clicked() {
-                            out.push(DetailIntent::Replay(f.id));
-                        }
-                        if icon_button(
-                            ui,
-                            ph::PUSH_PIN,
-                            if f.pinned { "Unpin" } else { "Pin" },
-                            true,
-                        )
-                        .clicked()
-                        {
-                            out.push(DetailIntent::TogglePin(f.id));
-                        }
-                    });
-                });
-                ui.add_space(4.0);
-                match vm.tab {
-                    DTab::Split => split_ui(ui, vm, f),
-                    DTab::Overview => overview_ui(ui, &st.flows, f, &mut out),
-                    DTab::Diff => diff_ui(ui, vm, &st.flows, f, &mut out),
-                    DTab::Messages => ws_ui(ui, vm, f, &mut out),
+                if let Some(f) = selected_flow {
+                    close_clicked = flow_card(ui, ctx, vm, icons, &st.flows, f, &mut out);
                 }
             });
         })
@@ -272,6 +185,122 @@ pub fn show(
         egui::Rect::from_two_pos(r.left_top(), r.right_top()),
     );
     out
+}
+
+/// Header, tabs and the active tab for one flow. True when the close button was pressed.
+fn flow_card(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &mut DetailVm,
+    icons: &IconStore,
+    flows: &[Flow],
+    f: &Flow,
+    out: &mut Vec<DetailIntent>,
+) -> bool {
+    let mut close_clicked = false;
+    resize_line(ui, false);
+    let url = f.url();
+    Frame::new()
+        .fill(canvas())
+        .corner_radius(CornerRadius::same(RADIUS))
+        .inner_margin(Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            let w = ui.available_width();
+            // the buttons sit first at the edge, so nothing in the line can push them out of the card
+            row_within(ui, w, true, |ui| {
+                if icon_only(ui, ph::X, "Close details (Esc)").clicked() {
+                    close_clicked = true;
+                }
+                if icon_only(ui, ph::COPY, "Copy URL").clicked() {
+                    ctx.copy_text(url.clone());
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let name = f.app_label();
+                    app_label_hover(
+                        app_icon(ui, icons, &name, f.app_id.as_ref()),
+                        &name,
+                        f.app_id.as_ref(),
+                    );
+                    badge(
+                        ui,
+                        if f.is_ws { "WS" } else { &f.method },
+                        if f.is_ws {
+                            violet()
+                        } else {
+                            method_color(&f.method)
+                        },
+                        false,
+                    );
+                    if let Some(s) = f.status {
+                        badge(ui, &s.to_string(), status_color(s), false);
+                    }
+                    if !f.tag.is_empty() {
+                        pill(ui, &f.tag, violet());
+                    }
+                    ui.add(egui::Label::new(RichText::new(&url).monospace()).truncate())
+                        .on_hover_text(&url);
+                });
+            });
+        });
+    let w = ui.available_width();
+    // the three actions drop their titles before they would crowd the tabs
+    let labels = w >= TABS_ROW_LABELLED;
+    let action = |ui: &mut egui::Ui, icon: &str, label: &str| {
+        if labels {
+            icon_button(ui, icon, label, true)
+        } else {
+            icon_only(ui, icon, label)
+        }
+    };
+    row_within(ui, w, true, |ui| {
+        toolbar_menu(
+            ui,
+            ph::COPY,
+            if labels { "Copy as" } else { "" },
+            false,
+            |ui| {
+                menu_width(ui, &["Python requests"]);
+                for (l, s) in [
+                    ("URL", f.url()),
+                    ("cURL", ex::curl(f)),
+                    ("fetch", ex::fetch(f)),
+                    ("Python requests", ex::python(f)),
+                    ("HTTPie", ex::httpie(f)),
+                    ("Raw HTTP", ex::raw_http(f)),
+                ] {
+                    if menu_item(ui, l, None).clicked() {
+                        ctx.copy_text(s);
+                        ui.close();
+                    }
+                }
+            },
+        );
+        if action(ui, ph::PLAY, "Replay / edit").clicked() {
+            out.push(DetailIntent::Replay(f.id));
+        }
+        if action(ui, ph::PUSH_PIN, if f.pinned { "Unpin" } else { "Pin" }).clicked() {
+            out.push(DetailIntent::TogglePin(f.id));
+        }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            let mut tabs = vec![
+                (DTab::Split, "Request / Response"),
+                (DTab::Overview, "Overview"),
+                (DTab::Diff, "Diff"),
+            ];
+            if f.is_ws {
+                tabs.push((DTab::Messages, "Messages"));
+            }
+            segmented(ui, &mut vm.tab, &tabs);
+        });
+    });
+    ui.add_space(4.0);
+    match vm.tab {
+        DTab::Split => split_ui(ui, vm, f),
+        DTab::Overview => overview_ui(ui, flows, f, out),
+        DTab::Diff => diff_ui(ui, vm, flows, f, out),
+        DTab::Messages => ws_ui(ui, vm, f, out),
+    }
+    close_clicked
 }
 
 fn split_ui(ui: &mut egui::Ui, vm: &mut DetailVm, f: &Flow) {
@@ -351,13 +380,31 @@ fn overview_ui(ui: &mut egui::Ui, flows: &[Flow], f: &Flow, out: &mut Vec<Detail
         .id_salt("overview")
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            // measured, because a Grid cell has no width of its own and long values would never wrap
+            let key_w = OVERVIEW_KEYS
+                .iter()
+                .map(|k| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            (*k).to_string(),
+                            egui::TextStyle::Body.resolve(ui.style()),
+                            fg_muted(),
+                        )
+                        .size()
+                        .x
+                })
+                .fold(0.0, f32::max);
+            let val_w = (ui.available_width() - key_w - OVERVIEW_GAP).max(120.0);
             egui::Grid::new("ov")
                 .num_columns(2)
-                .spacing([20.0, 7.0])
+                .spacing([OVERVIEW_GAP, 7.0])
                 .show(ui, |ui| {
                     let row = |ui: &mut egui::Ui, k: &str, v: String| {
                         ui.label(muted(k));
-                        ui.label(RichText::new(v).monospace());
+                        ui.allocate_ui(egui::vec2(val_w, 0.0), |ui| {
+                            ui.set_width(val_w);
+                            ui.add(egui::Label::new(RichText::new(v).monospace()).wrap());
+                        });
                         ui.end_row();
                     };
                     row(ui, "URL", f.url());
@@ -380,17 +427,20 @@ fn overview_ui(ui: &mut egui::Ui, flows: &[Flow], f: &Flow, out: &mut Vec<Detail
                         }
                     }
                     ui.label(muted("Duration"));
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(
-                                f.duration_ms
-                                    .map_or("pending".into(), |d| format!("{d} ms")),
-                            )
-                            .monospace(),
-                        );
-                        if let Some(d) = f.duration_ms {
-                            timing_bar(ui, d, ov.max_ms);
-                        }
+                    ui.allocate_ui(egui::vec2(val_w, 0.0), |ui| {
+                        ui.set_width(val_w);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(
+                                    f.duration_ms
+                                        .map_or("pending".into(), |d| format!("{d} ms")),
+                                )
+                                .monospace(),
+                            );
+                            if let Some(d) = f.duration_ms {
+                                timing_bar(ui, d, ov.max_ms);
+                            }
+                        });
                     });
                     ui.end_row();
                     if let Some(e) = &f.error {
@@ -531,4 +581,87 @@ fn ws_ui(ui: &mut egui::Ui, vm: &DetailVm, f: &Flow, out: &mut Vec<DetailIntent>
             cols[1].label(muted("Select a message"));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::flow::{Dir, WsMsg};
+    use crate::services::app_icons::IconStore;
+    use crate::services::decoders::{ModeId, PRETTY, TREE};
+    use crate::services::flow_store::FlowStore;
+    use crate::viewmodels::status::NoRepaint;
+    use crate::views::layout_test::*;
+    use std::sync::Arc;
+
+    fn store() -> FlowStore {
+        let store = FlowStore::default();
+        let mut base = flow(1);
+        base.response.as_mut().unwrap().body =
+            bytes::Bytes::from(format!(r#"{{"k":"old{WORDS}"}}"#));
+        let mut f = flow(2);
+        f.error = Some(format!("connection error: {WORDS}"));
+        f.tag = WORDS.into();
+        f.is_ws = true;
+        f.ws = (0..3)
+            .map(|i| WsMsg {
+                dir: if i % 2 == 0 { Dir::Out } else { Dir::In },
+                binary: false,
+                ms: 1,
+                data: bytes::Bytes::from(format!(r#"{{"message":"{WORDS}{WORDS}"}}"#)),
+            })
+            .collect();
+        store.lock().push(base);
+        store.lock().push(f);
+        store
+    }
+
+    /// Width the card needs when the details panel gives it `width` px.
+    fn needed(tab: DTab, (req, res): (Side, Side), mode: ModeId, width: f32) -> f32 {
+        let ctx = ctx();
+        let store = store();
+        let mut vm = DetailVm::new(store.clone());
+        vm.tab = tab;
+        vm.req_side = req;
+        vm.res_side = res;
+        vm.req_mode = mode;
+        vm.res_mode = mode;
+        vm.ws_sel = Some(0);
+        let icons = IconStore::new(std::env::temp_dir(), Arc::new(NoRepaint));
+        used_width(&ctx, width, |ui| {
+            let ctx = ui.ctx().clone();
+            let st = store.lock();
+            let f = st.find(2).unwrap();
+            flow_card(ui, &ctx, &mut vm, &icons, &st.flows, f, &mut vec![]);
+        })
+    }
+
+    #[test]
+    fn long_data_stays_inside_the_details_at_the_minimum_window() {
+        let mut leaks = vec![];
+        for width in [536.0, 360.0] {
+            let mut cases = vec![];
+            for tab in [DTab::Overview, DTab::Diff, DTab::Messages] {
+                cases.push((tab, (Side::Headers, Side::Body), PRETTY));
+            }
+            for sides in [
+                (Side::Headers, Side::Body),
+                (Side::Body, Side::Headers),
+                (Side::Params, Side::Raw),
+            ] {
+                for mode in [PRETTY, TREE] {
+                    cases.push((DTab::Split, sides, mode));
+                }
+            }
+            for (tab, sides, mode) in cases {
+                let used = needed(tab, sides, mode, width);
+                if used > width + 1.0 {
+                    leaks.push(format!(
+                        "{tab:?} {sides:?} {mode} needs {used} px of {width}"
+                    ));
+                }
+            }
+        }
+        assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+    }
 }
