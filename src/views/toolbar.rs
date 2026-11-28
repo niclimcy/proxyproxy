@@ -5,7 +5,7 @@ use crate::viewmodels::intent::{DeviceAction, SessionIntent, ToolbarIntent};
 use crate::views::theme::{
     FS_BODY, FS_CAPTION, FS_SMALL, HIT, RADIUS_PILL, Tint, accent, bar_frame, canvas, capsule,
     checkbox, chip, cmd, danger, fg_muted, flat, ico, icon_button, icon_only, info, menu_item,
-    menu_width, muted, right_panel_toggle, sidebar_toggle, submenu_item, success, tint,
+    menu_width, muted, right_panel_toggle, row_within, sidebar_toggle, submenu_item, success, tint,
     toolbar_menu, violet, warning,
 };
 use eframe::egui::{self, Margin, RichText, TextEdit};
@@ -36,6 +36,20 @@ pub fn show(
     p: Props,
 ) -> Vec<ToolbarIntent> {
     let mut out = vec![];
+    egui::Panel::top("top")
+        .frame(bar_frame())
+        .show_separator_line(false)
+        .show(ui, |ui| bar(ui, ctx, vm, p, &mut out));
+    out
+}
+
+fn bar(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &mut CaptureVm,
+    p: Props,
+    out: &mut Vec<ToolbarIntent>,
+) {
     let scope_active = vm.scope_active();
     let Props {
         port,
@@ -54,31 +68,32 @@ pub fn show(
         cert,
         devices,
     };
-    egui::Panel::top("top").frame(bar_frame()).show_separator_line(false).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 8.0;
-        // measured from the last wide layout so the actions never overlap the search box
-        let wide_min_id = egui::Id::unique("toolbar-wide-min");
-        let wide_min = ui.data(|d| d.get_temp::<f32>(wide_min_id)).unwrap_or(1240.0);
-        let compact = ui.available_width() < wide_min;
-        if compact {
-            let props = Props {
-                port,
-                cert,
-                devices,
-                show_rules,
-                active_rules,
-                status,
-                api_port,
-                paused_breakpoints,
-                show_help,
-            };
-            compact_primary_rows(ui, ctx, vm, props, &mut out);
-        } else {
-            ui.horizontal(|ui| {
+    ui.spacing_mut().item_spacing.y = 8.0;
+    // measured from the last wide layout so the actions never overlap the search box
+    let wide_min_id = egui::Id::unique("toolbar-wide-min");
+    let wide_min = ui
+        .data(|d| d.get_temp::<f32>(wide_min_id))
+        .unwrap_or(1240.0);
+    let compact = ui.available_width() < wide_min;
+    if compact {
+        let props = Props {
+            port,
+            cert,
+            devices,
+            show_rules,
+            active_rules,
+            status,
+            api_port,
+            paused_breakpoints,
+            show_help,
+        };
+        compact_primary_rows(ui, ctx, vm, props, out);
+    } else {
+        ui.horizontal(|ui| {
             if sidebar_toggle(ui, vm.show_sidebar).clicked() {
                 out.push(ToolbarIntent::ToggleSidebar);
             }
-            record_pill(ui, vm.capture_paused(), port, &mut out);
+            record_pill(ui, vm.capture_paused(), port, out);
             ui.add_space(8.0);
             let search = ui.add(
                 TextEdit::singleline(&mut vm.filter)
@@ -93,7 +108,7 @@ pub fn show(
                 vm.focus_search = false;
             }
             search.on_hover_text(format!("Example: host:api.* status:>=400 method:POST body:\"userId\"\nFields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error modified pending json", filter::FIELDS.join(" ")));
-            saved_menu(ui, vm, &mut out);
+            saved_menu(ui, vm, out);
             let left_used = ui.min_rect().width();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = if active_rules > 0 { format!("Rules ({active_rules})") } else { "Rules".into() };
@@ -101,7 +116,7 @@ pub fn show(
                 if right_panel_toggle(ui, show_rules, &label, tip).clicked() {
                     out.push(ToolbarIntent::ToggleRules);
                 }
-                action_buttons(ui, ctx, setup, show_help, true, true, &mut out);
+                action_buttons(ui, ctx, setup, show_help, true, true, out);
                 let needed = left_used + ui.min_rect().width() + STATUS_MIN;
                 ui.data_mut(|d| d.insert_temp(wide_min_id, needed));
                 // remaining space between the search box and the actions
@@ -122,43 +137,59 @@ pub fn show(
                 });
             });
         });
-        }
-        if compact {
-            compact_filter_rows(ui, vm, &mut out);
-        } else {
-            ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for (label, tok, c) in [("Errors", "is:error", danger()), ("Pinned", "is:pinned", warning()), ("JSON", "is:json", success()), ("WebSocket", "is:ws", violet()), ("Modified", "is:modified", info()), ("Pending", "is:pending", fg_muted())] {
-                if chip(ui, label, vm.token_on(tok), c).clicked() {
-                    out.push(ToolbarIntent::ToggleToken(tok));
-                }
+    }
+    if compact {
+        compact_filter_rows(ui, vm, out);
+    } else {
+        let w = ui.available_width();
+        // the controls sit first at the right edge, so a long filter error can only take what is left
+        row_within(ui, w, true, |ui| {
+            if chip(ui, &ico(ph::ARROW_LINE_DOWN, "Follow"), vm.follow, accent())
+                .on_hover_text("Keep the newest request in view")
+                .clicked()
+            {
+                out.push(ToolbarIntent::ToggleFollow);
             }
-            ui.spacing_mut().item_spacing.x = 8.0;
-            if let Some(e) = &vm.query.error {
-                ui.label(RichText::new(format!("{} {e}", ph::WARNING)).color(danger()).size(FS_CAPTION));
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if chip(ui, &ico(ph::ARROW_LINE_DOWN, "Follow"), vm.follow, accent())
-                    .on_hover_text("Keep the newest request in view")
-                    .clicked()
-                {
-                    out.push(ToolbarIntent::ToggleFollow);
-                }
-                let hidden = vm.hidden_cols();
-                toolbar_menu(ui, ph::COLUMNS, "Columns", false, |ui| {
-                    for c in ALL_COLS.iter().skip(1) {
-                        let mut on = !hidden.iter().any(|h| h == c);
-                        if checkbox(ui, &mut on, c).changed() {
-                            out.push(ToolbarIntent::SetColumn(c, on));
-                        }
+            let hidden = vm.hidden_cols();
+            toolbar_menu(ui, ph::COLUMNS, "Columns", false, |ui| {
+                for c in ALL_COLS.iter().skip(1) {
+                    let mut on = !hidden.iter().any(|h| h == c);
+                    if checkbox(ui, &mut on, c).changed() {
+                        out.push(ToolbarIntent::SetColumn(c, on));
                     }
-                });
-                ui.label(muted(format!("{} of {}", vm.visible.len(), vm.flow_count())));
+                }
             });
+            ui.label(muted(format!(
+                "{} of {}",
+                vm.visible.len(),
+                vm.flow_count()
+            )));
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for (label, tok, c) in [
+                    ("Errors", "is:error", danger()),
+                    ("Pinned", "is:pinned", warning()),
+                    ("JSON", "is:json", success()),
+                    ("WebSocket", "is:ws", violet()),
+                    ("Modified", "is:modified", info()),
+                    ("Pending", "is:pending", fg_muted()),
+                ] {
+                    if chip(ui, label, vm.token_on(tok), c).clicked() {
+                        out.push(ToolbarIntent::ToggleToken(tok));
+                    }
+                }
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if let Some(e) = &vm.query.error {
+                    let text = format!("{} {e}", ph::WARNING);
+                    ui.add(
+                        egui::Label::new(RichText::new(&text).color(danger()).size(FS_CAPTION))
+                            .truncate(),
+                    )
+                    .on_hover_text(text);
+                }
             });
-        }
-    });
-    out
+        });
+    }
 }
 
 fn compact_filter_rows(ui: &mut egui::Ui, vm: &mut CaptureVm, out: &mut Vec<ToolbarIntent>) {
@@ -259,46 +290,49 @@ fn compact_primary_rows(
         }
         search.on_hover_text(format!("Example: host:api.* status:>=400 method:POST body:\"userId\"\nFields: {}\nOperators: -negate  =exact  *wildcard  /regex/  >=num\nis: pinned ws error modified pending json", filter::FIELDS.join(" ")));
     });
-    ui.horizontal(|ui| {
-        saved_menu(ui, vm, out);
-        // titles collapse together once the labelled group no longer fits beside Rules
-        let labelled_w = ui
-            .data(|d| d.get_temp::<f32>(egui::Id::unique("toolbar-actions-width")))
-            .unwrap_or(520.0);
-        let labels = ui.available_width() >= labelled_w + COMPACT_ROW_RESERVED;
-        action_buttons(ui, ctx, setup, show_help, labels, false, out);
-        if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
-            out.push(ToolbarIntent::ShowBreakpoint);
-        }
-        if scope_active && scope_pill(ui).clicked() {
-            out.push(ToolbarIntent::ShowScope);
-        }
-        if let Some(n) = devices.hosts_only()
-            && hosts_pill(ui, n).clicked()
+    let w = ui.available_width();
+    // titles collapse together once the labelled group no longer fits beside Rules
+    let labelled_w = ui
+        .data(|d| d.get_temp::<f32>(egui::Id::unique("toolbar-actions-width")))
+        .unwrap_or(520.0);
+    let labels = w >= labelled_w + COMPACT_ROW_RESERVED;
+    // Rules sits first at the right edge so a long status can only take what is left
+    row_within(ui, w, true, |ui| {
+        let label = if active_rules > 0 {
+            format!("Rules ({active_rules})")
+        } else {
+            "Rules".into()
+        };
+        if right_panel_toggle(
+            ui,
+            show_rules,
+            &label,
+            format!("{} rules panel", if show_rules { "Hide" } else { "Show" }),
+        )
+        .clicked()
         {
-            out.push(ToolbarIntent::ShowScope);
+            out.push(ToolbarIntent::ToggleRules);
         }
-        if !status.is_empty() {
-            ui.add(
-                egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted())).truncate(),
-            )
-            .on_hover_text(status);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let label = if active_rules > 0 {
-                format!("Rules ({active_rules})")
-            } else {
-                "Rules".into()
-            };
-            if right_panel_toggle(
-                ui,
-                show_rules,
-                &label,
-                format!("{} rules panel", if show_rules { "Hide" } else { "Show" }),
-            )
-            .clicked()
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            saved_menu(ui, vm, out);
+            action_buttons(ui, ctx, setup, show_help, labels, false, out);
+            if paused_breakpoints > 0 && paused_pill(ui, paused_breakpoints).clicked() {
+                out.push(ToolbarIntent::ShowBreakpoint);
+            }
+            if scope_active && scope_pill(ui).clicked() {
+                out.push(ToolbarIntent::ShowScope);
+            }
+            if let Some(n) = devices.hosts_only()
+                && hosts_pill(ui, n).clicked()
             {
-                out.push(ToolbarIntent::ToggleRules);
+                out.push(ToolbarIntent::ShowScope);
+            }
+            if !status.is_empty() {
+                ui.add(
+                    egui::Label::new(RichText::new(status).size(FS_SMALL).color(fg_muted()))
+                        .truncate(),
+                )
+                .on_hover_text(status);
             }
         });
     });
@@ -792,4 +826,60 @@ fn devices_menu(
             });
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::config::Config;
+    use crate::services::app_icons::IconStore;
+    use crate::services::flow_store::FlowStore;
+    use crate::viewmodels::status::NoRepaint;
+    use crate::views::layout_test::*;
+    use std::sync::{Arc, Mutex};
+
+    /// Width the bar needs when the window gives it `width` px.
+    fn needed(width: f32) -> f32 {
+        let ctx = ctx();
+        let cfg = Config {
+            scope_only: true,
+            scope: vec![HOST.into()],
+            saved: vec![(WORDS.into(), WORDS.into())],
+            ..Default::default()
+        };
+        let cfg = Arc::new(Mutex::new(cfg));
+        let icons = IconStore::new(std::env::temp_dir(), Arc::new(NoRepaint));
+        let mut vm = CaptureVm::new(FlowStore::default(), cfg.clone(), icons);
+        vm.filter = format!("host:{HOST} path:{PATH}");
+        vm.query.error = Some(format!("invalid regex: {WORDS}{WORDS}"));
+        let devices = DevicesVm::new(8080, "/path/to/ca.pem".into(), cfg, Arc::new(NoRepaint));
+        let status = format!("proxy on port 8080 stopped: {WORDS}{WORDS}");
+        let props = Props {
+            port: 8080,
+            cert: "/path/to/ca.pem",
+            devices: &devices,
+            show_rules: true,
+            active_rules: 12,
+            status: &status,
+            api_port: 8081,
+            paused_breakpoints: 3,
+            show_help: true,
+        };
+        used_width(&ctx, width, |ui| {
+            let ctx = ui.ctx().clone();
+            bar(ui, &ctx, &mut vm, props, &mut vec![]);
+        })
+    }
+
+    #[test]
+    fn the_bar_fits_every_window_width() {
+        let leaks: Vec<String> = [560.0, 640.0, 800.0, 1000.0, 1240.0, 1360.0, 1800.0]
+            .into_iter()
+            .filter_map(|w| {
+                let used = needed(w);
+                (used > w + 1.0).then(|| format!("{w} px window: the bar needs {used}"))
+            })
+            .collect();
+        assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+    }
 }
