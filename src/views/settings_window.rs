@@ -74,3 +74,83 @@ pub fn show(
     );
     (net, sch, keys, mcp)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::config::{Config, UpstreamMode};
+    use crate::views::layout_test::*;
+    use std::sync::{Arc, Mutex};
+
+    /// Room the tab content has in the narrowest settings window: 480 px less its frames.
+    const MIN_CONTENT: f32 = 480.0 - 44.0;
+
+    fn config(mode: UpstreamMode) -> Config {
+        let mut c = Config {
+            dns_overrides: vec![(HOST.into(), "255.255.255.255-not-an-ip".into())],
+            proto_descs: vec![FILE.into(), format!("{FILE}.missing")],
+            keylog_path: FILE.into(),
+            ..Default::default()
+        };
+        c.upstream.mode = mode;
+        c.upstream.url = url();
+        c.upstream.pac_path = FILE.into();
+        c
+    }
+
+    #[test]
+    fn every_tab_fits_the_narrowest_window() {
+        let ctx = ctx();
+        let mut leaks = vec![];
+        for mode in [
+            UpstreamMode::Off,
+            UpstreamMode::Manual,
+            UpstreamMode::Socks,
+            UpstreamMode::Pac,
+        ] {
+            let cfg = Arc::new(Mutex::new(config(mode)));
+            let network = NetworkVm::new(cfg.clone());
+            let used = used_width(&ctx, MIN_CONTENT, |ui| {
+                network_tab::show(ui, &network);
+            });
+            if used > MIN_CONTENT + 1.0 {
+                leaks.push(format!("Network ({mode:?}) needs {used} px"));
+            }
+        }
+        let cfg = Arc::new(Mutex::new(config(UpstreamMode::Off)));
+        let schemas = SchemasVm::new(cfg.clone());
+        schemas.sync();
+        let keymap = KeymapVm::new(cfg.clone());
+        let mcp = McpVm::new(cfg, 8080, 8081, Some(FILE));
+        let tabs: [(&str, f32); 3] = [
+            (
+                "Schemas",
+                used_width(&ctx, MIN_CONTENT, |ui| {
+                    schemas_tab::show(ui, &schemas);
+                }),
+            ),
+            (
+                "Shortcuts",
+                used_width(&ctx, MIN_CONTENT, |ui| {
+                    shortcuts_tab::show(ui, &keymap);
+                }),
+            ),
+            (
+                "MCP",
+                used_width(&ctx, MIN_CONTENT, |ui| {
+                    mcp_tab::show(ui, &mcp);
+                }),
+            ),
+        ];
+        for (name, used) in tabs {
+            if used > MIN_CONTENT + 1.0 {
+                leaks.push(format!("{name} needs {used} px"));
+            }
+        }
+        assert!(
+            leaks.is_empty(),
+            "of {MIN_CONTENT} px: {}",
+            leaks.join(", ")
+        );
+    }
+}

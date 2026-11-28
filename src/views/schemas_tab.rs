@@ -27,11 +27,12 @@ pub fn show(ui: &mut egui::Ui, vm: &SchemasVm) -> Vec<SchemasIntent> {
             if icon_only(ui, ph::X, "Remove descriptor").clicked() {
                 out.push(SchemasIntent::Remove(i));
             }
-            ui.label(RichText::new(p).monospace());
-            if let Some((_, e)) = v.errors.iter().find(|(ep, _)| ep == p) {
-                ui.label(RichText::new(e).color(danger()));
-            }
+            ui.add(egui::Label::new(RichText::new(p).monospace()).truncate())
+                .on_hover_text(p);
         });
+        if let Some((_, e)) = v.errors.iter().find(|(ep, _)| ep == p) {
+            ui.label(RichText::new(e).color(danger()));
+        }
     }
     if !v.paths.is_empty() {
         ui.add_space(6.0);

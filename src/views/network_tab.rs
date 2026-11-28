@@ -1,7 +1,7 @@
 use crate::domain::config::UpstreamMode;
 use crate::viewmodels::intent::NetworkIntent;
 use crate::viewmodels::network_vm::{NetworkVm, valid_ip};
-use crate::views::theme::{danger, icon_button, icon_only, muted, segmented};
+use crate::views::theme::{danger, icon_button, icon_only, muted, row_within, segmented};
 use eframe::egui::{self, RichText, TextEdit};
 use egui_phosphor::regular as ph;
 
@@ -11,25 +11,27 @@ pub fn show(ui: &mut egui::Ui, vm: &NetworkVm) -> Vec<NetworkIntent> {
         let mut cfg = vm.config();
         ui.label(RichText::new("DNS overrides").strong());
         ui.label(muted("Host (wildcards ok) → IP for upstream connections. Applies to decrypted/plain requests, not passthrough tunnels."));
+        let w = ui.available_width();
         for (i, (host, ip)) in cfg.dns_overrides.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.add(
-                    TextEdit::singleline(host)
-                        .desired_width(220.0)
-                        .hint_text("api.example.com"),
-                );
-                ui.label("→");
+            // the fixed controls come first at the right edge; the host field takes what is left
+            row_within(ui, w, true, |ui| {
+                if icon_only(ui, ph::X, "Remove override").clicked() {
+                    out.push(NetworkIntent::RemoveDns(i));
+                }
+                if !valid_ip(ip) {
+                    ui.label(RichText::new("invalid IP").color(danger()));
+                }
                 ui.add(
                     TextEdit::singleline(ip)
                         .desired_width(140.0)
                         .hint_text("127.0.0.1"),
                 );
-                if !valid_ip(ip) {
-                    ui.label(RichText::new("invalid IP").color(danger()));
-                }
-                if icon_only(ui, ph::X, "Remove override").clicked() {
-                    out.push(NetworkIntent::RemoveDns(i));
-                }
+                ui.label("→");
+                ui.add(
+                    TextEdit::singleline(host)
+                        .desired_width(ui.available_width())
+                        .hint_text("api.example.com"),
+                );
             });
         }
         if icon_button(ui, ph::PLUS, "Add override", true).clicked() {
