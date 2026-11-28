@@ -12,6 +12,11 @@ use crate::views::theme::{
 use eframe::egui::{self, RichText};
 use egui_phosphor::regular as ph;
 
+const STAGE_W: f32 = 760.0;
+// card widths on a wide window; they share a narrower one
+const CHOICE_W: f32 = 340.0;
+const TARGET_W: f32 = 230.0;
+
 #[derive(Clone, Copy)]
 pub struct Props<'a> {
     pub devices: &'a DevicesVm,
@@ -121,15 +126,7 @@ pub fn show(
     let height_id = egui::Id::unique("onboarding-content-height");
     let height = ctx.data(|d| d.get_temp::<f32>(height_id)).unwrap_or(400.0);
     ui.add_space(((ui.available_height() - height) / 2.0).max(24.0));
-    let drawn = ui.vertical_centered(|ui| {
-        ui.set_max_width(760.0);
-        match vm.stage {
-            OnboardingStage::ChooseExperience => choose_experience(ui, ctx, &mut out),
-            OnboardingStage::ChooseTarget => choose_target(ui, ctx, &mut out),
-            OnboardingStage::Beginner(target) => beginner(ui, ctx, vm, target, &props, &mut out),
-            OnboardingStage::Experienced => experienced(ui, ctx, vm, &props, &mut out),
-        }
-    });
+    let drawn = ui.vertical_centered(|ui| stage(ui, ctx, vm, &props, &mut out));
     let measured = drawn.response.rect.height();
     if (measured - height).abs() > 0.5 {
         ctx.data_mut(|d| d.insert_temp(height_id, measured));
@@ -138,12 +135,30 @@ pub fn show(
     out
 }
 
+/// `set_max_width` overrides rather than caps, so the stage is capped by hand: in a window
+/// narrower than 760 px a fixed width would hang off both edges.
+fn stage(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &OnboardingVm,
+    props: &Props,
+    out: &mut Vec<OnboardingIntent>,
+) {
+    ui.set_max_width(ui.available_width().min(STAGE_W));
+    match vm.stage {
+        OnboardingStage::ChooseExperience => choose_experience(ui, ctx, out),
+        OnboardingStage::ChooseTarget => choose_target(ui, ctx, out),
+        OnboardingStage::Beginner(target) => beginner(ui, ctx, vm, target, props, out),
+        OnboardingStage::Experienced => experienced(ui, ctx, vm, props, out),
+    }
+}
+
 fn choose_experience(ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Vec<OnboardingIntent>) {
     header(ui, ctx, "Welcome to proxyproxy", "", 96.0);
     ui.add_space(18.0);
     let gap = 16.0;
-    let width = 340.0;
-    let content_width = width * 2.0 + gap;
+    let content_width = ui.available_width().min(CHOICE_W * 2.0 + gap);
+    let width = (content_width - gap) / 2.0;
     ui.allocate_ui(egui::vec2(content_width, 132.0), |ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.horizontal(|ui| {
@@ -201,9 +216,9 @@ fn choose_target(ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Vec<Onboardin
         64.0,
     );
     ui.add_space(18.0);
-    let width = 230.0;
     let gap = 8.0;
-    let content_width = width * 3.0 + gap * 2.0;
+    let content_width = ui.available_width().min(TARGET_W * 3.0 + gap * 2.0);
+    let width = (content_width - gap * 2.0) / 3.0;
     ui.allocate_ui(egui::vec2(content_width, 132.0), |ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.horizontal(|ui| {
@@ -262,7 +277,8 @@ fn beginner(
     ui.add_space(14.0);
     steps(ui, target, props.flow_count, props.status);
     ui.add_space(12.0);
-    ui.allocate_ui(egui::vec2(760.0, 180.0), |ui| {
+    let content_width = ui.available_width();
+    ui.allocate_ui(egui::vec2(content_width, 180.0), |ui| {
         card().show(ui, |ui| match target {
             OnboardingTarget::Web => web_setup(ui, props.devices, out),
             OnboardingTarget::Ios => ios_setup(ui, vm, props, out),
@@ -306,7 +322,7 @@ fn beginner(
             success(),
         );
     }
-    footer(ui, out, 760.0);
+    footer(ui, out, content_width);
 }
 
 fn web_setup(ui: &mut egui::Ui, devices: &DevicesVm, out: &mut Vec<OnboardingIntent>) {
@@ -452,7 +468,7 @@ fn experienced(
         64.0,
     );
     ui.add_space(14.0);
-    let content_width = 676.0;
+    let content_width = ui.available_width().min(676.0);
     ui.allocate_ui(egui::vec2(content_width, 64.0), |ui| {
         ui.horizontal_wrapped(|ui| {
             if action_button_sized(
@@ -596,4 +612,88 @@ fn footer(ui: &mut egui::Ui, out: &mut Vec<OnboardingIntent>, content_width: f32
             });
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::config::Config;
+    use crate::services::devices::{IosSimulator, IosSimulatorState};
+    use crate::viewmodels::status::NoRepaint;
+    use crate::views::layout_test::*;
+    use std::sync::{Arc, Mutex};
+
+    fn devices(ca: IosCaStatus) -> DevicesVm {
+        let cfg = Arc::new(Mutex::new(Config::default()));
+        let mut d = DevicesVm::new(8080, FILE.into(), cfg, Arc::new(NoRepaint));
+        d.ios_simulators = (0..2)
+            .map(|i| IosSimulator {
+                udid: format!("udid-{i}"),
+                name: format!("{WORDS} {i}"),
+                runtime: format!("iOS {WORDS}"),
+                state: IosSimulatorState::Booted,
+                ca_status: ca,
+                data_path: FILE.into(),
+            })
+            .collect();
+        d
+    }
+
+    /// Width a stage needs when the window gives it `window` px.
+    fn needed(at: OnboardingStage, ca: IosCaStatus, window: f32) -> f32 {
+        let ctx = ctx();
+        let cfg = Arc::new(Mutex::new(Config::default()));
+        let mut vm = OnboardingVm::new(cfg);
+        vm.stage = at;
+        let devices = devices(ca);
+        let status = format!("Error: {WORDS}{WORDS}");
+        let props = Props {
+            devices: &devices,
+            port: 8080,
+            cert: FILE,
+            status: &status,
+            flow_count: 12,
+        };
+        used_width(&ctx, window, |ui| {
+            let ctx = ui.ctx().clone();
+            let mut out = vec![];
+            ui.vertical_centered(|ui| stage(ui, &ctx, &vm, &props, &mut out));
+        })
+    }
+
+    #[test]
+    fn every_stage_fits_the_minimum_window() {
+        let mut leaks = vec![];
+        for window in [560.0, 1000.0] {
+            // the simulator card differs by certificate state; the other stages ignore it
+            let stages = [
+                (OnboardingStage::ChooseExperience, IosCaStatus::Missing),
+                (OnboardingStage::ChooseTarget, IosCaStatus::Missing),
+                (
+                    OnboardingStage::Beginner(OnboardingTarget::Web),
+                    IosCaStatus::Missing,
+                ),
+                (
+                    OnboardingStage::Beginner(OnboardingTarget::Ios),
+                    IosCaStatus::Missing,
+                ),
+                (
+                    OnboardingStage::Beginner(OnboardingTarget::Ios),
+                    IosCaStatus::Installed,
+                ),
+                (
+                    OnboardingStage::Beginner(OnboardingTarget::Android),
+                    IosCaStatus::Missing,
+                ),
+                (OnboardingStage::Experienced, IosCaStatus::Missing),
+            ];
+            for (at, ca) in stages {
+                let used = needed(at, ca, window);
+                if used > window + 1.0 {
+                    leaks.push(format!("{at:?} ({ca:?}) at {window} px needs {used}"));
+                }
+            }
+        }
+        assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+    }
 }
