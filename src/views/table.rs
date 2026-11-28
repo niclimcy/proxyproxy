@@ -58,6 +58,46 @@ impl ColumnWidths {
     }
 }
 
+/// The empty state. Its button and hint wrap rather than run past a narrow card.
+fn get_started(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    vm: &CaptureVm,
+    port: u16,
+    out: &mut Vec<RowIntent>,
+) {
+    ui.label(overline("GET STARTED"));
+    ui.add_space(5.0);
+    ui.label(
+        RichText::new("Start capturing traffic")
+            .size(FS_TITLE)
+            .strong(),
+    );
+    ui.add_space(6.0);
+    ui.label(muted(format!("Proxy is ready on 127.0.0.1:{port}.")));
+    ui.add_space(16.0);
+    ui.horizontal_wrapped(|ui| {
+        let command = format!("proxyproxy run --port {port} -- curl https://example.com");
+        let (icon, label, color) = if vm.test_command_copied.on() {
+            (ph::CHECK, "Copied", success())
+        } else {
+            (ph::COPY, "Copy test command", accent())
+        };
+        if action_button_sized(ui, icon, label, color, 188.0, true)
+            .on_hover_text(format!("Copy: {command}"))
+            .clicked()
+        {
+            ctx.copy_text(command);
+            out.push(RowIntent::TestCommandCopied);
+        }
+        ui.label(muted("or use Sources → System proxy"));
+    });
+    ui.add_space(12.0);
+    ui.label(muted(
+        "The first request will appear here. Select it to inspect the request and response.",
+    ));
+}
+
 pub fn show(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
@@ -91,30 +131,7 @@ pub fn show(
                 card().show(ui, |ui| {
                     ui.set_width((card_width - 2.0 * f32::from(PAD)).max(0.0));
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                        ui.label(overline("GET STARTED"));
-                        ui.add_space(5.0);
-                        ui.label(RichText::new("Start capturing traffic").size(FS_TITLE).strong());
-                        ui.add_space(6.0);
-                        ui.label(muted(format!("Proxy is ready on 127.0.0.1:{port}.")));
-                        ui.add_space(16.0);
-                        ui.horizontal(|ui| {
-                            let command = format!("proxyproxy run --port {port} -- curl https://example.com");
-                            let (icon, label, color) = if vm.test_command_copied.on() {
-                                (ph::CHECK, "Copied", success())
-                            } else {
-                                (ph::COPY, "Copy test command", accent())
-                            };
-                            if action_button_sized(ui, icon, label, color, 188.0, true)
-                                .on_hover_text(format!("Copy: {command}"))
-                                .clicked()
-                            {
-                                ctx.copy_text(command);
-                                out.push(RowIntent::TestCommandCopied);
-                            }
-                            ui.label(muted("or use Sources → System proxy"));
-                        });
-                        ui.add_space(12.0);
-                        ui.label(muted("The first request will appear here. Select it to inspect the request and response."));
+                        get_started(ui, ctx, vm, port, &mut out);
                     });
                 });
             });
@@ -505,5 +522,37 @@ fn row_menu(
     ui.separator();
     if b(ui, &delete.0, delete.1) {
         out.push(RowIntent::Delete(id));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::app_icons::IconStore;
+    use crate::services::flow_store::FlowStore;
+    use crate::viewmodels::status::NoRepaint;
+    use crate::views::layout_test::*;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn the_empty_state_fits_a_narrow_table() {
+        let ctx = ctx();
+        let icons = IconStore::new(std::env::temp_dir(), Arc::new(NoRepaint));
+        let vm = CaptureVm::new(
+            FlowStore::default(),
+            Arc::new(Mutex::new(Default::default())),
+            icons,
+        );
+        let leaks: Vec<String> = [200.0, 260.0, 330.0, 480.0]
+            .into_iter()
+            .filter_map(|w| {
+                let used = used_width(&ctx, w, |ui| {
+                    let ctx = ui.ctx().clone();
+                    get_started(ui, &ctx, &vm, 8080, &mut vec![]);
+                });
+                (used > w + 1.0).then(|| format!("{w} px: the empty state needs {used}"))
+            })
+            .collect();
+        assert!(leaks.is_empty(), "{}", leaks.join("\n"));
     }
 }
