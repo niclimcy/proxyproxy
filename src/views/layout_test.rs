@@ -59,18 +59,27 @@ pub fn drag_panel(ui: &egui::Ui, salt: &str, size: egui::Vec2) {
     ui.ctx().data_mut(|d| d.insert_persisted(id, state));
 }
 
-/// Width `add` needs when given `avail` px: more than `avail` means it leaks past its parent.
-pub fn used_width(ctx: &egui::Context, avail: f32, mut add: impl FnMut(&mut egui::Ui)) -> f32 {
-    let mut used = 0.0;
+/// What `add` needs when given `avail` px across and 800 px down. A width past `avail` means it
+/// leaks past its parent; a height of 800 means something filled the height it was offered.
+pub fn used_size(
+    ctx: &egui::Context,
+    avail: f32,
+    mut add: impl FnMut(&mut egui::Ui),
+) -> egui::Vec2 {
+    let mut used = egui::Vec2::ZERO;
     frames(ctx, egui::vec2(avail + 400.0, 900.0), 4, |ui, _| {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(avail, 800.0));
         used = ui
             .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| add(ui))
             .response
             .rect
-            .width();
+            .size();
     });
     used
+}
+
+pub fn used_width(ctx: &egui::Context, avail: f32, add: impl FnMut(&mut egui::Ui)) -> f32 {
+    used_size(ctx, avail, add).x
 }
 
 pub fn flow(id: u64) -> Flow {

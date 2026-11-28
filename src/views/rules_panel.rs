@@ -1106,7 +1106,7 @@ mod tests {
             Action::MapLocal {
                 path: FILE.into(),
                 status: 200,
-                storage: Default::default(),
+                storage: crate::domain::rule::MapStorage::default(),
                 managed: String::new(),
                 embedded: None,
             },

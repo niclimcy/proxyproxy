@@ -174,6 +174,8 @@ mod tests {
     use crate::services::replay::Sent;
     use crate::views::layout_test::*;
 
+    type Case = (&'static str, Option<Result<Sent, String>>, bool, bool);
+
     fn sent() -> Sent {
         Sent {
             status: 200,
@@ -228,7 +230,7 @@ mod tests {
                 }),
             );
         }
-        let results: Vec<(&str, Option<Result<Sent, String>>, bool, bool)> = vec![
+        let results: Vec<Case> = vec![
             ("nothing sent", None, false, false),
             ("sending", None, true, false),
             (

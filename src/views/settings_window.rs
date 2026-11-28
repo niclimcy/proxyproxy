@@ -153,4 +153,16 @@ mod tests {
             leaks.join(", ")
         );
     }
+
+    /// A `with_layout` in a parent with no height of its own fills the height it is offered.
+    #[test]
+    fn no_tab_fills_the_height_it_is_offered() {
+        let ctx = ctx();
+        let cfg = Arc::new(Mutex::new(config(UpstreamMode::Pac)));
+        let mcp = McpVm::new(cfg, 8080, 8081, Some(FILE));
+        let used = used_size(&ctx, MIN_CONTENT, |ui| {
+            mcp_tab::show(ui, &mcp);
+        });
+        assert!(used.y < 700.0, "the MCP tab is {} px tall", used.y);
+    }
 }

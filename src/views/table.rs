@@ -540,7 +540,7 @@ mod tests {
         let icons = IconStore::new(std::env::temp_dir(), Arc::new(NoRepaint));
         let vm = CaptureVm::new(
             FlowStore::default(),
-            Arc::new(Mutex::new(Default::default())),
+            Arc::new(Mutex::new(crate::domain::config::Config::default())),
             icons,
         );
         let leaks: Vec<String> = [200.0, 260.0, 330.0, 480.0]

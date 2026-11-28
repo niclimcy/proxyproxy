@@ -7,7 +7,7 @@ proxyproxy is an HTTP(S) debugging proxy with an egui UI. Single Rust crate.
 ```sh
 cargo fmt
 cargo build
-cargo test     # 379 tests, no window needed (includes src/e2e.rs)
+cargo test     # no window needed (includes src/e2e.rs)
 cargo clippy --all-targets -- -D warnings
 cargo run -- 19090   # proxy on :19090, REST API on :19091
 ```
